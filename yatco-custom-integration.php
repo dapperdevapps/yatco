@@ -6,7 +6,7 @@
  * Version: 3.1
  * Author: Your Name
  * License: GPL-2.0+
- */
+*/
 
 if ( ! defined( 'ABSPATH' ) ) {
     exit;
@@ -34,6 +34,9 @@ function yatco_create_cpt() {
 }
 register_activation_hook( __FILE__, 'yatco_create_cpt' );
 
+// Register shortcode on init.
+add_action( 'init', 'yatco_register_shortcode' );
+
 /**
  * Admin settings page.
  */
@@ -41,20 +44,20 @@ add_action( 'admin_menu', 'yatco_add_admin_menu' );
 add_action( 'admin_init', 'yatco_settings_init' );
 
 function yatco_add_admin_menu() {
-    add_options_page(
-        'YATCO API Settings',
-        'YATCO API',
-        'manage_options',
+        add_options_page(
+            'YATCO API Settings',
+            'YATCO API',
+            'manage_options',
         'yatco_api',
         'yatco_options_page'
-    );
+        );
 
     // Import page under Yachts.
     add_submenu_page(
         'edit.php?post_type=yacht',
-        'YATCO Import',
-        'YATCO Import',
-        'manage_options',
+            'YATCO Import',
+            'YATCO Import',
+            'manage_options',
         'yatco_import',
         'yatco_import_page'
     );
@@ -63,17 +66,25 @@ function yatco_add_admin_menu() {
 function yatco_settings_init() {
     register_setting( 'yatco_api', 'yatco_api_settings' );
 
-    add_settings_section(
+        add_settings_section(
         'yatco_api_section',
-        'YATCO API Credentials',
+            'YATCO API Credentials',
         'yatco_settings_section_callback',
         'yatco_api'
+        );
+
+        add_settings_field(
+        'yatco_api_token',
+            'API Token (Basic)',
+        'yatco_api_token_render',
+        'yatco_api',
+        'yatco_api_section'
     );
 
     add_settings_field(
-        'yatco_api_token',
-        'API Token (Basic)',
-        'yatco_api_token_render',
+        'yatco_cache_duration',
+        'Cache Duration (minutes)',
+        'yatco_cache_duration_render',
         'yatco_api',
         'yatco_api_section'
     );
@@ -87,7 +98,14 @@ function yatco_api_token_render() {
     $options = get_option( 'yatco_api_settings' );
     $token   = isset( $options['yatco_api_token'] ) ? $options['yatco_api_token'] : '';
     echo '<input type="text" name="yatco_api_settings[yatco_api_token]" value="' . esc_attr( $token ) . '" size="80" />';
-    echo '<p class="description">Paste the Basic token exactly as provided by YATCO (do not re-encode).</p>';
+        echo '<p class="description">Paste the Basic token exactly as provided by YATCO (do not re-encode).</p>';
+    }
+
+function yatco_cache_duration_render() {
+    $options = get_option( 'yatco_api_settings' );
+    $cache   = isset( $options['yatco_cache_duration'] ) ? intval( $options['yatco_cache_duration'] ) : 30;
+    echo '<input type="number" step="1" min="1" name="yatco_api_settings[yatco_cache_duration]" value="' . esc_attr( $cache ) . '" />';
+    echo '<p class="description">How long to cache vessel listings before refreshing (default: 30 minutes).</p>';
 }
 
 /**
@@ -139,8 +157,8 @@ function yatco_test_connection( $token ) {
         $endpoint,
         array(
             'headers' => array(
-                'Authorization' => 'Basic ' . $token,
-                'Accept'        => 'application/json',
+            'Authorization' => 'Basic ' . $token,
+            'Accept'        => 'application/json',
             ),
             'timeout' => 20,
         )
@@ -191,15 +209,15 @@ function yatco_get_active_vessel_ids( $token, $max_records = 50 ) {
         )
     );
 
-    if ( is_wp_error( $response ) ) {
-        return $response;
-    }
+        if ( is_wp_error( $response ) ) {
+            return $response;
+        }
 
     if ( 200 !== wp_remote_retrieve_response_code( $response ) ) {
         return new WP_Error( 'yatco_http_error', 'HTTP ' . wp_remote_retrieve_response_code( $response ) );
     }
 
-    $body = wp_remote_retrieve_body( $response );
+        $body = wp_remote_retrieve_body( $response );
     $data = json_decode( $body, true );
 
     if ( ! is_array( $data ) ) {
@@ -246,14 +264,14 @@ function yatco_fetch_fullspecs( $token, $vessel_id ) {
     }
 
     $body = wp_remote_retrieve_body( $response );
-    $data = json_decode( $body, true );
+        $data = json_decode( $body, true );
 
     if ( null === $data ) {
         return new WP_Error( 'yatco_parse_error', 'Could not parse FullSpecsAll JSON.' );
-    }
+        }
 
-    return $data;
-}
+        return $data;
+    }
 
 /**
  * Helper: parse a brief summary from FullSpecsAll for preview table.
@@ -330,7 +348,7 @@ function yatco_build_brief_from_fullspecs( $vessel_id, $full ) {
  * Import page (Yachts → YATCO Import).
  */
 function yatco_import_page() {
-    if ( ! current_user_can( 'manage_options' ) ) {
+        if ( ! current_user_can( 'manage_options' ) ) {
         return;
     }
 
@@ -455,77 +473,77 @@ function yatco_import_page() {
     }
 
     ?>
-    <h2>Import Criteria</h2>
+                <h2>Import Criteria</h2>
     <form method="post">
         <?php wp_nonce_field( 'yatco_import_action', 'yatco_import_nonce' ); ?>
-        <table class="form-table">
-            <tr>
-                <th scope="row">Price (USD)</th>
-                <td>
+                <table class="form-table">
+                    <tr>
+                        <th scope="row">Price (USD)</th>
+                        <td>
                     Min: <input type="number" step="1" name="price_min" value="<?php echo $criteria_price_min !== '' ? esc_attr( $criteria_price_min ) : ''; ?>" />
                     Max: <input type="number" step="1" name="price_max" value="<?php echo $criteria_price_max !== '' ? esc_attr( $criteria_price_max ) : ''; ?>" />
-                </td>
-            </tr>
-            <tr>
+                        </td>
+                    </tr>
+                    <tr>
                 <th scope="row">Length (LOA)</th>
-                <td>
+                        <td>
                     Min: <input type="number" step="0.1" name="loa_min" value="<?php echo $criteria_loa_min !== '' ? esc_attr( $criteria_loa_min ) : ''; ?>" />
                     Max: <input type="number" step="0.1" name="loa_max" value="<?php echo $criteria_loa_max !== '' ? esc_attr( $criteria_loa_max ) : ''; ?>" />
-                </td>
-            </tr>
-            <tr>
-                <th scope="row">Year Built</th>
-                <td>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Year Built</th>
+                        <td>
                     Min: <input type="number" step="1" name="year_min" value="<?php echo $criteria_year_min !== '' ? esc_attr( $criteria_year_min ) : ''; ?>" />
                     Max: <input type="number" step="1" name="year_max" value="<?php echo $criteria_year_max !== '' ? esc_attr( $criteria_year_max ) : ''; ?>" />
-                </td>
-            </tr>
-            <tr>
+                        </td>
+                    </tr>
+                    <tr>
                 <th scope="row">Max Results</th>
-                <td>
-                    <input type="number" step="1" name="max_records" value="<?php echo esc_attr( $max_records ); ?>" />
+                        <td>
+                            <input type="number" step="1" name="max_records" value="<?php echo esc_attr( $max_records ); ?>" />
                     <p class="description">Maximum number of matching vessels to display (default 50). The system will fetch up to 5x this number to find matches.</p>
-                </td>
-            </tr>
-        </table>
+                        </td>
+                    </tr>
+                </table>
 
         <?php submit_button( 'Preview Listings', 'primary', 'yatco_preview_listings' ); ?>
 
         <?php if ( ! empty( $preview_results ) ) : ?>
-            <h2>Preview Results</h2>
+                <h2>Preview Results</h2>
             <p>Select the vessels you want to import or update.</p>
-            <table class="widefat fixed striped">
-                <thead>
-                    <tr>
+                    <table class="widefat fixed striped">
+                        <thead>
+                            <tr>
                         <th class="manage-column column-cb check-column"><input type="checkbox" onclick="jQuery('.yatco-vessel-checkbox').prop('checked', this.checked);" /></th>
-                        <th>Vessel ID</th>
-                        <th>MLS ID</th>
-                        <th>Name</th>
+                                <th>Vessel ID</th>
+                                <th>MLS ID</th>
+                                <th>Name</th>
                         <th>Price</th>
-                        <th>Year</th>
-                        <th>LOA</th>
-                    </tr>
-                </thead>
-                <tbody>
+                                <th>Year</th>
+                                <th>LOA</th>
+                            </tr>
+                        </thead>
+                        <tbody>
                     <?php foreach ( $preview_results as $row ) : ?>
-                        <tr>
+                                <tr>
                             <th scope="row" class="check-column">
                                 <input class="yatco-vessel-checkbox" type="checkbox" name="vessel_ids[]" value="<?php echo esc_attr( $row['VesselID'] ); ?>" />
-                            </th>
+                                    </th>
                             <td><?php echo esc_html( $row['VesselID'] ); ?></td>
                             <td><?php echo esc_html( $row['MLSId'] ); ?></td>
                             <td><?php echo esc_html( $row['Name'] ); ?></td>
                             <td><?php echo esc_html( $row['Price'] ); ?></td>
                             <td><?php echo esc_html( $row['Year'] ); ?></td>
                             <td><?php echo esc_html( $row['LOA'] ); ?></td>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
             <?php submit_button( 'Import Selected', 'primary', 'yatco_import_selected' ); ?>
-        <?php endif; ?>
-    </form>
-    <?php
+            <?php endif; ?>
+                </form>
+        <?php
 
     echo '</div>';
 }
@@ -648,7 +666,7 @@ function yatco_import_single_vessel( $token, $vessel_id ) {
     if ( $post_id ) {
         $post_data['ID'] = $post_id;
         $post_id         = wp_update_post( $post_data );
-    } else {
+        } else {
         $post_id = wp_insert_post( $post_data );
     }
 
@@ -711,4 +729,843 @@ function yatco_import_single_vessel( $token, $vessel_id ) {
     }
 
     return $post_id;
+}
+
+/**
+ * Register shortcode for displaying YATCO vessels.
+ */
+function yatco_register_shortcode() {
+    add_shortcode( 'yatco_vessels', 'yatco_vessels_shortcode' );
+}
+
+/**
+ * Shortcode to display YATCO vessels in real-time.
+ * 
+ * Usage: [yatco_vessels max="20" price_min="25000" price_max="500000" year_min="" year_max="" loa_min="" loa_max="" columns="3" show_price="yes" show_year="yes" show_loa="yes" show_filters="yes"]
+ */
+function yatco_vessels_shortcode( $atts ) {
+    $atts = shortcode_atts(
+        array(
+            'max'           => '20',
+            'price_min'     => '',
+            'price_max'     => '',
+            'year_min'      => '',
+            'year_max'      => '',
+            'loa_min'       => '',
+            'loa_max'       => '',
+            'columns'       => '3',
+            'show_price'    => 'yes',
+            'show_year'     => 'yes',
+            'show_loa'      => 'yes',
+            'cache'         => 'yes',
+            'show_filters'  => 'yes',
+            'currency'      => 'USD',
+            'length_unit'   => 'FT',
+        ),
+        $atts,
+        'yatco_vessels'
+    );
+
+    $token = yatco_get_token();
+    if ( empty( $token ) ) {
+        return '<p>YATCO API token is not configured.</p>';
+    }
+
+    $max_results = intval( $atts['max'] );
+    if ( $max_results <= 0 ) {
+        $max_results = 20;
+    }
+
+    // Get cache key based on attributes.
+    $cache_key = 'yatco_vessels_' . md5( serialize( $atts ) );
+    
+    // Check cache if enabled.
+    if ( $atts['cache'] === 'yes' ) {
+        $options = get_option( 'yatco_api_settings' );
+        $cache_duration = isset( $options['yatco_cache_duration'] ) ? intval( $options['yatco_cache_duration'] ) : 30;
+        $cached = get_transient( $cache_key );
+        
+        if ( $cached !== false ) {
+            return $cached;
+        }
+    }
+
+    // Fetch more IDs than needed to account for filtering.
+    $ids_to_fetch = min( $max_results * 5, 100 );
+    $ids = yatco_get_active_vessel_ids( $token, $ids_to_fetch );
+
+    if ( is_wp_error( $ids ) ) {
+        return '<p>Error loading vessels: ' . esc_html( $ids->get_error_message() ) . '</p>';
+    }
+
+        if ( empty( $ids ) ) {
+        return '<p>No vessels available.</p>';
+    }
+
+    $vessels = array();
+    
+    // Parse filter criteria.
+    $price_min = ! empty( $atts['price_min'] ) && $atts['price_min'] !== '0' ? floatval( $atts['price_min'] ) : '';
+    $price_max = ! empty( $atts['price_max'] ) && $atts['price_max'] !== '0' ? floatval( $atts['price_max'] ) : '';
+    $year_min  = ! empty( $atts['year_min'] ) && $atts['year_min'] !== '0' ? intval( $atts['year_min'] ) : '';
+    $year_max  = ! empty( $atts['year_max'] ) && $atts['year_max'] !== '0' ? intval( $atts['year_max'] ) : '';
+    $loa_min   = ! empty( $atts['loa_min'] ) && $atts['loa_min'] !== '0' ? floatval( $atts['loa_min'] ) : '';
+    $loa_max   = ! empty( $atts['loa_max'] ) && $atts['loa_max'] !== '0' ? floatval( $atts['loa_max'] ) : '';
+
+        foreach ( $ids as $id ) {
+        if ( count( $vessels ) >= $max_results ) {
+            break;
+        }
+
+        $full = yatco_fetch_fullspecs( $token, $id );
+        if ( is_wp_error( $full ) ) {
+                continue;
+            }
+
+        $brief = yatco_build_brief_from_fullspecs( $id, $full );
+
+        // Apply filtering.
+        $price = ! empty( $brief['Price'] ) ? floatval( $brief['Price'] ) : null;
+        $year  = ! empty( $brief['Year'] ) ? intval( $brief['Year'] ) : null;
+        $loa_raw = $brief['LOA'];
+        if ( is_string( $loa_raw ) && preg_match( '/([0-9.]+)/', $loa_raw, $matches ) ) {
+            $loa = floatval( $matches[1] );
+        } elseif ( ! empty( $loa_raw ) && is_numeric( $loa_raw ) ) {
+            $loa = floatval( $loa_raw );
+        } else {
+            $loa = null;
+        }
+
+        // Apply filters.
+        if ( $price_min !== '' && ( is_null( $price ) || $price <= 0 || $price < $price_min ) ) {
+            continue;
+        }
+        if ( $price_max !== '' && ( is_null( $price ) || $price <= 0 || $price > $price_max ) ) {
+            continue;
+        }
+        if ( $year_min !== '' && ( is_null( $year ) || $year <= 0 || $year < $year_min ) ) {
+            continue;
+        }
+        if ( $year_max !== '' && ( is_null( $year ) || $year <= 0 || $year > $year_max ) ) {
+            continue;
+        }
+        if ( $loa_min !== '' && ( is_null( $loa ) || $loa <= 0 || $loa < $loa_min ) ) {
+            continue;
+        }
+        if ( $loa_max !== '' && ( is_null( $loa ) || $loa <= 0 || $loa > $loa_max ) ) {
+                continue;
+            }
+
+        // Get full specs for display.
+        $result = isset( $full['Result'] ) ? $full['Result'] : array();
+        $basic  = isset( $full['BasicInfo'] ) ? $full['BasicInfo'] : array();
+        
+        // Get builder, category, type, condition
+        $builder = isset( $basic['Builder'] ) ? $basic['Builder'] : ( isset( $result['BuilderName'] ) ? $result['BuilderName'] : '' );
+        $category = isset( $basic['MainCategory'] ) ? $basic['MainCategory'] : ( isset( $result['MainCategoryText'] ) ? $result['MainCategoryText'] : '' );
+        $type = isset( $basic['VesselTypeText'] ) ? $basic['VesselTypeText'] : ( isset( $result['VesselTypeText'] ) ? $result['VesselTypeText'] : '' );
+        $condition = isset( $result['VesselCondition'] ) ? $result['VesselCondition'] : '';
+        $state_rooms = isset( $basic['StateRooms'] ) ? intval( $basic['StateRooms'] ) : ( isset( $result['StateRooms'] ) ? intval( $result['StateRooms'] ) : 0 );
+        $location = isset( $basic['LocationCustom'] ) ? $basic['LocationCustom'] : '';
+        
+        // Get LOA in feet and meters
+        $loa_feet = isset( $result['LOAFeet'] ) && $result['LOAFeet'] > 0 ? floatval( $result['LOAFeet'] ) : null;
+        $loa_meters = isset( $result['LOAMeters'] ) && $result['LOAMeters'] > 0 ? floatval( $result['LOAMeters'] ) : null;
+        if ( ! $loa_meters && $loa_feet ) {
+            $loa_meters = $loa_feet * 0.3048;
+        }
+        
+        // Get price in USD and EUR
+        $price_usd = isset( $basic['AskingPriceUSD'] ) && $basic['AskingPriceUSD'] > 0 ? floatval( $basic['AskingPriceUSD'] ) : null;
+        if ( ! $price_usd && isset( $result['AskingPriceCompare'] ) && $result['AskingPriceCompare'] > 0 ) {
+            $price_usd = floatval( $result['AskingPriceCompare'] );
+        }
+        
+        $price_eur = isset( $basic['AskingPrice'] ) && $basic['AskingPrice'] > 0 && isset( $basic['Currency'] ) && $basic['Currency'] === 'EUR' ? floatval( $basic['AskingPrice'] ) : null;
+        
+        $vessel_data = array(
+            'id'          => $id,
+            'name'        => $brief['Name'],
+            'price'       => $brief['Price'],
+            'price_usd'   => $price_usd,
+            'price_eur'   => $price_eur,
+            'year'        => $brief['Year'],
+            'loa'         => $brief['LOA'],
+            'loa_feet'    => $loa_feet,
+            'loa_meters'  => $loa_meters,
+            'builder'     => $builder,
+            'category'    => $category,
+            'type'        => $type,
+            'condition'   => $condition,
+            'state_rooms' => $state_rooms,
+            'location'    => $location,
+            'image'       => isset( $result['MainPhotoUrl'] ) ? $result['MainPhotoUrl'] : ( isset( $basic['MainPhotoURL'] ) ? $basic['MainPhotoURL'] : '' ),
+            'link'        => get_post_type_archive_link( 'yacht' ) . '?vessel_id=' . $id,
+        );
+
+        $vessels[] = $vessel_data;
+    }
+
+    // Collect unique values for filter dropdowns
+    $builders = array();
+    $categories = array();
+    $types = array();
+    $conditions = array();
+    
+    foreach ( $vessels as $vessel ) {
+        if ( ! empty( $vessel['builder'] ) && ! in_array( $vessel['builder'], $builders ) ) {
+            $builders[] = $vessel['builder'];
+        }
+        if ( ! empty( $vessel['category'] ) && ! in_array( $vessel['category'], $categories ) ) {
+            $categories[] = $vessel['category'];
+        }
+        if ( ! empty( $vessel['type'] ) && ! in_array( $vessel['type'], $types ) ) {
+            $types[] = $vessel['type'];
+        }
+        if ( ! empty( $vessel['condition'] ) && ! in_array( $vessel['condition'], $conditions ) ) {
+            $conditions[] = $vessel['condition'];
+        }
+    }
+    sort( $builders );
+    sort( $categories );
+    sort( $types );
+    sort( $conditions );
+
+    if ( empty( $vessels ) ) {
+        $output = '<p>No vessels match your criteria.</p>';
+    } else {
+        $columns = intval( $atts['columns'] );
+        if ( $columns < 1 || $columns > 4 ) {
+            $columns = 3;
+        }
+
+        $column_class = 'yatco-col-' . $columns;
+        $show_price = $atts['show_price'] === 'yes';
+        $show_year  = $atts['show_year'] === 'yes';
+        $show_loa   = $atts['show_loa'] === 'yes';
+        $show_filters = $atts['show_filters'] === 'yes';
+        $currency = strtoupper( $atts['currency'] ) === 'EUR' ? 'EUR' : 'USD';
+        $length_unit = strtoupper( $atts['length_unit'] ) === 'M' ? 'M' : 'FT';
+
+        ob_start();
+        ?>
+        <div class="yatco-vessels-container" data-currency="<?php echo esc_attr( $currency ); ?>" data-length-unit="<?php echo esc_attr( $length_unit ); ?>">
+            <?php if ( $show_filters ) : ?>
+            <div class="yatco-filters">
+                <div class="yatco-filters-row yatco-filters-row-1">
+                    <div class="yatco-filter-group">
+                        <label for="yatco-keywords">Keywords</label>
+                        <input type="text" id="yatco-keywords" class="yatco-filter-input" placeholder="Boat Name, Location, Features" />
+                    </div>
+                    <div class="yatco-filter-group">
+                        <label for="yatco-builder">Builder</label>
+                        <select id="yatco-builder" class="yatco-filter-select">
+                            <option value="">Any</option>
+                            <?php foreach ( $builders as $builder ) : ?>
+                                <option value="<?php echo esc_attr( $builder ); ?>"><?php echo esc_html( $builder ); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="yatco-filter-group">
+                        <label>Year</label>
+                        <div class="yatco-filter-range">
+                            <input type="number" id="yatco-year-min" class="yatco-filter-input yatco-input-small" placeholder="Min" />
+                            <span>-</span>
+                            <input type="number" id="yatco-year-max" class="yatco-filter-input yatco-input-small" placeholder="Max" />
+                        </div>
+                    </div>
+                    <div class="yatco-filter-group">
+                        <label>Length</label>
+                        <div class="yatco-filter-range">
+                            <input type="number" id="yatco-loa-min" class="yatco-filter-input yatco-input-small" placeholder="Min" step="0.1" />
+                            <span>-</span>
+                            <input type="number" id="yatco-loa-max" class="yatco-filter-input yatco-input-small" placeholder="Max" step="0.1" />
+                        </div>
+                        <div class="yatco-filter-toggle">
+                            <button type="button" class="yatco-toggle-btn yatco-ft active" data-unit="FT">FT</button>
+                            <button type="button" class="yatco-toggle-btn yatco-m" data-unit="M">M</button>
+                        </div>
+                    </div>
+                    <div class="yatco-filter-group">
+                        <label>Price</label>
+                        <div class="yatco-filter-range">
+                            <input type="number" id="yatco-price-min" class="yatco-filter-input yatco-input-small" placeholder="Min" step="1" />
+                            <span>-</span>
+                            <input type="number" id="yatco-price-max" class="yatco-filter-input yatco-input-small" placeholder="Max" step="1" />
+                        </div>
+                        <div class="yatco-filter-toggle">
+                            <button type="button" class="yatco-toggle-btn yatco-usd active" data-currency="USD">USD</button>
+                            <button type="button" class="yatco-toggle-btn yatco-eur" data-currency="EUR">EUR</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="yatco-filters-row yatco-filters-row-2">
+                    <div class="yatco-filter-group">
+                        <label for="yatco-condition">Condition</label>
+                        <select id="yatco-condition" class="yatco-filter-select">
+                            <option value="">Any</option>
+                            <?php foreach ( $conditions as $condition ) : ?>
+                                <option value="<?php echo esc_attr( $condition ); ?>"><?php echo esc_html( $condition ); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="yatco-filter-group">
+                        <label for="yatco-type">Type</label>
+                        <select id="yatco-type" class="yatco-filter-select">
+                            <option value="">Any</option>
+                            <?php foreach ( $types as $type ) : ?>
+                                <option value="<?php echo esc_attr( $type ); ?>"><?php echo esc_html( $type ); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="yatco-filter-group">
+                        <label for="yatco-category">Category</label>
+                        <select id="yatco-category" class="yatco-filter-select">
+                            <option value="">Any</option>
+                            <?php foreach ( $categories as $category ) : ?>
+                                <option value="<?php echo esc_attr( $category ); ?>"><?php echo esc_html( $category ); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="yatco-filter-group">
+                        <label for="yatco-cabins">Cabins</label>
+                        <select id="yatco-cabins" class="yatco-filter-select">
+                            <option value="">Any</option>
+                            <option value="1">1+</option>
+                            <option value="2">2+</option>
+                            <option value="3">3+</option>
+                            <option value="4">4+</option>
+                            <option value="5">5+</option>
+                            <option value="6">6+</option>
+                        </select>
+                    </div>
+                    <div class="yatco-filter-group yatco-filter-actions">
+                        <button type="button" id="yatco-search-btn" class="yatco-search-btn">Search</button>
+                        <button type="button" id="yatco-reset-btn" class="yatco-reset-btn">Reset</button>
+                    </div>
+                </div>
+            </div>
+            <div class="yatco-results-header">
+                <span class="yatco-results-count">0 - 0 of <span id="yatco-total-count"><?php echo count( $vessels ); ?></span> YACHTS FOUND</span>
+                <div class="yatco-sort-view">
+                    <label for="yatco-sort">Sort by:</label>
+                    <select id="yatco-sort" class="yatco-sort-select">
+                        <option value="">Pick a sort</option>
+                        <option value="price_asc">Price: Low to High</option>
+                        <option value="price_desc">Price: High to Low</option>
+                        <option value="year_desc">Year: Newest First</option>
+                        <option value="year_asc">Year: Oldest First</option>
+                        <option value="length_desc">Length: Largest First</option>
+                        <option value="length_asc">Length: Smallest First</option>
+                        <option value="name_asc">Name: A to Z</option>
+                    </select>
+                </div>
+            </div>
+            <?php endif; ?>
+            <div class="yatco-vessels-grid <?php echo esc_attr( $column_class ); ?>" id="yatco-vessels-grid">
+            <?php foreach ( $vessels as $vessel ) : ?>
+                <div class="yatco-vessel-card" 
+                     data-name="<?php echo esc_attr( strtolower( $vessel['name'] ) ); ?>"
+                     data-location="<?php echo esc_attr( strtolower( $vessel['location'] ) ); ?>"
+                     data-builder="<?php echo esc_attr( $vessel['builder'] ); ?>"
+                     data-category="<?php echo esc_attr( $vessel['category'] ); ?>"
+                     data-type="<?php echo esc_attr( $vessel['type'] ); ?>"
+                     data-condition="<?php echo esc_attr( $vessel['condition'] ); ?>"
+                     data-year="<?php echo esc_attr( $vessel['year'] ); ?>"
+                     data-loa-feet="<?php echo esc_attr( $vessel['loa_feet'] ); ?>"
+                     data-loa-meters="<?php echo esc_attr( $vessel['loa_meters'] ); ?>"
+                     data-price-usd="<?php echo esc_attr( $vessel['price_usd'] ); ?>"
+                     data-price-eur="<?php echo esc_attr( $vessel['price_eur'] ); ?>"
+                     data-state-rooms="<?php echo esc_attr( $vessel['state_rooms'] ); ?>">
+                    <?php if ( ! empty( $vessel['image'] ) ) : ?>
+                        <div class="yatco-vessel-image">
+                            <img src="<?php echo esc_url( $vessel['image'] ); ?>" alt="<?php echo esc_attr( $vessel['name'] ); ?>" />
+                        </div>
+                    <?php endif; ?>
+                    <div class="yatco-vessel-info">
+                        <h3 class="yatco-vessel-name"><?php echo esc_html( $vessel['name'] ); ?></h3>
+                        <?php if ( ! empty( $vessel['location'] ) ) : ?>
+                            <div class="yatco-vessel-location"><?php echo esc_html( $vessel['location'] ); ?></div>
+                        <?php endif; ?>
+                        <div class="yatco-vessel-details">
+                            <?php 
+                            $display_price = null;
+                            $currency_symbol = '$';
+                            if ( $currency === 'EUR' && ! empty( $vessel['price_eur'] ) ) {
+                                $display_price = $vessel['price_eur'];
+                                $currency_symbol = '€';
+                            } elseif ( ! empty( $vessel['price_usd'] ) ) {
+                                $display_price = $vessel['price_usd'];
+                            }
+                            ?>
+                            <?php if ( $show_price && $display_price ) : ?>
+                                <span class="yatco-vessel-price"><?php echo esc_html( $currency_symbol . number_format( floatval( $display_price ) ) ); ?></span>
+                            <?php endif; ?>
+                            <?php if ( $show_year && ! empty( $vessel['year'] ) ) : ?>
+                                <span class="yatco-vessel-year"><?php echo esc_html( $vessel['year'] ); ?></span>
+                            <?php endif; ?>
+                            <?php 
+                            $display_loa = null;
+                            $loa_unit_text = ' ft';
+                            if ( $length_unit === 'M' && ! empty( $vessel['loa_meters'] ) ) {
+                                $display_loa = $vessel['loa_meters'];
+                                $loa_unit_text = ' m';
+                            } elseif ( ! empty( $vessel['loa_feet'] ) ) {
+                                $display_loa = $vessel['loa_feet'];
+                            }
+                            ?>
+                            <?php if ( $show_loa && $display_loa ) : ?>
+                                <span class="yatco-vessel-loa"><?php echo esc_html( number_format( $display_loa, 1 ) . $loa_unit_text ); ?></span>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+            </div>
+        </div>
+        <style>
+            .yatco-vessels-container {
+                margin: 20px 0;
+            }
+            .yatco-filters {
+                background: #f9f9f9;
+                padding: 20px;
+                border-radius: 8px;
+                margin-bottom: 20px;
+            }
+            .yatco-filters-row {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 15px;
+                margin-bottom: 15px;
+            }
+            .yatco-filters-row-2 {
+                margin-bottom: 0;
+            }
+            .yatco-filter-group {
+                flex: 1;
+                min-width: 150px;
+            }
+            .yatco-filter-group label {
+                display: block;
+                margin-bottom: 5px;
+                font-weight: 600;
+                font-size: 14px;
+                color: #333;
+            }
+            .yatco-filter-input,
+            .yatco-filter-select {
+                width: 100%;
+                padding: 8px 12px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                font-size: 14px;
+            }
+            .yatco-input-small {
+                width: 80px;
+            }
+            .yatco-filter-range {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            .yatco-filter-toggle {
+                display: flex;
+                margin-top: 8px;
+                gap: 0;
+            }
+            .yatco-toggle-btn {
+                padding: 6px 16px;
+                border: 1px solid #0073aa;
+                background: #fff;
+                color: #0073aa;
+                cursor: pointer;
+                font-size: 13px;
+                font-weight: 600;
+                transition: all 0.2s;
+            }
+            .yatco-toggle-btn:first-child {
+                border-top-left-radius: 4px;
+                border-bottom-left-radius: 4px;
+            }
+            .yatco-toggle-btn:last-child {
+                border-top-right-radius: 4px;
+                border-bottom-right-radius: 4px;
+                border-left: none;
+            }
+            .yatco-toggle-btn.active {
+                background: #0073aa;
+                color: #fff;
+            }
+            .yatco-filter-actions {
+                display: flex;
+                align-items: flex-end;
+                gap: 10px;
+            }
+            .yatco-search-btn,
+            .yatco-reset-btn {
+                padding: 10px 24px;
+                border: none;
+                border-radius: 4px;
+                font-size: 14px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.2s;
+            }
+            .yatco-search-btn {
+                background: #0073aa;
+                color: #fff;
+            }
+            .yatco-search-btn:hover {
+                background: #005a87;
+            }
+            .yatco-reset-btn {
+                background: #ddd;
+                color: #333;
+            }
+            .yatco-reset-btn:hover {
+                background: #ccc;
+            }
+            .yatco-results-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 20px;
+                padding: 10px 0;
+            }
+            .yatco-results-count {
+                font-weight: 600;
+                color: #333;
+            }
+            .yatco-sort-view {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            .yatco-sort-select {
+                padding: 6px 12px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+            }
+            .yatco-vessels-grid {
+                display: grid;
+                gap: 20px;
+                margin: 20px 0;
+            }
+            .yatco-vessels-grid.yatco-col-1 { grid-template-columns: 1fr; }
+            .yatco-vessels-grid.yatco-col-2 { grid-template-columns: repeat(2, 1fr); }
+            .yatco-vessels-grid.yatco-col-3 { grid-template-columns: repeat(3, 1fr); }
+            .yatco-vessels-grid.yatco-col-4 { grid-template-columns: repeat(4, 1fr); }
+            .yatco-vessel-card {
+                border: 1px solid #ddd;
+                border-radius: 8px;
+                overflow: hidden;
+                background: #fff;
+                transition: box-shadow 0.3s;
+            }
+            .yatco-vessel-card:hover {
+                box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            }
+            .yatco-vessel-image {
+                width: 100%;
+                padding-top: 75%;
+                position: relative;
+                overflow: hidden;
+                background: #f5f5f5;
+            }
+            .yatco-vessel-image img {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+            }
+            .yatco-vessel-info {
+                padding: 15px;
+            }
+            .yatco-vessel-name {
+                margin: 0 0 10px 0;
+                font-size: 18px;
+                font-weight: 600;
+            }
+            .yatco-vessel-details {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+                font-size: 14px;
+                color: #666;
+            }
+            .yatco-vessel-price {
+                font-weight: 600;
+                color: #0073aa;
+            }
+            @media (max-width: 768px) {
+                .yatco-vessels-grid.yatco-col-2,
+                .yatco-vessels-grid.yatco-col-3,
+                .yatco-vessels-grid.yatco-col-4 {
+                    grid-template-columns: 1fr;
+                }
+                .yatco-filters-row {
+                    flex-direction: column;
+                }
+                .yatco-filter-group {
+                    min-width: 100%;
+                }
+                .yatco-results-header {
+                    flex-direction: column;
+                    align-items: flex-start;
+                    gap: 15px;
+                }
+            }
+        </style>
+        <script>
+        (function() {
+            const container = document.querySelector('.yatco-vessels-container');
+            if (!container) return;
+            
+            const currency = container.dataset.currency || 'USD';
+            const lengthUnit = container.dataset.lengthUnit || 'FT';
+            const allVessels = Array.from(document.querySelectorAll('.yatco-vessel-card'));
+            const grid = document.getElementById('yatco-vessels-grid');
+            const resultsCount = document.querySelector('.yatco-results-count');
+            const totalCount = document.getElementById('yatco-total-count');
+            
+            // Filter elements
+            const keywords = document.getElementById('yatco-keywords');
+            const builder = document.getElementById('yatco-builder');
+            const yearMin = document.getElementById('yatco-year-min');
+            const yearMax = document.getElementById('yatco-year-max');
+            const loaMin = document.getElementById('yatco-loa-min');
+            const loaMax = document.getElementById('yatco-loa-max');
+            const priceMin = document.getElementById('yatco-price-min');
+            const priceMax = document.getElementById('yatco-price-max');
+            const condition = document.getElementById('yatco-condition');
+            const type = document.getElementById('yatco-type');
+            const category = document.getElementById('yatco-category');
+            const cabins = document.getElementById('yatco-cabins');
+            const sort = document.getElementById('yatco-sort');
+            const searchBtn = document.getElementById('yatco-search-btn');
+            const resetBtn = document.getElementById('yatco-reset-btn');
+            
+            // Toggle buttons
+            const lengthBtns = document.querySelectorAll('.yatco-toggle-btn[data-unit]');
+            const currencyBtns = document.querySelectorAll('.yatco-toggle-btn[data-currency]');
+            
+            let currentCurrency = currency;
+            let currentLengthUnit = lengthUnit;
+            
+            function updateToggleButtons() {
+                lengthBtns.forEach(btn => {
+                    btn.classList.toggle('active', btn.dataset.unit === currentLengthUnit);
+                });
+                currencyBtns.forEach(btn => {
+                    btn.classList.toggle('active', btn.dataset.currency === currentCurrency);
+                });
+            }
+            
+            lengthBtns.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    currentLengthUnit = this.dataset.unit;
+                    updateToggleButtons();
+                    filterAndDisplay();
+                });
+            });
+            
+            currencyBtns.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    currentCurrency = this.dataset.currency;
+                    updateToggleButtons();
+                    filterAndDisplay();
+                });
+            });
+            
+            function filterVessels() {
+                const keywordVal = keywords ? keywords.value.toLowerCase() : '';
+                const builderVal = builder ? builder.value : '';
+                const yearMinVal = yearMin ? parseInt(yearMin.value) : null;
+                const yearMaxVal = yearMax ? parseInt(yearMax.value) : null;
+                const loaMinVal = loaMin ? parseFloat(loaMin.value) : null;
+                const loaMaxVal = loaMax ? parseFloat(loaMax.value) : null;
+                const priceMinVal = priceMin ? parseFloat(priceMin.value) : null;
+                const priceMaxVal = priceMax ? parseFloat(priceMax.value) : null;
+                const conditionVal = condition ? condition.value : '';
+                const typeVal = type ? type.value : '';
+                const categoryVal = category ? category.value : '';
+                const cabinsVal = cabins ? parseInt(cabins.value) : null;
+                
+                return allVessels.filter(vessel => {
+                    const name = vessel.dataset.name || '';
+                    const location = vessel.dataset.location || '';
+                    const vesselBuilder = vessel.dataset.builder || '';
+                    const vesselCategory = vessel.dataset.category || '';
+                    const vesselType = vessel.dataset.type || '';
+                    const vesselCondition = vessel.dataset.condition || '';
+                    const year = parseInt(vessel.dataset.year) || 0;
+                    const loaFeet = parseFloat(vessel.dataset.loaFeet) || 0;
+                    const loaMeters = parseFloat(vessel.dataset.loaMeters) || 0;
+                    const priceUsd = parseFloat(vessel.dataset.priceUsd) || 0;
+                    const priceEur = parseFloat(vessel.dataset.priceEur) || 0;
+                    const stateRooms = parseInt(vessel.dataset.stateRooms) || 0;
+                    
+                    // Keywords
+                    if (keywordVal && !name.includes(keywordVal) && !location.includes(keywordVal)) {
+                        return false;
+                    }
+                    
+                    // Builder
+                    if (builderVal && vesselBuilder !== builderVal) {
+                        return false;
+                    }
+                    
+                    // Year
+                    if (yearMinVal && (year === 0 || year < yearMinVal)) {
+                        return false;
+                    }
+                    if (yearMaxVal && (year === 0 || year > yearMaxVal)) {
+                        return false;
+                    }
+                    
+                    // Length
+                    const loa = currentLengthUnit === 'M' ? loaMeters : loaFeet;
+                    if (loaMinVal && (loa === 0 || loa < loaMinVal)) {
+                        return false;
+                    }
+                    if (loaMaxVal && (loa === 0 || loa > loaMaxVal)) {
+                        return false;
+                    }
+                    
+                    // Price
+                    const price = currentCurrency === 'EUR' ? priceEur : priceUsd;
+                    if (priceMinVal && (price === 0 || price < priceMinVal)) {
+                        return false;
+                    }
+                    if (priceMaxVal && (price === 0 || price > priceMaxVal)) {
+                        return false;
+                    }
+                    
+                    // Condition
+                    if (conditionVal && vesselCondition !== conditionVal) {
+                        return false;
+                    }
+                    
+                    // Type
+                    if (typeVal && vesselType !== typeVal) {
+                        return false;
+                    }
+                    
+                    // Category
+                    if (categoryVal && vesselCategory !== categoryVal) {
+                        return false;
+                    }
+                    
+                    // Cabins
+                    if (cabinsVal && stateRooms < cabinsVal) {
+                        return false;
+                    }
+                    
+                    return true;
+                });
+            }
+            
+            function sortVessels(vessels) {
+                const sortVal = sort ? sort.value : '';
+                if (!sortVal) return vessels;
+                
+                return [...vessels].sort((a, b) => {
+                    switch(sortVal) {
+                        case 'price_asc':
+                            const priceA = currentCurrency === 'EUR' ? parseFloat(a.dataset.priceEur || 0) : parseFloat(a.dataset.priceUsd || 0);
+                            const priceB = currentCurrency === 'EUR' ? parseFloat(b.dataset.priceEur || 0) : parseFloat(b.dataset.priceUsd || 0);
+                            return priceA - priceB;
+                        case 'price_desc':
+                            const priceA2 = currentCurrency === 'EUR' ? parseFloat(a.dataset.priceEur || 0) : parseFloat(a.dataset.priceUsd || 0);
+                            const priceB2 = currentCurrency === 'EUR' ? parseFloat(b.dataset.priceEur || 0) : parseFloat(b.dataset.priceUsd || 0);
+                            return priceB2 - priceA2;
+                        case 'year_desc':
+                            return (parseInt(b.dataset.year) || 0) - (parseInt(a.dataset.year) || 0);
+                        case 'year_asc':
+                            return (parseInt(a.dataset.year) || 0) - (parseInt(b.dataset.year) || 0);
+                        case 'length_desc':
+                            const loaA = currentLengthUnit === 'M' ? parseFloat(a.dataset.loaMeters || 0) : parseFloat(a.dataset.loaFeet || 0);
+                            const loaB = currentLengthUnit === 'M' ? parseFloat(b.dataset.loaMeters || 0) : parseFloat(b.dataset.loaFeet || 0);
+                            return loaB - loaA;
+                        case 'length_asc':
+                            const loaA2 = currentLengthUnit === 'M' ? parseFloat(a.dataset.loaMeters || 0) : parseFloat(a.dataset.loaFeet || 0);
+                            const loaB2 = currentLengthUnit === 'M' ? parseFloat(b.dataset.loaMeters || 0) : parseFloat(b.dataset.loaFeet || 0);
+                            return loaA2 - loaB2;
+                        case 'name_asc':
+                            return (a.dataset.name || '').localeCompare(b.dataset.name || '');
+                        default:
+                            return 0;
+                    }
+                });
+            }
+            
+            function filterAndDisplay() {
+                const filtered = filterVessels();
+                const sorted = sortVessels(filtered);
+                
+                // Hide all vessels
+                allVessels.forEach(v => v.style.display = 'none');
+                
+                // Show filtered vessels
+                sorted.forEach(v => {
+                    v.style.display = '';
+                    grid.appendChild(v);
+                });
+                
+                // Update count
+                if (resultsCount) {
+                    const shown = sorted.length;
+                    const total = totalCount ? totalCount.textContent : allVessels.length;
+                    resultsCount.innerHTML = `${shown > 0 ? 1 : 0} - ${shown} of <span id="yatco-total-count">${total}</span> YACHTS FOUND`;
+                }
+            }
+            
+            if (searchBtn) {
+                searchBtn.addEventListener('click', filterAndDisplay);
+            }
+            
+            if (resetBtn) {
+                resetBtn.addEventListener('click', function() {
+                    if (keywords) keywords.value = '';
+                    if (builder) builder.value = '';
+                    if (yearMin) yearMin.value = '';
+                    if (yearMax) yearMax.value = '';
+                    if (loaMin) loaMin.value = '';
+                    if (loaMax) loaMax.value = '';
+                    if (priceMin) priceMin.value = '';
+                    if (priceMax) priceMax.value = '';
+                    if (condition) condition.value = '';
+                    if (type) type.value = '';
+                    if (category) category.value = '';
+                    if (cabins) cabins.value = '';
+                    if (sort) sort.value = '';
+                    currentCurrency = currency;
+                    currentLengthUnit = lengthUnit;
+                    updateToggleButtons();
+                    filterAndDisplay();
+                });
+            }
+            
+            if (sort) {
+                sort.addEventListener('change', filterAndDisplay);
+            }
+            
+            // Initialize
+            updateToggleButtons();
+            filterAndDisplay();
+        })();
+        </script>
+        <?php
+        $output = ob_get_clean();
+    }
+
+    // Cache the output if enabled.
+    if ( $atts['cache'] === 'yes' && isset( $cache_duration ) ) {
+        set_transient( $cache_key, $output, $cache_duration * MINUTE_IN_SECONDS );
+    }
+
+    return $output;
 }
