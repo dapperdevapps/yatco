@@ -133,10 +133,42 @@ function yatco_options_page() {
     echo '<h2>CPT Import Management</h2>';
     echo '<p>Import all vessels into the Yacht Custom Post Type (CPT) for faster queries, better SEO, and individual vessel pages. This may take several minutes for 7000+ vessels.</p>';
     echo '<p><strong>Benefits of CPT import:</strong> Better performance with WP_Query, individual pages per vessel, improved SEO, easier management via WordPress admin.</p>';
-    echo '<form method="post">';
+    
+    // Check if import is running
+    $cache_status = get_transient( 'yatco_cache_warming_status' );
+    $cache_progress = get_transient( 'yatco_cache_warming_progress' );
+    $is_warming_scheduled = wp_next_scheduled( 'yatco_warm_cache_hook' );
+    $is_running = ( $cache_status !== false ) || ( $cache_progress !== false ) || $is_warming_scheduled;
+    
+    // Handle stop import action
+    if ( isset( $_POST['yatco_stop_import'] ) && check_admin_referer( 'yatco_stop_import', 'yatco_stop_import_nonce' ) ) {
+        // Clear scheduled events
+        $scheduled = wp_next_scheduled( 'yatco_warm_cache_hook' );
+        if ( $scheduled ) {
+            wp_unschedule_event( $scheduled, 'yatco_warm_cache_hook' );
+        }
+        wp_clear_scheduled_hook( 'yatco_warm_cache_hook' );
+        
+        // Clear progress and status
+        delete_transient( 'yatco_cache_warming_progress' );
+        delete_transient( 'yatco_cache_warming_status' );
+        
+        echo '<div class="notice notice-success"><p><strong>Import stopped!</strong> All scheduled events have been cleared and progress has been reset.</p></div>';
+        $is_running = false;
+    }
+    
+    echo '<form method="post" style="margin-bottom: 15px;">';
     wp_nonce_field( 'yatco_warm_cache', 'yatco_warm_cache_nonce' );
-    submit_button( 'Import All Vessels to CPT', 'primary', 'yatco_warm_cache' );
+    submit_button( 'Import All Vessels to CPT', 'primary', 'yatco_warm_cache', false, array( 'disabled' => $is_running ? true : false ) );
     echo '</form>';
+    
+    if ( $is_running ) {
+        echo '<form method="post" style="margin-bottom: 15px;">';
+        wp_nonce_field( 'yatco_stop_import', 'yatco_stop_import_nonce' );
+        submit_button( '🛑 Stop Import', 'secondary', 'yatco_stop_import', false, array( 'style' => 'background: #dc3232; border-color: #dc3232; color: #fff;' ) );
+        echo '<p style="font-size: 12px; color: #666; margin: 5px 0;">This will cancel the scheduled import and clear all progress. Vessels already imported to CPT will remain.</p>';
+        echo '</form>';
+    }
     
     // Diagnostic/Troubleshooting Section
     echo '<hr />';
