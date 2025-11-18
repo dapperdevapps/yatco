@@ -177,16 +177,23 @@ function yatco_options_page() {
     // Check if cache warming is in progress
     $cache_status = get_transient( 'yatco_cache_warming_status' );
     $cache_progress = get_transient( 'yatco_cache_warming_progress' );
+    $is_warming_scheduled = wp_next_scheduled( 'yatco_warm_cache_hook' );
     
-    if ( $cache_status || $cache_progress ) {
+    // Show progress tracker if warming is active, scheduled, or has progress
+    if ( $cache_status || $cache_progress || $is_warming_scheduled ) {
         echo '<hr />';
         echo '<h2>Cache Warming Status</h2>';
         echo '<div class="yatco-cache-progress-section">';
         
+        // Show status message
         if ( $cache_status ) {
             echo '<div class="notice notice-info yatco-cache-status"><p class="yatco-cache-status"><strong>Status:</strong> ' . esc_html( $cache_status ) . '</p></div>';
+        } elseif ( $is_warming_scheduled && ! $cache_status ) {
+            // Show starting message if scheduled but no status yet
+            echo '<div class="notice notice-info yatco-cache-status"><p class="yatco-cache-status"><strong>Status:</strong> Cache warming is starting... Please wait for the first batch to complete.</p></div>';
         }
         
+        // Show progress if available
         if ( $cache_progress && is_array( $cache_progress ) ) {
             $progress_info = $cache_progress;
             $last_processed = isset( $progress_info['last_processed'] ) ? intval( $progress_info['last_processed'] ) : 0;
@@ -227,9 +234,35 @@ function yatco_options_page() {
                 
                 echo '<p style="margin-top: 10px; font-size: 12px; color: #666;"><em>🟢 Live updates every 2 seconds. If the process was interrupted, it will resume from where it left off on the next run.</em></p>';
                 echo '</div>';
-                
-                // Add CSS animations
-                echo '<style>
+            } else {
+                // Show initial state while waiting for first batch
+                echo '<div class="notice notice-warning yatco-live-progress-container">';
+                echo '<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">';
+                echo '<span class="yatco-live-indicator" style="display: inline-block; width: 12px; height: 12px; background-color: #46b450; border-radius: 50%; animation: yatco-pulse 2s infinite;"></span>';
+                echo '<p style="margin: 0; flex: 1;"><strong>Status:</strong> Cache warming is initializing... Waiting for first batch to complete.</p>';
+                echo '</div>';
+                echo '<div class="yatco-progress-bar-container" style="width: 100%; background-color: #f0f0f0; border-radius: 4px; height: 35px; margin: 15px 0; overflow: hidden; position: relative; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);">';
+                echo '<div class="yatco-progress-bar-fill" style="width: 0%; background: linear-gradient(90deg, #0073aa 0%, #005a87 50%, #0073aa 100%); background-size: 200% 100%; height: 100%; transition: width 0.5s ease; display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 13px; text-shadow: 0 1px 2px rgba(0,0,0,0.3); animation: yatco-progress-shimmer 2s infinite;">0%</div>';
+                echo '</div>';
+                echo '<p style="margin-top: 10px; font-size: 12px; color: #666;"><em>🟢 Live updates every 2 seconds. Progress will appear once the first batch (20 vessels) is processed.</em></p>';
+                echo '</div>';
+            }
+        } elseif ( $is_warming_scheduled && ! $cache_progress ) {
+            // Show initial state if warming is scheduled but no progress yet
+            echo '<div class="notice notice-warning yatco-live-progress-container">';
+            echo '<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">';
+            echo '<span class="yatco-live-indicator" style="display: inline-block; width: 12px; height: 12px; background-color: #46b450; border-radius: 50%; animation: yatco-pulse 2s infinite;"></span>';
+            echo '<p style="margin: 0; flex: 1;"><strong>Status:</strong> Cache warming is initializing... Waiting for first batch to complete.</p>';
+            echo '</div>';
+            echo '<div class="yatco-progress-bar-container" style="width: 100%; background-color: #f0f0f0; border-radius: 4px; height: 35px; margin: 15px 0; overflow: hidden; position: relative; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);">';
+            echo '<div class="yatco-progress-bar-fill" style="width: 0%; background: linear-gradient(90deg, #0073aa 0%, #005a87 50%, #0073aa 100%); background-size: 200% 100%; height: 100%; transition: width 0.5s ease; display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 13px; text-shadow: 0 1px 2px rgba(0,0,0,0.3); animation: yatco-progress-shimmer 2s infinite;">0%</div>';
+            echo '</div>';
+            echo '<p style="margin-top: 10px; font-size: 12px; color: #666;"><em>🟢 Live updates every 2 seconds. Progress will appear once the first batch (20 vessels) is processed.</em></p>';
+            echo '</div>';
+        }
+        
+        // Add CSS animations
+        echo '<style>
                 @keyframes yatco-pulse {
                     0%, 100% { opacity: 1; transform: scale(1); }
                     50% { opacity: 0.5; transform: scale(1.2); }
@@ -285,7 +318,7 @@ function yatco_options_page() {
     echo '</form>';
 
     // Add auto-refresh JavaScript for cache warming status
-    if ( $cache_status || $cache_progress ) {
+    if ( $cache_status || $cache_progress || $is_warming_scheduled ) {
         ?>
         <script>
         (function() {
