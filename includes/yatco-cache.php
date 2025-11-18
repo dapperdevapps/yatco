@@ -64,17 +64,20 @@ function yatco_warm_cache_function() {
     $progress = get_transient( $cache_key_progress );
     $start_from = 0;
     $cached_partial = array();
+    $start_time = time();
     
     if ( $progress !== false && is_array( $progress ) ) {
         $start_from = isset( $progress['last_processed'] ) ? intval( $progress['last_processed'] ) : 0;
         $cached_partial = isset( $progress['vessels'] ) && is_array( $progress['vessels'] ) ? $progress['vessels'] : array();
+        $start_time = isset( $progress['start_time'] ) ? intval( $progress['start_time'] ) : time();
         $ids = array_slice( $ids, $start_from );
         $vessels = $cached_partial;
     } else {
         $vessels = array();
+        $start_time = time();
     }
     
-    $batch_size = 50; // Process 50 at a time
+    $batch_size = 20; // Process 20 at a time
     $processed = 0;
     $errors = 0;
     $batch_num = 0;
@@ -93,6 +96,7 @@ function yatco_warm_cache_function() {
                 'total'         => $vessel_count,
                 'processed'     => count( $vessels ),
                 'vessels'       => $vessels,
+                'start_time'    => $start_time,
                 'timestamp'     => time(),
             );
             set_transient( $cache_key_progress, $progress_data, 3600 );
@@ -210,6 +214,9 @@ function yatco_warm_cache_function() {
     set_transient( 'yatco_vessels_types', $types, $cache_duration * MINUTE_IN_SECONDS );
     set_transient( 'yatco_vessels_conditions', $conditions, $cache_duration * MINUTE_IN_SECONDS );
     
+    // Calculate daily statistics (added, removed, updated)
+    yatco_calculate_daily_stats( $vessels );
+    
     // Clear progress after successful completion
     delete_transient( $cache_key_progress );
     
@@ -219,6 +226,127 @@ function yatco_warm_cache_function() {
         $success_msg .= " ({$errors} errors)";
     }
     update_transient( 'yatco_cache_warming_status', $success_msg, 300 );
+}
+
+/**
+ * Calculate daily statistics by comparing current vessel list with previous day's list.
+ */
+function yatco_calculate_daily_stats( $current_vessels ) {
+    $today = date( 'Y-m-d' );
+    $yesterday = date( 'Y-m-d', strtotime( '-1 day' ) );
+    
+    // Get current vessel IDs
+    $current_ids = array();
+    foreach ( $current_vessels as $vessel ) {
+        if ( ! empty( $vessel['id'] ) ) {
+            $current_ids[] = intval( $vessel['id'] );
+        }
+    }
+    $current_ids = array_unique( $current_ids );
+    sort( $current_ids );
+    
+    // Get yesterday's vessel IDs
+    $yesterday_stats = get_option( 'yatco_daily_stats_' . $yesterday, array() );
+    $yesterday_ids = isset( $yesterday_stats['vessel_ids'] ) && is_array( $yesterday_stats['vessel_ids'] ) ? $yesterday_stats['vessel_ids'] : array();
+    
+    // Get today's existing stats (if any)
+    $today_stats = get_option( 'yatco_daily_stats_' . $today, array() );
+    
+    // Calculate differences
+    $added = array_diff( $current_ids, $yesterday_ids );
+    $removed = array_diff( $yesterday_ids, $current_ids );
+    
+    // Calculate updated (vessels that exist in both but may have changed)
+    // For simplicity, we'll count vessels that exist in both as potentially updated
+    // In a more sophisticated system, we could compare hash values or timestamps
+    $existing = array_intersect( $current_ids, $yesterday_ids );
+    
+    // Store today's stats
+    $stats = array(
+        'date'       => $today,
+        'total'      => count( $current_ids ),
+        'added'      => count( $added ),
+        'removed'    => count( $removed ),
+        'updated'    => count( $existing ), // Simplified: count existing as potentially updated
+        'vessel_ids' => $current_ids,
+        'timestamp'  => time(),
+    );
+    
+    // Update existing stats if already exists (for multiple cache refreshes per day)
+    if ( ! empty( $today_stats ) && is_array( $today_stats ) ) {
+        // Increment added/removed counts
+        $prev_added = isset( $today_stats['added'] ) ? intval( $today_stats['added'] ) : 0;
+        $prev_removed = isset( $today_stats['removed'] ) ? intval( $today_stats['removed'] ) : 0;
+        
+        // Only count new additions/removals since last check
+        $prev_ids = isset( $today_stats['vessel_ids'] ) && is_array( $today_stats['vessel_ids'] ) ? $today_stats['vessel_ids'] : array();
+        $new_added = array_diff( $current_ids, $prev_ids );
+        $new_removed = array_diff( $prev_ids, $current_ids );
+        
+        $stats['added'] = $prev_added + count( $new_added );
+        $stats['removed'] = $prev_removed + count( $new_removed );
+    }
+    
+    update_option( 'yatco_daily_stats_' . $today, $stats );
+    
+    // Clean up old stats (keep last 30 days)
+    yatco_cleanup_old_stats();
+}
+
+/**
+ * Get daily statistics for display.
+ */
+function yatco_get_daily_stats( $days = 7 ) {
+    $stats = array();
+    $today = date( 'Y-m-d' );
+    
+    for ( $i = 0; $i < $days; $i++ ) {
+        $date = date( 'Y-m-d', strtotime( "-{$i} days" ) );
+        $day_stats = get_option( 'yatco_daily_stats_' . $date, null );
+        
+        if ( $day_stats !== null && is_array( $day_stats ) ) {
+            $stats[ $date ] = array(
+                'total'   => isset( $day_stats['total'] ) ? intval( $day_stats['total'] ) : 0,
+                'added'   => isset( $day_stats['added'] ) ? intval( $day_stats['added'] ) : 0,
+                'removed' => isset( $day_stats['removed'] ) ? intval( $day_stats['removed'] ) : 0,
+                'updated' => isset( $day_stats['updated'] ) ? intval( $day_stats['updated'] ) : 0,
+            );
+        }
+    }
+    
+    return $stats;
+}
+
+/**
+ * Clean up old daily statistics (keep last 30 days).
+ */
+function yatco_cleanup_old_stats() {
+    global $wpdb;
+    
+    // Delete stats older than 30 days
+    $cutoff_date = date( 'Y-m-d', strtotime( '-30 days' ) );
+    $cutoff_timestamp = strtotime( $cutoff_date );
+    
+    $stats = $wpdb->get_results(
+        $wpdb->prepare(
+            "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s",
+            'yatco_daily_stats_%'
+        ),
+        ARRAY_A
+    );
+    
+    foreach ( $stats as $stat ) {
+        $option_name = $stat['option_name'];
+        // Extract date from option name (format: yatco_daily_stats_YYYY-MM-DD)
+        if ( preg_match( '/yatco_daily_stats_(\d{4}-\d{2}-\d{2})/', $option_name, $matches ) ) {
+            $stat_date = $matches[1];
+            $stat_timestamp = strtotime( $stat_date );
+            
+            if ( $stat_timestamp < $cutoff_timestamp ) {
+                delete_option( $option_name );
+            }
+        }
+    }
 }
 
 /**

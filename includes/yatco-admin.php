@@ -152,7 +152,7 @@ function yatco_options_page() {
             spawn_cron();
             
             echo '<div class="notice notice-info"><p><strong>Cache warming started!</strong> This will run in the background and may take several minutes for 7000+ vessels.</p>';
-            echo '<p>The system processes vessels in batches of 50 to prevent timeouts. Progress is saved automatically, so if interrupted, it will resume from where it left off.</p></div>';
+            echo '<p>The system processes vessels in batches of 20 to prevent timeouts. Progress is saved automatically, so if interrupted, it will resume from where it left off.</p></div>';
         }
     }
     
@@ -178,20 +178,77 @@ function yatco_options_page() {
     $cache_status = get_transient( 'yatco_cache_warming_status' );
     $cache_progress = get_transient( 'yatco_cache_warming_progress' );
     
-    if ( $cache_status ) {
-        echo '<div class="notice notice-info"><p><strong>Cache Status:</strong> ' . esc_html( $cache_status ) . '</p></div>';
+    if ( $cache_status || $cache_progress ) {
+        echo '<hr />';
+        echo '<h2>Cache Warming Status</h2>';
+        echo '<div class="yatco-cache-progress-section">';
+        
+        if ( $cache_status ) {
+            echo '<div class="notice notice-info yatco-cache-status"><p class="yatco-cache-status"><strong>Status:</strong> ' . esc_html( $cache_status ) . '</p></div>';
+        }
+        
+        if ( $cache_progress && is_array( $cache_progress ) ) {
+            $progress_info = $cache_progress;
+            $last_processed = isset( $progress_info['last_processed'] ) ? intval( $progress_info['last_processed'] ) : 0;
+            $total = isset( $progress_info['total'] ) ? intval( $progress_info['total'] ) : 0;
+            $cached = isset( $progress_info['processed'] ) ? intval( $progress_info['processed'] ) : 0;
+            $start_time = isset( $progress_info['start_time'] ) ? intval( $progress_info['start_time'] ) : time();
+            $current_time = time();
+            $elapsed = $current_time - $start_time;
+            
+            if ( $total > 0 ) {
+                $percent = round( ( $last_processed / $total ) * 100, 1 );
+                $remaining = $total - $last_processed;
+                $avg_time_per_vessel = $last_processed > 0 ? $elapsed / $last_processed : 0;
+                $estimated_remaining = $remaining * $avg_time_per_vessel;
+                $estimated_remaining_formatted = $estimated_remaining > 0 ? human_time_diff( $current_time, $current_time + $estimated_remaining ) : 'calculating...';
+                
+                echo '<div class="notice notice-warning">';
+                echo '<p class="yatco-progress-text"><strong>Progress:</strong> Processed ' . number_format( $last_processed ) . ' of ' . number_format( $total ) . ' vessels (' . $percent . '%). ' . number_format( $cached ) . ' vessels cached so far.</p>';
+                
+                // Progress bar
+                echo '<div style="width: 100%; background-color: #f0f0f0; border-radius: 4px; height: 30px; margin: 10px 0; overflow: hidden; position: relative;">';
+                echo '<div class="yatco-progress-bar-fill" style="width: ' . esc_attr( $percent ) . '%; background: linear-gradient(90deg, #0073aa 0%, #005a87 100%); height: 100%; transition: width 0.3s ease; display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 12px;">' . esc_html( $percent ) . '%</div>';
+                echo '</div>';
+                
+                if ( $elapsed > 0 && $last_processed > 0 ) {
+                    $rate = $last_processed / $elapsed;
+                    echo '<p class="yatco-progress-stats"><strong>Rate:</strong> ' . number_format( $rate, 1 ) . ' vessels/second | <strong>Elapsed:</strong> ' . human_time_diff( $start_time, $current_time ) . ' | <strong>Estimated Remaining:</strong> ' . $estimated_remaining_formatted . '</p>';
+                }
+                
+                echo '<p><em>Status updates automatically every 5 seconds. If the process was interrupted, it will resume from where it left off on the next run.</em></p>';
+                echo '</div>';
+            }
+        }
+        
+        echo '</div>';
     }
     
-    if ( $cache_progress && is_array( $cache_progress ) ) {
-        $progress_info = $cache_progress;
-        $last_processed = isset( $progress_info['last_processed'] ) ? intval( $progress_info['last_processed'] ) : 0;
-        $total = isset( $progress_info['total'] ) ? intval( $progress_info['total'] ) : 0;
-        $cached = isset( $progress_info['processed'] ) ? intval( $progress_info['processed'] ) : 0;
-        if ( $total > 0 ) {
-            $percent = round( ( $last_processed / $total ) * 100, 1 );
-            echo '<div class="notice notice-warning"><p><strong>Progress:</strong> Processed ' . number_format( $last_processed ) . ' of ' . number_format( $total ) . ' vessels (' . $percent . '%). ' . number_format( $cached ) . ' vessels cached so far.</p>';
-            echo '<p>If the process was interrupted, it will resume from where it left off on the next run.</p></div>';
+    // Daily Statistics Section
+    echo '<hr />';
+    echo '<h2>Daily Statistics</h2>';
+    $daily_stats = yatco_get_daily_stats();
+    if ( $daily_stats ) {
+        echo '<div style="background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 15px; margin: 10px 0;">';
+        echo '<table class="widefat" style="margin: 0;">';
+        echo '<thead><tr><th>Date</th><th>Total Vessels</th><th>Added</th><th>Removed</th><th>Updated</th></tr></thead>';
+        echo '<tbody>';
+        foreach ( $daily_stats as $date => $stats ) {
+            $added_class = $stats['added'] > 0 ? 'style="color: #46b450; font-weight: 600;"' : '';
+            $removed_class = $stats['removed'] > 0 ? 'style="color: #dc3232; font-weight: 600;"' : '';
+            $updated_class = $stats['updated'] > 0 ? 'style="color: #0073aa; font-weight: 600;"' : '';
+            echo '<tr>';
+            echo '<td><strong>' . esc_html( $date ) . '</strong></td>';
+            echo '<td>' . number_format( $stats['total'] ) . '</td>';
+            echo '<td ' . $added_class . '>+' . number_format( $stats['added'] ) . '</td>';
+            echo '<td ' . $removed_class . '>-' . number_format( $stats['removed'] ) . '</td>';
+            echo '<td ' . $updated_class . '>' . number_format( $stats['updated'] ) . '</td>';
+            echo '</tr>';
         }
+        echo '</tbody></table>';
+        echo '</div>';
+    } else {
+        echo '<p>No daily statistics available yet. Statistics will be generated after the first cache warming completes.</p>';
     }
     
     // Clear cache button
@@ -200,8 +257,150 @@ function yatco_options_page() {
     submit_button( 'Clear Cache', 'secondary', 'yatco_clear_cache' );
     echo '</form>';
 
+    // Add auto-refresh JavaScript for cache warming status
+    if ( $cache_status || $cache_progress ) {
+        ?>
+        <script>
+        (function() {
+            // Auto-refresh progress every 5 seconds if warming is in progress
+            let refreshInterval = setInterval(function() {
+                const progressDiv = document.querySelector('.yatco-cache-progress-section');
+                if (progressDiv) {
+                    // Reload only the cache warming status section via AJAX
+                    fetch('<?php echo admin_url( 'admin-ajax.php' ); ?>?action=yatco_get_cache_status&nonce=<?php echo wp_create_nonce( 'yatco_cache_status' ); ?>', {
+                        method: 'GET',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success && data.data) {
+                            const responseData = data.data;
+                            
+                            // Update status
+                            if (responseData.status) {
+                                const statusEl = document.querySelector('.yatco-cache-status');
+                                if (statusEl) {
+                                    statusEl.innerHTML = '<strong>Status:</strong> ' + responseData.status;
+                                }
+                            }
+                            
+                            // Update progress
+                            if (responseData.progress && responseData.progress.total > 0) {
+                                const percent = Math.round((responseData.progress.last_processed / responseData.progress.total) * 100 * 10) / 10;
+                                const progressBar = document.querySelector('.yatco-progress-bar-fill');
+                                if (progressBar) {
+                                    progressBar.style.width = percent + '%';
+                                    progressBar.textContent = percent + '%';
+                                }
+                                
+                                const progressText = document.querySelector('.yatco-progress-text');
+                                if (progressText) {
+                                    progressText.innerHTML = '<strong>Progress:</strong> ' + 
+                                        responseData.progress.last_processed.toLocaleString() + ' of ' + 
+                                        responseData.progress.total.toLocaleString() + ' vessels (' + percent + '%). ' + 
+                                        responseData.progress.processed.toLocaleString() + ' vessels cached so far.';
+                                }
+                                
+                                const progressStats = document.querySelector('.yatco-progress-stats');
+                                if (progressStats && responseData.progress.rate) {
+                                    progressStats.innerHTML = '<strong>Rate:</strong> ' + 
+                                        parseFloat(responseData.progress.rate).toFixed(1) + ' vessels/second | ' +
+                                        '<strong>Elapsed:</strong> ' + responseData.progress.elapsed + ' | ' +
+                                        '<strong>Estimated Remaining:</strong> ' + responseData.progress.estimated_remaining;
+                                }
+                            }
+                            
+                            // Stop refreshing if cache warming is complete
+                            if (responseData.status && responseData.status.includes('successfully')) {
+                                clearInterval(refreshInterval);
+                                // Reload page after 2 seconds to show final state
+                                setTimeout(function() {
+                                    window.location.reload();
+                                }, 2000);
+                            }
+                        } else {
+                            // No warming in progress, stop refreshing
+                            clearInterval(refreshInterval);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error refreshing cache status:', error);
+                    });
+                } else {
+                    // Progress section removed, stop refreshing
+                    clearInterval(refreshInterval);
+                }
+            }, 5000); // Refresh every 5 seconds
+            
+            // Stop refreshing when page is hidden
+            document.addEventListener('visibilitychange', function() {
+                if (document.hidden) {
+                    clearInterval(refreshInterval);
+                } else {
+                    // Restart when page becomes visible again
+                    location.reload();
+                }
+            });
+        })();
+        </script>
+        <?php
+    }
+    
     echo '</div>';
 }
+
+/**
+ * AJAX handler for cache warming status (auto-refresh).
+ */
+function yatco_ajax_get_cache_status() {
+    check_ajax_referer( 'yatco_cache_status', 'nonce' );
+    
+    if ( ! current_user_can( 'manage_options' ) ) {
+        wp_send_json_error( array( 'message' => 'Unauthorized' ) );
+        return;
+    }
+    
+    $cache_status = get_transient( 'yatco_cache_warming_status' );
+    $cache_progress = get_transient( 'yatco_cache_warming_progress' );
+    
+    $response = array();
+    
+    if ( $cache_status ) {
+        $response['status'] = $cache_status;
+    }
+    
+    if ( $cache_progress && is_array( $cache_progress ) ) {
+        $last_processed = isset( $cache_progress['last_processed'] ) ? intval( $cache_progress['last_processed'] ) : 0;
+        $total = isset( $cache_progress['total'] ) ? intval( $cache_progress['total'] ) : 0;
+        $processed = isset( $cache_progress['processed'] ) ? intval( $cache_progress['processed'] ) : 0;
+        $start_time = isset( $cache_progress['start_time'] ) ? intval( $cache_progress['start_time'] ) : time();
+        $current_time = time();
+        $elapsed = $current_time - $start_time;
+        
+        $response['progress'] = array(
+            'last_processed' => $last_processed,
+            'total'         => $total,
+            'processed'     => $processed,
+            'percent'       => $total > 0 ? round( ( $last_processed / $total ) * 100, 1 ) : 0,
+        );
+        
+        if ( $elapsed > 0 && $last_processed > 0 ) {
+            $rate = $last_processed / $elapsed;
+            $remaining = $total - $last_processed;
+            $avg_time_per_vessel = $elapsed / $last_processed;
+            $estimated_remaining = $remaining * $avg_time_per_vessel;
+            
+            $response['progress']['rate'] = number_format( $rate, 1 );
+            $response['progress']['elapsed'] = human_time_diff( $start_time, $current_time );
+            $response['progress']['estimated_remaining'] = $estimated_remaining > 0 ? human_time_diff( $current_time, $current_time + $estimated_remaining ) : 'calculating...';
+        }
+    }
+    
+    wp_send_json_success( $response );
+}
+add_action( 'wp_ajax_yatco_get_cache_status', 'yatco_ajax_get_cache_status' );
 
 /**
  * Import page (Yachts → YATCO Import).

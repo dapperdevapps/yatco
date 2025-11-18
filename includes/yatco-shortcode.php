@@ -322,11 +322,41 @@ function yatco_vessels_shortcode( $atts ) {
             return yatco_generate_vessels_html_from_data( $filtered_vessels, $builders, $categories, $types, $conditions, $atts );
         }
         
+        // Check if cache is currently warming - show message if so
+        $cache_status = get_transient( 'yatco_cache_warming_status' );
+        $cache_progress = get_transient( 'yatco_cache_warming_progress' );
+        $is_warming = ( $cache_status !== false ) || ( $cache_progress !== false );
+        
+        if ( $is_warming ) {
+            // Check if we have partial cached data from warming progress
+            if ( $cache_progress !== false && is_array( $cache_progress ) ) {
+                $partial_vessels = isset( $cache_progress['vessels'] ) && is_array( $cache_progress['vessels'] ) ? $cache_progress['vessels'] : array();
+                if ( ! empty( $partial_vessels ) ) {
+                    // Use partial data while warming completes
+                    $builders = $cached_builders !== false ? $cached_builders : array();
+                    $categories = $cached_categories !== false ? $cached_categories : array();
+                    $types = $cached_types !== false ? $cached_types : array();
+                    $conditions = $cached_conditions !== false ? $cached_conditions : array();
+                    
+                    $output = yatco_generate_vessels_html_from_data( $partial_vessels, $builders, $categories, $types, $conditions, $atts );
+                    $status_msg = esc_html( $cache_status ? $cache_status : 'Cache is being warmed...' );
+                    return '<div class="yatco-cache-warming-notice" style="padding: 15px; background: #fff3cd; border-left: 4px solid #ffc107; margin-bottom: 20px;"><strong>Note:</strong> ' . $status_msg . ' Showing partial results (' . count( $partial_vessels ) . ' vessels loaded so far). Please refresh the page once warming completes.</div>' . $output;
+                }
+            }
+            
+            // Show warming message
+            $status_msg = esc_html( $cache_status ? $cache_status : 'Cache is being warmed in the background' );
+            return '<div class="yatco-cache-warming-notice" style="padding: 15px; background: #fff3cd; border-left: 4px solid #ffc107; margin: 20px 0;"><p><strong>Cache Warming in Progress</strong></p><p>' . $status_msg . '</p><p>Vessels will appear once the cache is complete. This may take several minutes for 7000+ vessels.</p><p><em>Tip: You can temporarily use <code>cache="no"</code> in the shortcode to load vessels directly from the API while cache is warming.</em></p></div>';
+        }
+        
         // Fallback to full cached HTML output
         $cached = get_transient( $cache_key );
         if ( $cached !== false ) {
             return $cached;
         }
+        
+        // If cache is enabled but not available and not warming, fall through to fetch from API
+        // This ensures the shortcode still works even if cache hasn't been warmed yet
     }
 
     // Fetch all active vessel IDs (set to 0 to get all, or use a high limit like 10000)
@@ -380,7 +410,7 @@ function yatco_vessels_shortcode( $atts ) {
     }
     
     // Process in batches to avoid memory issues
-    $batch_size = 50; // Process 50 at a time
+    $batch_size = 20; // Process 20 at a time
     $total_to_process = count( $ids );
     $batch_num = 0;
     
