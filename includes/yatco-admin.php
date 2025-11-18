@@ -147,7 +147,9 @@ function yatco_options_page() {
             delete_transient( 'yatco_cache_warming_status' );
             
             // Set initial status immediately so user sees feedback
-            update_transient( 'yatco_cache_warming_status', 'Starting cache warm-up...', 600 );
+            if ( function_exists( 'set_transient' ) ) {
+                set_transient( 'yatco_cache_warming_status', 'Starting cache warm-up...', 600 );
+            }
             
             // Trigger async cache warming via WP-Cron
             wp_schedule_single_event( time(), 'yatco_warm_cache_hook' );
@@ -539,7 +541,9 @@ function yatco_ajax_trigger_cache_warming() {
     }
     
     // Set initial status
-    update_transient( 'yatco_cache_warming_status', 'Starting cache warm-up...', 600 );
+    if ( function_exists( 'set_transient' ) ) {
+        set_transient( 'yatco_cache_warming_status', 'Starting cache warm-up...', 600 );
+    }
     
     // Trigger cache warming function
     if ( function_exists( 'yatco_warm_cache_function' ) ) {
