@@ -112,59 +112,36 @@ function yatco_warm_cache_function() {
             @set_time_limit( 0 );
         }
 
-        $full = yatco_fetch_fullspecs( $token, $id );
-        if ( is_wp_error( $full ) ) {
+        // Import vessel to CPT instead of just caching in transients
+        $import_result = yatco_import_single_vessel( $token, $id );
+        if ( is_wp_error( $import_result ) ) {
             $errors++;
             continue;
         }
-
-        $brief = yatco_build_brief_from_fullspecs( $id, $full );
-
-        // Get full specs for display
-        $result = isset( $full['Result'] ) ? $full['Result'] : array();
-        $basic  = isset( $full['BasicInfo'] ) ? $full['BasicInfo'] : array();
         
-        // Get builder, category, type, condition
-        $builder = isset( $basic['Builder'] ) ? $basic['Builder'] : ( isset( $result['BuilderName'] ) ? $result['BuilderName'] : '' );
-        $category = isset( $basic['MainCategory'] ) ? $basic['MainCategory'] : ( isset( $result['MainCategoryText'] ) ? $result['MainCategoryText'] : '' );
-        $type = isset( $basic['VesselTypeText'] ) ? $basic['VesselTypeText'] : ( isset( $result['VesselTypeText'] ) ? $result['VesselTypeText'] : '' );
-        $condition = isset( $result['VesselCondition'] ) ? $result['VesselCondition'] : '';
-        $state_rooms = isset( $basic['StateRooms'] ) ? intval( $basic['StateRooms'] ) : ( isset( $result['StateRooms'] ) ? intval( $result['StateRooms'] ) : 0 );
-        $location = isset( $basic['LocationCustom'] ) ? $basic['LocationCustom'] : '';
+        $post_id = $import_result;
         
-        // Get LOA in feet and meters
-        $loa_feet = isset( $result['LOAFeet'] ) && $result['LOAFeet'] > 0 ? floatval( $result['LOAFeet'] ) : null;
-        $loa_meters = isset( $result['LOAMeters'] ) && $result['LOAMeters'] > 0 ? floatval( $result['LOAMeters'] ) : null;
-        if ( ! $loa_meters && $loa_feet ) {
-            $loa_meters = $loa_feet * 0.3048;
-        }
-        
-        // Get price in USD and EUR
-        $price_usd = isset( $basic['AskingPriceUSD'] ) && $basic['AskingPriceUSD'] > 0 ? floatval( $basic['AskingPriceUSD'] ) : null;
-        if ( ! $price_usd && isset( $result['AskingPriceCompare'] ) && $result['AskingPriceCompare'] > 0 ) {
-            $price_usd = floatval( $result['AskingPriceCompare'] );
-        }
-        
-        $price_eur = isset( $basic['AskingPrice'] ) && $basic['AskingPrice'] > 0 && isset( $basic['Currency'] ) && $basic['Currency'] === 'EUR' ? floatval( $basic['AskingPrice'] ) : null;
-        
+        // Get vessel data from post meta for progress tracking
+        $vessel_name = get_the_title( $post_id );
         $vessel_data = array(
             'id'          => $id,
-            'name'        => $brief['Name'],
-            'price'       => $brief['Price'],
-            'price_usd'   => $price_usd,
-            'price_eur'   => $price_eur,
-            'year'        => $brief['Year'],
-            'loa'         => $brief['LOA'],
-            'loa_feet'    => $loa_feet,
-            'loa_meters'  => $loa_meters,
-            'builder'     => $builder,
-            'category'    => $category,
-            'type'        => $type,
-            'condition'   => $condition,
-            'state_rooms' => $state_rooms,
-            'location'    => $location,
-            'image'       => isset( $result['MainPhotoUrl'] ) ? $result['MainPhotoUrl'] : ( isset( $basic['MainPhotoURL'] ) ? $basic['MainPhotoURL'] : '' ),
-            'link'        => get_post_type_archive_link( 'yacht' ) . '?vessel_id=' . $id,
+            'post_id'     => $post_id,
+            'name'        => $vessel_name,
+            'price'       => get_post_meta( $post_id, 'yacht_price', true ),
+            'price_usd'   => get_post_meta( $post_id, 'yacht_price_usd', true ),
+            'price_eur'   => get_post_meta( $post_id, 'yacht_price_eur', true ),
+            'year'        => get_post_meta( $post_id, 'yacht_year', true ),
+            'loa'         => get_post_meta( $post_id, 'yacht_length', true ),
+            'loa_feet'    => get_post_meta( $post_id, 'yacht_length_feet', true ),
+            'loa_meters'  => get_post_meta( $post_id, 'yacht_length_meters', true ),
+            'builder'     => get_post_meta( $post_id, 'yacht_make', true ),
+            'category'    => get_post_meta( $post_id, 'yacht_category', true ),
+            'type'        => get_post_meta( $post_id, 'yacht_type', true ),
+            'condition'   => get_post_meta( $post_id, 'yacht_condition', true ),
+            'state_rooms' => get_post_meta( $post_id, 'yacht_state_rooms', true ),
+            'location'    => get_post_meta( $post_id, 'yacht_location', true ),
+            'image'       => get_post_meta( $post_id, 'yacht_image_url', true ),
+            'link'        => get_permalink( $post_id ),
         );
 
         $vessels[] = $vessel_data;
@@ -205,56 +182,86 @@ function yatco_warm_cache_function() {
         }
     }
 
-    // Collect unique values for filter dropdowns
-    $builders = array();
-    $categories = array();
-    $types = array();
-    $conditions = array();
-    
+    // Calculate daily statistics (added, removed, updated) using CPT posts
+    $all_vessel_ids = array();
     foreach ( $vessels as $vessel ) {
-        if ( ! empty( $vessel['builder'] ) && ! in_array( $vessel['builder'], $builders ) ) {
-            $builders[] = $vessel['builder'];
-        }
-        if ( ! empty( $vessel['category'] ) && ! in_array( $vessel['category'], $categories ) ) {
-            $categories[] = $vessel['category'];
-        }
-        if ( ! empty( $vessel['type'] ) && ! in_array( $vessel['type'], $types ) ) {
-            $types[] = $vessel['type'];
-        }
-        if ( ! empty( $vessel['condition'] ) && ! in_array( $vessel['condition'], $conditions ) ) {
-            $conditions[] = $vessel['condition'];
+        if ( ! empty( $vessel['id'] ) ) {
+            $all_vessel_ids[] = intval( $vessel['id'] );
         }
     }
-    sort( $builders );
-    sort( $categories );
-    sort( $types );
-    sort( $conditions );
-
-    // Get options for cache duration
-    $options = get_option( 'yatco_api_settings' );
-    $cache_duration = isset( $options['yatco_cache_duration'] ) ? intval( $options['yatco_cache_duration'] ) : 30;
-    
-    // Cache vessel data for fast retrieval
-    set_transient( 'yatco_vessels_data', $vessels, $cache_duration * MINUTE_IN_SECONDS );
-    set_transient( 'yatco_vessels_builders', $builders, $cache_duration * MINUTE_IN_SECONDS );
-    set_transient( 'yatco_vessels_categories', $categories, $cache_duration * MINUTE_IN_SECONDS );
-    set_transient( 'yatco_vessels_types', $types, $cache_duration * MINUTE_IN_SECONDS );
-    set_transient( 'yatco_vessels_conditions', $conditions, $cache_duration * MINUTE_IN_SECONDS );
-    
-    // Calculate daily statistics (added, removed, updated)
-    yatco_calculate_daily_stats( $vessels );
+    yatco_calculate_daily_stats_from_cpt( $all_vessel_ids );
     
     // Clear progress after successful completion
     delete_transient( $cache_key_progress );
     
     $total_processed = count( $vessels );
-    $success_msg = "Cache warmed successfully! Processed {$total_processed} vessels";
+    $total_cpt_posts = wp_count_posts( 'yacht' );
+    $published_count = isset( $total_cpt_posts->publish ) ? intval( $total_cpt_posts->publish ) : 0;
+    
+    $success_msg = "Vessels imported to CPT successfully! Processed {$total_processed} vessels into {$published_count} yacht posts";
     if ( $errors > 0 ) {
         $success_msg .= " ({$errors} errors)";
     }
     if ( function_exists( 'set_transient' ) ) {
         set_transient( 'yatco_cache_warming_status', $success_msg, 300 );
     }
+}
+
+/**
+ * Calculate daily statistics from CPT vessel IDs (for new CPT-based system).
+ */
+function yatco_calculate_daily_stats_from_cpt( $current_vessel_ids ) {
+    $today = date( 'Y-m-d' );
+    $yesterday = date( 'Y-m-d', strtotime( '-1 day' ) );
+    
+    // Sort vessel IDs for comparison
+    $current_ids = array_unique( array_map( 'intval', $current_vessel_ids ) );
+    sort( $current_ids );
+    
+    // Get yesterday's vessel IDs
+    $yesterday_stats = get_option( 'yatco_daily_stats_' . $yesterday, array() );
+    $yesterday_ids = isset( $yesterday_stats['vessel_ids'] ) && is_array( $yesterday_stats['vessel_ids'] ) ? $yesterday_stats['vessel_ids'] : array();
+    
+    // Get today's existing stats (if any)
+    $today_stats = get_option( 'yatco_daily_stats_' . $today, array() );
+    
+    // Calculate differences
+    $added = array_diff( $current_ids, $yesterday_ids );
+    $removed = array_diff( $yesterday_ids, $current_ids );
+    
+    // Calculate updated (vessels that exist in both)
+    $existing = array_intersect( $current_ids, $yesterday_ids );
+    
+    // Store today's stats
+    $stats = array(
+        'date'       => $today,
+        'total'      => count( $current_ids ),
+        'added'      => count( $added ),
+        'removed'    => count( $removed ),
+        'updated'    => count( $existing ),
+        'vessel_ids' => $current_ids,
+        'timestamp'  => time(),
+    );
+    
+    // Update existing stats if already exists (for multiple cache refreshes per day)
+    if ( ! empty( $today_stats ) && is_array( $today_stats ) ) {
+        // Increment added/removed counts
+        $prev_added = isset( $today_stats['added'] ) ? intval( $today_stats['added'] ) : 0;
+        $prev_removed = isset( $today_stats['removed'] ) ? intval( $today_stats['removed'] ) : 0;
+        
+        // Only count new additions/removals since last check
+        $prev_ids = isset( $today_stats['vessel_ids'] ) && is_array( $today_stats['vessel_ids'] ) ? $today_stats['vessel_ids'] : array();
+        $new_added = array_diff( $current_ids, $prev_ids );
+        $new_removed = array_diff( $prev_ids, $current_ids );
+        
+        $stats['added'] = $prev_added + count( $new_added );
+        $stats['removed'] = $prev_removed + count( $new_removed );
+    }
+    
+    update_option( 'yatco_daily_stats_' . $today, $stats );
+    
+    // Clean up old stats (keep last 30 days)
+    yatco_cleanup_old_stats();
 }
 
 /**

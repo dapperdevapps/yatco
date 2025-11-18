@@ -206,13 +206,48 @@ function yatco_import_single_vessel( $token, $vessel_id ) {
         return new WP_Error( 'yatco_post_error', 'Failed to create or update yacht post.' );
     }
 
+    // Get additional fields for filtering and display
+    $loa_feet = isset( $result['LOAFeet'] ) && $result['LOAFeet'] > 0 ? floatval( $result['LOAFeet'] ) : ( isset( $dims['LOAFeet'] ) && $dims['LOAFeet'] > 0 ? floatval( $dims['LOAFeet'] ) : null );
+    $loa_meters = isset( $result['LOAMeters'] ) && $result['LOAMeters'] > 0 ? floatval( $result['LOAMeters'] ) : null;
+    if ( ! $loa_meters && $loa_feet ) {
+        $loa_meters = $loa_feet * 0.3048;
+    }
+    
+    // Get price in USD and EUR separately
+    $price_usd = isset( $basic['AskingPriceUSD'] ) && $basic['AskingPriceUSD'] > 0 ? floatval( $basic['AskingPriceUSD'] ) : null;
+    if ( ! $price_usd && isset( $result['AskingPriceCompare'] ) && $result['AskingPriceCompare'] > 0 ) {
+        $price_usd = floatval( $result['AskingPriceCompare'] );
+    }
+    
+    $price_eur = isset( $basic['AskingPrice'] ) && $basic['AskingPrice'] > 0 && isset( $basic['Currency'] ) && $basic['Currency'] === 'EUR' ? floatval( $basic['AskingPrice'] ) : null;
+    
+    // Get additional metadata
+    $category = isset( $basic['MainCategory'] ) ? $basic['MainCategory'] : ( isset( $result['MainCategoryText'] ) ? $result['MainCategoryText'] : '' );
+    $type = isset( $basic['VesselTypeText'] ) ? $basic['VesselTypeText'] : ( isset( $result['VesselTypeText'] ) ? $result['VesselTypeText'] : '' );
+    $condition = isset( $result['VesselCondition'] ) ? $result['VesselCondition'] : '';
+    $location = isset( $basic['LocationCustom'] ) ? $basic['LocationCustom'] : '';
+    $state_rooms = isset( $basic['StateRooms'] ) ? intval( $basic['StateRooms'] ) : ( isset( $result['StateRooms'] ) ? intval( $result['StateRooms'] ) : 0 );
+    $image_url = isset( $result['MainPhotoUrl'] ) ? $result['MainPhotoUrl'] : ( isset( $basic['MainPhotoURL'] ) ? $basic['MainPhotoURL'] : '' );
+    
     // Store core meta – these can be mapped to ACF fields.
     update_post_meta( $post_id, 'yacht_mlsid', $mlsid );
+    update_post_meta( $post_id, 'yacht_vessel_id', $vessel_id ); // Store vessel ID for reference
     update_post_meta( $post_id, 'yacht_price', $price );
+    update_post_meta( $post_id, 'yacht_price_usd', $price_usd );
+    update_post_meta( $post_id, 'yacht_price_eur', $price_eur );
     update_post_meta( $post_id, 'yacht_year', $year );
     update_post_meta( $post_id, 'yacht_length', $loa );
+    update_post_meta( $post_id, 'yacht_length_feet', $loa_feet );
+    update_post_meta( $post_id, 'yacht_length_meters', $loa_meters );
     update_post_meta( $post_id, 'yacht_make', $make );
     update_post_meta( $post_id, 'yacht_class', $class );
+    update_post_meta( $post_id, 'yacht_category', $category );
+    update_post_meta( $post_id, 'yacht_type', $type );
+    update_post_meta( $post_id, 'yacht_condition', $condition );
+    update_post_meta( $post_id, 'yacht_location', $location );
+    update_post_meta( $post_id, 'yacht_state_rooms', $state_rooms );
+    update_post_meta( $post_id, 'yacht_image_url', $image_url );
+    update_post_meta( $post_id, 'yacht_last_updated', time() );
     update_post_meta( $post_id, 'yacht_fullspecs_raw', $full );
 
     if ( ! empty( $desc ) ) {

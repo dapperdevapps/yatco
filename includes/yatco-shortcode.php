@@ -254,110 +254,182 @@ function yatco_vessels_shortcode( $atts ) {
         return '<p>YATCO API token is not configured.</p>';
     }
 
-    // max parameter is ignored - we load ALL vessels for filtering
-    // This is only used for cache key, not for limiting results
-    $max_results = 999999; // Set very high so we process all vessels
-
-    // Get cache key based on attributes.
-    $cache_key = 'yatco_vessels_' . md5( serialize( $atts ) );
-    
-    // Check cache if enabled - first check for pre-warmed vessel data (faster)
+    // NEW CPT-BASED APPROACH: Query vessels from Custom Post Type
+    // Check if cache is enabled (CPT-based, not transients)
     if ( $atts['cache'] === 'yes' ) {
-        $options = get_option( 'yatco_api_settings' );
-        $cache_duration = isset( $options['yatco_cache_duration'] ) ? intval( $options['yatco_cache_duration'] ) : 30;
+        // Build WP_Query args for yacht CPT
+        $query_args = array(
+            'post_type'      => 'yacht',
+            'post_status'    => 'publish',
+            'posts_per_page' => -1, // Get all vessels for filtering
+            'meta_query'     => array(),
+        );
         
-        // Check for pre-warmed vessel data (much faster than generating from API)
-        $cached_vessels = get_transient( 'yatco_vessels_data' );
-        $cached_builders = get_transient( 'yatco_vessels_builders' );
-        $cached_categories = get_transient( 'yatco_vessels_categories' );
-        $cached_types = get_transient( 'yatco_vessels_types' );
-        $cached_conditions = get_transient( 'yatco_vessels_conditions' );
+        // Parse filter criteria
+        $price_min = ! empty( $atts['price_min'] ) && $atts['price_min'] !== '0' ? floatval( $atts['price_min'] ) : '';
+        $price_max = ! empty( $atts['price_max'] ) && $atts['price_max'] !== '0' ? floatval( $atts['price_max'] ) : '';
+        $year_min  = ! empty( $atts['year_min'] ) && $atts['year_min'] !== '0' ? intval( $atts['year_min'] ) : '';
+        $year_max  = ! empty( $atts['year_max'] ) && $atts['year_max'] !== '0' ? intval( $atts['year_max'] ) : '';
+        $loa_min   = ! empty( $atts['loa_min'] ) && $atts['loa_min'] !== '0' ? floatval( $atts['loa_min'] ) : '';
+        $loa_max   = ! empty( $atts['loa_max'] ) && $atts['loa_max'] !== '0' ? floatval( $atts['loa_max'] ) : '';
         
-        // If we have cached vessel data, use it (this is much faster!)
-        if ( $cached_vessels !== false && is_array( $cached_vessels ) && ! empty( $cached_vessels ) ) {
-            // Filter vessels based on shortcode attributes
-            $filtered_vessels = $cached_vessels;
-            if ( $atts['price_min'] !== '' || $atts['price_max'] !== '' || $atts['year_min'] !== '' || $atts['year_max'] !== '' || $atts['loa_min'] !== '' || $atts['loa_max'] !== '' ) {
-                $filtered_vessels = array();
-                foreach ( $cached_vessels as $vessel ) {
-                    $price = ! empty( $vessel['price_usd'] ) ? floatval( $vessel['price_usd'] ) : null;
-                    $year  = ! empty( $vessel['year'] ) ? intval( $vessel['year'] ) : null;
-                    $loa   = ! empty( $vessel['loa_feet'] ) ? floatval( $vessel['loa_feet'] ) : null;
-                    
-                    $price_min = ! empty( $atts['price_min'] ) && $atts['price_min'] !== '0' ? floatval( $atts['price_min'] ) : '';
-                    $price_max = ! empty( $atts['price_max'] ) && $atts['price_max'] !== '0' ? floatval( $atts['price_max'] ) : '';
-                    $year_min  = ! empty( $atts['year_min'] ) && $atts['year_min'] !== '0' ? intval( $atts['year_min'] ) : '';
-                    $year_max  = ! empty( $atts['year_max'] ) && $atts['year_max'] !== '0' ? intval( $atts['year_max'] ) : '';
-                    $loa_min   = ! empty( $atts['loa_min'] ) && $atts['loa_min'] !== '0' ? floatval( $atts['loa_min'] ) : '';
-                    $loa_max   = ! empty( $atts['loa_max'] ) && $atts['loa_max'] !== '0' ? floatval( $atts['loa_max'] ) : '';
-                    
-                    if ( $price_min !== '' && ( is_null( $price ) || $price <= 0 || $price < $price_min ) ) {
-                        continue;
-                    }
-                    if ( $price_max !== '' && ( is_null( $price ) || $price <= 0 || $price > $price_max ) ) {
-                        continue;
-                    }
-                    if ( $year_min !== '' && ( is_null( $year ) || $year <= 0 || $year < $year_min ) ) {
-                        continue;
-                    }
-                    if ( $year_max !== '' && ( is_null( $year ) || $year <= 0 || $year > $year_max ) ) {
-                        continue;
-                    }
-                    if ( $loa_min !== '' && ( is_null( $loa ) || $loa <= 0 || $loa < $loa_min ) ) {
-                        continue;
-                    }
-                    if ( $loa_max !== '' && ( is_null( $loa ) || $loa <= 0 || $loa > $loa_max ) ) {
-                        continue;
-                    }
-                    $filtered_vessels[] = $vessel;
-                }
-            }
-            
-            // Use cached data - generate HTML from cached vessels (fast!)
-            $builders = $cached_builders !== false ? $cached_builders : array();
-            $categories = $cached_categories !== false ? $cached_categories : array();
-            $types = $cached_types !== false ? $cached_types : array();
-            $conditions = $cached_conditions !== false ? $cached_conditions : array();
-            
-            return yatco_generate_vessels_html_from_data( $filtered_vessels, $builders, $categories, $types, $conditions, $atts );
+        // Add meta queries for filtering
+        if ( $price_min !== '' ) {
+            $query_args['meta_query'][] = array(
+                'key'     => 'yacht_price_usd',
+                'value'   => $price_min,
+                'compare' => '>=',
+                'type'    => 'NUMERIC',
+            );
+        }
+        if ( $price_max !== '' ) {
+            $query_args['meta_query'][] = array(
+                'key'     => 'yacht_price_usd',
+                'value'   => $price_max,
+                'compare' => '<=',
+                'type'    => 'NUMERIC',
+            );
+        }
+        if ( $year_min !== '' ) {
+            $query_args['meta_query'][] = array(
+                'key'     => 'yacht_year',
+                'value'   => $year_min,
+                'compare' => '>=',
+                'type'    => 'NUMERIC',
+            );
+        }
+        if ( $year_max !== '' ) {
+            $query_args['meta_query'][] = array(
+                'key'     => 'yacht_year',
+                'value'   => $year_max,
+                'compare' => '<=',
+                'type'    => 'NUMERIC',
+            );
+        }
+        if ( $loa_min !== '' ) {
+            $query_args['meta_query'][] = array(
+                'key'     => 'yacht_length_feet',
+                'value'   => $loa_min,
+                'compare' => '>=',
+                'type'    => 'DECIMAL',
+            );
+        }
+        if ( $loa_max !== '' ) {
+            $query_args['meta_query'][] = array(
+                'key'     => 'yacht_length_feet',
+                'value'   => $loa_max,
+                'compare' => '<=',
+                'type'    => 'DECIMAL',
+            );
         }
         
-        // Check if cache is currently warming - show message if so
+        // Check if cache is currently warming
         $cache_status = get_transient( 'yatco_cache_warming_status' );
         $cache_progress = get_transient( 'yatco_cache_warming_progress' );
         $is_warming = ( $cache_status !== false ) || ( $cache_progress !== false );
         
-        if ( $is_warming ) {
-            // Check if we have partial cached data from warming progress
-            if ( $cache_progress !== false && is_array( $cache_progress ) ) {
-                $partial_vessels = isset( $cache_progress['vessels'] ) && is_array( $cache_progress['vessels'] ) ? $cache_progress['vessels'] : array();
-                if ( ! empty( $partial_vessels ) ) {
-                    // Use partial data while warming completes
-                    $builders = $cached_builders !== false ? $cached_builders : array();
-                    $categories = $cached_categories !== false ? $cached_categories : array();
-                    $types = $cached_types !== false ? $cached_types : array();
-                    $conditions = $cached_conditions !== false ? $cached_conditions : array();
-                    
-                    $output = yatco_generate_vessels_html_from_data( $partial_vessels, $builders, $categories, $types, $conditions, $atts );
-                    $status_msg = esc_html( $cache_status ? $cache_status : 'Cache is being warmed...' );
-                    return '<div class="yatco-cache-warming-notice" style="padding: 15px; background: #fff3cd; border-left: 4px solid #ffc107; margin-bottom: 20px;"><strong>Note:</strong> ' . $status_msg . ' Showing partial results (' . count( $partial_vessels ) . ' vessels loaded so far). Please refresh the page once warming completes.</div>' . $output;
+        // Query CPT posts
+        $vessel_query = new WP_Query( $query_args );
+        
+        if ( $vessel_query->have_posts() ) {
+            // Convert CPT posts to vessel data array
+            $vessels = array();
+            $builders = array();
+            $categories = array();
+            $types = array();
+            $conditions = array();
+            
+            while ( $vessel_query->have_posts() ) {
+                $vessel_query->the_post();
+                $post_id = get_the_ID();
+                
+                // Get vessel data from post meta
+                $vessel_id = get_post_meta( $post_id, 'yacht_vessel_id', true );
+                $price_usd = get_post_meta( $post_id, 'yacht_price_usd', true );
+                $price_eur = get_post_meta( $post_id, 'yacht_price_eur', true );
+                $price = get_post_meta( $post_id, 'yacht_price', true );
+                $year = get_post_meta( $post_id, 'yacht_year', true );
+                $loa = get_post_meta( $post_id, 'yacht_length', true );
+                $loa_feet = get_post_meta( $post_id, 'yacht_length_feet', true );
+                $loa_meters = get_post_meta( $post_id, 'yacht_length_meters', true );
+                $builder = get_post_meta( $post_id, 'yacht_make', true );
+                $category = get_post_meta( $post_id, 'yacht_category', true );
+                $type = get_post_meta( $post_id, 'yacht_type', true );
+                $condition = get_post_meta( $post_id, 'yacht_condition', true );
+                $location = get_post_meta( $post_id, 'yacht_location', true );
+                $state_rooms = get_post_meta( $post_id, 'yacht_state_rooms', true );
+                $image_url = get_post_meta( $post_id, 'yacht_image_url', true );
+                
+                // Get featured image if available
+                if ( empty( $image_url ) && has_post_thumbnail( $post_id ) ) {
+                    $image_url = get_the_post_thumbnail_url( $post_id, 'full' );
+                }
+                
+                $vessel_data = array(
+                    'id'          => $vessel_id ? $vessel_id : $post_id,
+                    'post_id'     => $post_id,
+                    'name'        => get_the_title(),
+                    'price'       => $price,
+                    'price_usd'   => $price_usd,
+                    'price_eur'   => $price_eur,
+                    'year'        => $year,
+                    'loa'         => $loa,
+                    'loa_feet'    => $loa_feet,
+                    'loa_meters'  => $loa_meters,
+                    'builder'     => $builder,
+                    'category'    => $category,
+                    'type'        => $type,
+                    'condition'   => $condition,
+                    'state_rooms' => $state_rooms,
+                    'location'    => $location,
+                    'image'       => $image_url,
+                    'link'        => get_permalink( $post_id ),
+                );
+                
+                $vessels[] = $vessel_data;
+                
+                // Collect unique values for filters
+                if ( ! empty( $builder ) && ! in_array( $builder, $builders ) ) {
+                    $builders[] = $builder;
+                }
+                if ( ! empty( $category ) && ! in_array( $category, $categories ) ) {
+                    $categories[] = $category;
+                }
+                if ( ! empty( $type ) && ! in_array( $type, $types ) ) {
+                    $types[] = $type;
+                }
+                if ( ! empty( $condition ) && ! in_array( $condition, $conditions ) ) {
+                    $conditions[] = $condition;
                 }
             }
+            wp_reset_postdata();
             
-            // Show warming message
-            $status_msg = esc_html( $cache_status ? $cache_status : 'Cache is being warmed in the background' );
-            return '<div class="yatco-cache-warming-notice" style="padding: 15px; background: #fff3cd; border-left: 4px solid #ffc107; margin: 20px 0;"><p><strong>Cache Warming in Progress</strong></p><p>' . $status_msg . '</p><p>Vessels will appear once the cache is complete. This may take several minutes for 7000+ vessels.</p><p><em>Tip: You can temporarily use <code>cache="no"</code> in the shortcode to load vessels directly from the API while cache is warming.</em></p></div>';
+            sort( $builders );
+            sort( $categories );
+            sort( $types );
+            sort( $conditions );
+            
+            // If warming, show message with partial results
+            if ( $is_warming && ! empty( $vessels ) ) {
+                $status_msg = esc_html( $cache_status ? $cache_status : 'Vessels are being imported to CPT...' );
+                $vessels_output = yatco_generate_vessels_html_from_data( $vessels, $builders, $categories, $types, $conditions, $atts );
+                return '<div class="yatco-cache-warming-notice" style="padding: 15px; background: #fff3cd; border-left: 4px solid #ffc107; margin-bottom: 20px;"><strong>Note:</strong> ' . $status_msg . ' Showing ' . count( $vessels ) . ' vessels from CPT. More will appear as import completes.</div>' . $vessels_output;
+            }
+            
+            // Return results from CPT
+            return yatco_generate_vessels_html_from_data( $vessels, $builders, $categories, $types, $conditions, $atts );
+        } else {
+            // No CPT posts yet - check if warming or show fallback message
+            if ( $is_warming ) {
+                $status_msg = esc_html( $cache_status ? $cache_status : 'Vessels are being imported to CPT in the background' );
+                return '<div class="yatco-cache-warming-notice" style="padding: 15px; background: #fff3cd; border-left: 4px solid #ffc107; margin: 20px 0;"><p><strong>CPT Import in Progress</strong></p><p>' . $status_msg . '</p><p>Vessels will appear once the import is complete. This may take several minutes for 7000+ vessels.</p><p><em>Tip: You can temporarily use <code>cache="no"</code> in the shortcode to load vessels directly from the API while import is running.</em></p></div>';
+            }
+            
+            // No CPT posts and not warming - fall through to API fallback
         }
-        
-        // Fallback to full cached HTML output
-        $cached = get_transient( $cache_key );
-        if ( $cached !== false ) {
-            return $cached;
-        }
-        
-        // If cache is enabled but not available and not warming, fall through to fetch from API
-        // This ensures the shortcode still works even if cache hasn't been warmed yet
     }
+    
+    // FALLBACK: If cache is disabled or no CPT posts exist, fetch from API
 
     // Fetch all active vessel IDs (set to 0 to get all, or use a high limit like 10000)
     // For 7000+ vessels, we need to fetch all IDs

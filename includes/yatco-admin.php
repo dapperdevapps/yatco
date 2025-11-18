@@ -20,7 +20,7 @@ function yatco_add_admin_menu() {
         'yatco_api',
         'yatco_options_page'
     );
-
+ 
     // Import page under Yachts.
     add_submenu_page(
         'edit.php?post_type=yacht',
@@ -130,11 +130,12 @@ function yatco_options_page() {
     }
 
     echo '<hr />';
-    echo '<h2>Cache Management</h2>';
-    echo '<p>Pre-load all vessels into cache to speed up the shortcode display. This may take several minutes for 7000+ vessels.</p>';
+    echo '<h2>CPT Import Management</h2>';
+    echo '<p>Import all vessels into the Yacht Custom Post Type (CPT) for faster queries, better SEO, and individual vessel pages. This may take several minutes for 7000+ vessels.</p>';
+    echo '<p><strong>Benefits of CPT import:</strong> Better performance with WP_Query, individual pages per vessel, improved SEO, easier management via WordPress admin.</p>';
     echo '<form method="post">';
     wp_nonce_field( 'yatco_warm_cache', 'yatco_warm_cache_nonce' );
-    submit_button( 'Warm Cache (Pre-load All Vessels)', 'primary', 'yatco_warm_cache' );
+    submit_button( 'Import All Vessels to CPT', 'primary', 'yatco_warm_cache' );
     echo '</form>';
     
     // Diagnostic/Troubleshooting Section
@@ -443,13 +444,24 @@ function yatco_options_page() {
                 )
             );
             
-            echo '<div class="notice notice-info"><p><strong>Cache warming started!</strong> This will run in the background and may take several minutes for 7000+ vessels.</p>';
+            // Get current CPT count
+            $cpt_count = wp_count_posts( 'yacht' );
+            $published_count = isset( $cpt_count->publish ) ? intval( $cpt_count->publish ) : 0;
+            
+            echo '<div class="notice notice-info"><p><strong>CPT import started!</strong> This will run in the background and may take several minutes for 7000+ vessels.</p>';
+            echo '<p>Current yacht posts in CPT: <strong>' . number_format( $published_count ) . '</strong></p>';
             echo '<p>The system processes vessels in batches of 20 to prevent timeouts. Progress is saved automatically, so if interrupted, it will resume from where it left off.</p>';
-            echo '<p><em>Note: If progress doesn\'t appear within 30 seconds, try clicking "Warm Cache" again or check if WP-Cron is enabled on your server.</em></p></div>';
+            echo '<p><em>Note: If progress doesn\'t appear within 30 seconds, try clicking "Import All Vessels to CPT" again or check if WP-Cron is enabled on your server.</em></p></div>';
         }
     }
     
-    // Handle clear cache action
+    // Handle clear transient cache action (CPT posts remain)
+    echo '<form method="post" style="margin-top: 10px;">';
+    wp_nonce_field( 'yatco_clear_cache', 'yatco_clear_cache_nonce' );
+    submit_button( 'Clear Transient Cache Only', 'secondary', 'yatco_clear_cache' );
+    echo '<p style="font-size: 12px; color: #666; margin: 5px 0;">This clears only transient caches. CPT posts remain unchanged.</p>';
+    echo '</form>';
+    
     if ( isset( $_POST['yatco_clear_cache'] ) && check_admin_referer( 'yatco_clear_cache', 'yatco_clear_cache_nonce' ) ) {
         delete_transient( 'yatco_vessels_data' );
         delete_transient( 'yatco_vessels_builders' );
@@ -464,18 +476,30 @@ function yatco_options_page() {
         $wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_yatco_vessels_%'" );
         $wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_timeout_yatco_vessels_%'" );
         
-        echo '<div class="notice notice-success"><p>Cache cleared successfully!</p></div>';
+        echo '<div class="notice notice-success"><p>Transient cache cleared successfully! (CPT posts remain unchanged)</p></div>';
     }
 
-    // Check if cache warming is in progress
+    // Check if CPT import is in progress
     $cache_status = get_transient( 'yatco_cache_warming_status' );
     $cache_progress = get_transient( 'yatco_cache_warming_progress' );
     $is_warming_scheduled = wp_next_scheduled( 'yatco_warm_cache_hook' );
     
-    // Show progress tracker if warming is active, scheduled, or has progress
+    // Get current CPT count
+    $cpt_count = wp_count_posts( 'yacht' );
+    $published_count = isset( $cpt_count->publish ) ? intval( $cpt_count->publish ) : 0;
+    
+    // Show CPT count summary
+    if ( $published_count > 0 ) {
+        echo '<hr />';
+        echo '<h2>CPT Status</h2>';
+        echo '<div class="notice notice-success"><p><strong>Current Yacht Posts in CPT:</strong> ' . number_format( $published_count ) . '</p>';
+        echo '<p>Vessels are stored in the Custom Post Type and can be managed via <a href="' . admin_url( 'edit.php?post_type=yacht' ) . '">Yachts → All Yachts</a>.</p></div>';
+    }
+    
+    // Show progress tracker if import is active, scheduled, or has progress
     if ( $cache_status || $cache_progress || $is_warming_scheduled ) {
         echo '<hr />';
-        echo '<h2>Cache Warming Status</h2>';
+        echo '<h2>CPT Import Status</h2>';
         echo '<div class="yatco-cache-progress-section">';
         
         // Show status message
@@ -506,7 +530,7 @@ function yatco_options_page() {
                 echo '<div class="notice notice-warning yatco-live-progress-container">';
                 echo '<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">';
                 echo '<span class="yatco-live-indicator" style="display: inline-block; width: 12px; height: 12px; background-color: #46b450; border-radius: 50%; animation: yatco-pulse 2s infinite;"></span>';
-                echo '<p class="yatco-progress-text" style="margin: 0; flex: 1;"><strong>Progress:</strong> Processed <span class="yatco-current-processed">' . number_format( $last_processed ) . '</span> of <span class="yatco-total-vessels">' . number_format( $total ) . '</span> vessels (<span class="yatco-percent">' . $percent . '</span>%). <span class="yatco-cached-count">' . number_format( $cached ) . '</span> vessels cached so far.</p>';
+                echo '<p class="yatco-progress-text" style="margin: 0; flex: 1;"><strong>Progress:</strong> Processed <span class="yatco-current-processed">' . number_format( $last_processed ) . '</span> of <span class="yatco-total-vessels">' . number_format( $total ) . '</span> vessels (<span class="yatco-percent">' . $percent . '</span>%). <span class="yatco-cached-count">' . number_format( $cached ) . '</span> vessels imported to CPT so far.</p>';
                 echo '</div>';
                 
                 // Enhanced progress bar with animation
