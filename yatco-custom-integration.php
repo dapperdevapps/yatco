@@ -774,10 +774,9 @@ function yatco_vessels_shortcode( $atts ) {
         return '<p>YATCO API token is not configured.</p>';
     }
 
-    $max_results = intval( $atts['max'] );
-    if ( $max_results <= 0 ) {
-        $max_results = 20;
-    }
+    // max parameter is ignored - we load ALL vessels for filtering
+    // This is only used for cache key, not for limiting results
+    $max_results = 999999; // Set very high so we process all vessels
 
     // Get cache key based on attributes.
     $cache_key = 'yatco_vessels_' . md5( serialize( $atts ) );
@@ -822,13 +821,16 @@ function yatco_vessels_shortcode( $atts ) {
     $processed = 0;
     $error_count = 0;
     
+    // Reset execution time limit for large datasets (300 seconds = 5 minutes)
+    @set_time_limit( 300 );
+    
     foreach ( $ids as $id ) {
         $processed++;
         
-        // Optional: Show progress for large datasets (uncomment if needed)
-        // if ( $processed % 100 === 0 ) {
-        //     set_time_limit( 60 ); // Reset execution time
-        // }
+        // Reset execution time every 100 vessels to avoid timeout
+        if ( $processed % 100 === 0 ) {
+            @set_time_limit( 300 ); // Reset execution time
+        }
 
         $full = yatco_fetch_fullspecs( $token, $id );
         if ( is_wp_error( $full ) ) {
@@ -1568,9 +1570,9 @@ function yatco_vessels_shortcode( $atts ) {
                 });
             }
             
-            // Pagination - shows 50 vessels per page
+            // Pagination - shows 24 vessels per page
             let currentPage = 1;
-            const vesselsPerPage = 50;
+            const vesselsPerPage = 24;
             
             // Get pagination range with ellipsis for large page counts (e.g., 1 ... 5 6 7 ... 140)
             function getPaginationRange(current, total) {
