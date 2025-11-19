@@ -134,6 +134,25 @@ function yatco_options_page() {
     echo '<p>Import all vessels into the Yacht Custom Post Type (CPT) for faster queries, better SEO, and individual vessel pages. This may take several minutes for 7000+ vessels.</p>';
     echo '<p><strong>Benefits of CPT import:</strong> Better performance with WP_Query, individual pages per vessel, improved SEO, easier management via WordPress admin.</p>';
     
+    echo '<div style="background: #f0f6fc; border-left: 4px solid #2271b1; padding: 15px; margin: 15px 0;">';
+    echo '<h3 style="margin-top: 0;">🔄 How Updates Work</h3>';
+    echo '<p style="margin: 5px 0;"><strong>Automatic Updates:</strong> When you run "Import All Vessels to CPT" or enable auto-refresh, the system:</p>';
+    echo '<ol style="margin: 5px 0 0 20px; padding-left: 20px;">';
+    echo '<li><strong>Fetches all active vessel IDs</strong> from the YATCO API</li>';
+    echo '<li><strong>Matches existing CPT posts</strong> using two methods:';
+    echo '<ul style="margin: 5px 0;">';
+    echo '<li><strong>Primary:</strong> Matches by MLSID (yacht_mlsid meta field)</li>';
+    echo '<li><strong>Fallback:</strong> Matches by VesselID (yacht_vessel_id meta field) if MLSID is missing or changed</li>';
+    echo '</ul>';
+    echo '</li>';
+    echo '<li><strong>Updates existing posts</strong> with latest API data (price, details, images, etc.)</li>';
+    echo '<li><strong>Creates new posts</strong> for vessels that don\'t exist in CPT yet</li>';
+    echo '<li><strong>Maintains post IDs</strong> so permalinks stay the same for existing vessels</li>';
+    echo '<li><strong>Updates timestamp</strong> (yacht_last_updated) on every import</li>';
+    echo '</ol>';
+    echo '<p style="margin: 10px 0 0 0; font-size: 12px; color: #666;"><strong>Note:</strong> All metadata fields are updated with the latest data from YATCO API each time the import runs. This ensures your CPT data stays synchronized with YATCO.</p>';
+    echo '</div>';
+    
     // Check if import is running
     $cache_status = get_transient( 'yatco_cache_warming_status' );
     $cache_progress = get_transient( 'yatco_cache_warming_progress' );
@@ -382,6 +401,34 @@ function yatco_options_page() {
                 if ( $cron_disabled ) {
                     echo '<p style="margin: 5px 0; color: #dc3232; font-size: 12px;"><strong>Note:</strong> DISABLE_WP_CRON is set in your wp-config.php. Your server likely uses real cron instead.</p>';
                 }
+                
+                // Show real cron setup instructions
+                echo '<div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 15px 0;">';
+                echo '<h4 style="margin-top: 0;">🔧 Setting Up Real Cron Job (Recommended for Auto-Refresh)</h4>';
+                echo '<p style="margin: 5px 0;"><strong>Since WP-Cron is disabled, you can set up a real cron job to run cache warming automatically.</strong></p>';
+                echo '<p style="margin: 10px 0 5px 0;"><strong>Option 1: Run WP-Cron via Real Cron (Recommended)</strong></p>';
+                $wp_cron_url = site_url( 'wp-cron.php' );
+                echo '<p style="margin: 5px 0; font-family: monospace; background: #f5f5f5; padding: 10px; border-radius: 4px;">';
+                echo '*/15 * * * * curl -s "' . esc_html( $wp_cron_url ) . '" > /dev/null 2>&1';
+                echo '</p>';
+                echo '<p style="margin: 5px 0 15px 0; font-size: 12px; color: #666;">This runs WP-Cron every 15 minutes, which will trigger scheduled cache refreshes.</p>';
+                
+                echo '<p style="margin: 10px 0 5px 0;"><strong>Option 2: Run Cache Warming Directly via WP-CLI</strong></p>';
+                $wp_path = ABSPATH;
+                echo '<p style="margin: 5px 0; font-family: monospace; background: #f5f5f5; padding: 10px; border-radius: 4px;">';
+                echo '0 */6 * * * cd ' . esc_html( $wp_path ) . ' && wp eval "do_action(\'yatco_auto_refresh_cache_hook\');"';
+                echo '</p>';
+                echo '<p style="margin: 5px 0 15px 0; font-size: 12px; color: #666;">This runs cache warming every 6 hours directly (requires WP-CLI).</p>';
+                
+                echo '<p style="margin: 10px 0 5px 0;"><strong>How to Add Cron Job:</strong></p>';
+                echo '<ol style="margin: 5px 0 0 20px; font-size: 12px;">';
+                echo '<li>SSH into your server</li>';
+                echo '<li>Run: <code>crontab -e</code></li>';
+                echo '<li>Add one of the cron commands above</li>';
+                echo '<li>Save and exit (usually Ctrl+X, then Y, then Enter)</li>';
+                echo '</ol>';
+                echo '<p style="margin: 10px 0 0 0; font-size: 12px; color: #666;"><em>Note: If you don\'t have SSH access, contact your hosting provider to set up the cron job, or use the "Run Directly" button for manual cache warming.</em></p>';
+                echo '</div>';
             } else {
                 echo '<span style="color: #ffb900; font-weight: bold; font-size: 14px;">⚠️ UNKNOWN - Could not determine if cron ran</span><br />';
                 echo '<p style="margin: 5px 0; color: #666; font-size: 12px;">Final transient value: ' . esc_html( $final_check ) . '</p>';
@@ -413,25 +460,54 @@ function yatco_options_page() {
         if ( ! function_exists( 'yatco_warm_cache_function' ) ) {
             echo '<div class="notice notice-error"><p>Error: Function not found!</p></div>';
         } else {
-            echo '<div class="notice notice-info"><p><strong>Starting cache warming directly...</strong> This may take several minutes. Progress will be saved every 20 vessels.</p></div>';
+            // Set initial status BEFORE running so progress section shows immediately
+            set_transient( 'yatco_cache_warming_status', 'Starting cache warm-up...', 600 );
+            
+            echo '<div class="notice notice-info"><p><strong>Starting cache warming directly...</strong> This may take several minutes. Progress will be saved every 20 vessels. See progress below.</p></div>';
             
             // Increase limits
             @ini_set( 'max_execution_time', 300 );
             @ini_set( 'memory_limit', '512M' );
             @set_time_limit( 300 );
             
-            // Run the function
+            // Run the function (it will update progress as it runs)
             yatco_warm_cache_function();
             
-            echo '<div class="notice notice-success"><p><strong>Function completed!</strong> Check the status above to see progress. If it timed out, progress was saved and you can run it again to continue.</p></div>';
+            // Check if it completed or timed out
+            $final_status = get_transient( 'yatco_cache_warming_status' );
+            $final_progress = get_transient( 'yatco_cache_warming_progress' );
+            
+            if ( $final_progress && is_array( $final_progress ) ) {
+                $processed = isset( $final_progress['last_processed'] ) ? intval( $final_progress['last_processed'] ) : 0;
+                $total = isset( $final_progress['total'] ) ? intval( $final_progress['total'] ) : 0;
+                if ( $processed >= $total && $total > 0 ) {
+                    echo '<div class="notice notice-success"><p><strong>Function completed!</strong> All ' . number_format( $total ) . ' vessels have been processed.</p></div>';
+                } else {
+                    echo '<div class="notice notice-warning"><p><strong>Function may have timed out, but progress was saved!</strong> Processed ' . number_format( $processed ) . ' of ' . number_format( $total ) . ' vessels. Click "Run Cache Warming Function NOW (Direct)" again to continue from where it left off.</p></div>';
+                }
+            } else {
+                echo '<div class="notice notice-success"><p><strong>Function completed!</strong> Check the status below to see progress.</p></div>';
+            }
         }
+        
+        // Refresh status variables after manual trigger
+        $cache_status = get_transient( 'yatco_cache_warming_status' );
+        $cache_progress = get_transient( 'yatco_cache_warming_progress' );
+        $is_warming_scheduled = wp_next_scheduled( 'yatco_warm_cache_hook' );
+        $is_running = ( $cache_status !== false ) || ( $cache_progress !== false ) || $is_warming_scheduled;
     }
     
     // Troubleshooting guide
     echo '<h3>📋 Troubleshooting Guide</h3>';
     echo '<div style="background: #fff; border-left: 4px solid #0073aa; padding: 15px; margin: 10px 0;">';
     echo '<ol style="margin: 0; padding-left: 20px;">';
-    echo '<li><strong>If WP-Cron is disabled:</strong> Use the "Run Directly" button or set up a real cron job on your server to run <code>wp-cron.php</code></li>';
+    echo '<li><strong>If WP-Cron is disabled (most common):</strong>';
+    echo '<ul style="margin: 5px 0 10px 20px; padding-left: 20px;">';
+    echo '<li><strong>For one-time imports:</strong> Use the "Run Cache Warming Function NOW (Direct)" button above</li>';
+    echo '<li><strong>For automatic refreshes:</strong> Set up a real cron job (see instructions above after running the WP-Cron test)</li>';
+    echo '<li><strong>Alternative:</strong> Contact your hosting provider to enable WP-Cron or set up a cron job for you</li>';
+    echo '</ul>';
+    echo '</li>';
     echo '<li><strong>If function not found:</strong> Make sure all plugin files are properly uploaded and the plugin is activated</li>';
     echo '<li><strong>If API token not configured:</strong> Go to Settings → YATCO API and enter your token</li>';
     echo '<li><strong>If scheduled events are overdue:</strong> WP-Cron may not be running. Try "Run Directly" or check server cron settings</li>';
@@ -563,6 +639,10 @@ function yatco_options_page() {
                 echo '<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">';
                 echo '<span class="yatco-live-indicator" style="display: inline-block; width: 12px; height: 12px; background-color: #46b450; border-radius: 50%; animation: yatco-pulse 2s infinite;"></span>';
                 echo '<p class="yatco-progress-text" style="margin: 0; flex: 1;"><strong>Progress:</strong> Processed <span class="yatco-current-processed">' . number_format( $last_processed ) . '</span> of <span class="yatco-total-vessels">' . number_format( $total ) . '</span> vessels (<span class="yatco-percent">' . $percent . '</span>%). <span class="yatco-cached-count">' . number_format( $cached ) . '</span> vessels imported to CPT so far.</p>';
+                echo '<form method="post" style="margin: 0;">';
+                wp_nonce_field( 'yatco_stop_import', 'yatco_stop_import_nonce' );
+                echo '<button type="submit" name="yatco_stop_import" class="button button-secondary" style="background: #dc3232; border-color: #dc3232; color: #fff; padding: 5px 10px; font-size: 12px;">🛑 Stop</button>';
+                echo '</form>';
                 echo '</div>';
                 
                 // Enhanced progress bar with animation
@@ -589,6 +669,10 @@ function yatco_options_page() {
                 echo '<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">';
                 echo '<span class="yatco-live-indicator" style="display: inline-block; width: 12px; height: 12px; background-color: #46b450; border-radius: 50%; animation: yatco-pulse 2s infinite;"></span>';
                 echo '<p style="margin: 0; flex: 1;"><strong>Status:</strong> Cache warming is initializing... Waiting for first batch to complete.</p>';
+                echo '<form method="post" style="margin: 0;">';
+                wp_nonce_field( 'yatco_stop_import', 'yatco_stop_import_nonce' );
+                echo '<button type="submit" name="yatco_stop_import" class="button button-secondary" style="background: #dc3232; border-color: #dc3232; color: #fff; padding: 5px 10px; font-size: 12px;">🛑 Stop</button>';
+                echo '</form>';
                 echo '</div>';
                 echo '<div class="yatco-progress-bar-container" style="width: 100%; background-color: #f0f0f0; border-radius: 4px; height: 35px; margin: 15px 0; overflow: hidden; position: relative; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);">';
                 echo '<div class="yatco-progress-bar-fill" style="width: 0%; background: linear-gradient(90deg, #0073aa 0%, #005a87 50%, #0073aa 100%); background-size: 200% 100%; height: 100%; transition: width 0.5s ease; display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 13px; text-shadow: 0 1px 2px rgba(0,0,0,0.3); animation: yatco-progress-shimmer 2s infinite;">0%</div>';
@@ -602,6 +686,10 @@ function yatco_options_page() {
             echo '<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">';
             echo '<span class="yatco-live-indicator" style="display: inline-block; width: 12px; height: 12px; background-color: #46b450; border-radius: 50%; animation: yatco-pulse 2s infinite;"></span>';
             echo '<p style="margin: 0; flex: 1;"><strong>Status:</strong> Cache warming is initializing... Waiting for first batch to complete.</p>';
+            echo '<form method="post" style="margin: 0;">';
+            wp_nonce_field( 'yatco_stop_import', 'yatco_stop_import_nonce' );
+            echo '<button type="submit" name="yatco_stop_import" class="button button-secondary" style="background: #dc3232; border-color: #dc3232; color: #fff; padding: 5px 10px; font-size: 12px;">🛑 Stop</button>';
+            echo '</form>';
             echo '</div>';
             echo '<div class="yatco-progress-bar-container" style="width: 100%; background-color: #f0f0f0; border-radius: 4px; height: 35px; margin: 15px 0; overflow: hidden; position: relative; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);">';
             echo '<div class="yatco-progress-bar-fill" style="width: 0%; background: linear-gradient(90deg, #0073aa 0%, #005a87 50%, #0073aa 100%); background-size: 200% 100%; height: 100%; transition: width 0.5s ease; display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 13px; text-shadow: 0 1px 2px rgba(0,0,0,0.3); animation: yatco-progress-shimmer 2s infinite;">0%</div>';

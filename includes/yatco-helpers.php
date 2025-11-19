@@ -82,6 +82,28 @@ function yatco_build_brief_from_fullspecs( $vessel_id, $full ) {
 
 /**
  * Import a single vessel ID into the Yacht CPT.
+ * 
+ * This function:
+ * 1. Fetches full vessel specifications from YATCO API
+ * 2. Matches existing CPT post by MLSID (primary) or VesselID (fallback)
+ * 3. Creates new post if not found, or updates existing post if found
+ * 4. Stores all vessel metadata in post meta fields
+ * 5. Downloads and attaches gallery images if available
+ * 
+ * Matching Logic:
+ * - First attempts to match by MLSID (yacht_mlsid meta field)
+ * - Falls back to matching by VesselID (yacht_vessel_id meta field) if MLSID match fails
+ * - This ensures vessels are properly updated even if MLSID changes or is missing
+ * 
+ * Update Behavior:
+ * - Updates all post meta fields with latest API data
+ * - Updates post title if vessel name changed
+ * - Maintains post ID and permalink for existing vessels
+ * - Updates yacht_last_updated timestamp on every import
+ * 
+ * @param string $token     YATCO API token
+ * @param int    $vessel_id YATCO Vessel ID
+ * @return int|WP_Error     Post ID on success, WP_Error on failure
  */
 function yatco_import_single_vessel( $token, $vessel_id ) {
     $full = yatco_fetch_fullspecs( $token, $vessel_id );
@@ -172,14 +194,34 @@ function yatco_import_single_vessel( $token, $vessel_id ) {
         $desc = $vd['VesselDescriptionShortDescription'];
     }
 
-    // Find existing post by MLSID if available.
+    // Find existing post by MLSID (primary) or VesselID (fallback).
+    // This ensures we can match and update existing vessels even if MLSID changes or is missing.
     $post_id = 0;
+    
+    // Try matching by MLSID first (most reliable identifier).
     if ( ! empty( $mlsid ) ) {
         $existing = get_posts(
             array(
                 'post_type'   => 'yacht',
                 'meta_key'    => 'yacht_mlsid',
                 'meta_value'  => $mlsid,
+                'numberposts' => 1,
+                'fields'      => 'ids',
+            )
+        );
+        if ( ! empty( $existing ) ) {
+            $post_id = (int) $existing[0];
+        }
+    }
+    
+    // Fallback: If MLSID matching failed, try matching by VesselID.
+    // This handles cases where MLSID might be missing or changed.
+    if ( ! $post_id && ! empty( $vessel_id ) ) {
+        $existing = get_posts(
+            array(
+                'post_type'   => 'yacht',
+                'meta_key'    => 'yacht_vessel_id',
+                'meta_value'  => $vessel_id,
                 'numberposts' => 1,
                 'fields'      => 'ids',
             )
