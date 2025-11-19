@@ -449,11 +449,25 @@ function yatco_options_page() {
     echo '</form>';
     
     // Manual trigger button
-    echo '<form method="post" style="margin: 10px 0;">';
+    echo '<div style="display: flex; gap: 10px; align-items: flex-start; margin: 10px 0;">';
+    echo '<form method="post" style="margin: 0;">';
     wp_nonce_field( 'yatco_manual_trigger', 'yatco_manual_trigger_nonce' );
     echo '<button type="submit" name="yatco_manual_trigger" class="button button-primary">Run Cache Warming Function NOW (Direct)</button>';
-    echo '<p style="font-size: 12px; color: #666; margin: 5px 0;">This will run the function directly on this page (may timeout for large datasets).</p>';
     echo '</form>';
+    
+    // Show stop button if import is running
+    if ( $is_running ) {
+        echo '<form method="post" style="margin: 0;">';
+        wp_nonce_field( 'yatco_stop_import', 'yatco_stop_import_nonce' );
+        echo '<button type="submit" name="yatco_stop_import" class="button button-secondary" style="background: #dc3232; border-color: #dc3232; color: #fff; font-weight: bold;">🛑 Stop Import</button>';
+        echo '</form>';
+    }
+    echo '</div>';
+    echo '<p style="font-size: 12px; color: #666; margin: 5px 0;">This will run the function directly on this page (may timeout for large datasets).';
+    if ( $is_running ) {
+        echo ' <strong style="color: #dc3232;">⚠️ Import is currently running - use Stop button to cancel.</strong>';
+    }
+    echo '</p>';
     
     // Handle manual trigger
     if ( isset( $_POST['yatco_manual_trigger'] ) && check_admin_referer( 'yatco_manual_trigger', 'yatco_manual_trigger_nonce' ) ) {
@@ -490,11 +504,22 @@ function yatco_options_page() {
             }
         }
         
-        // Refresh status variables after manual trigger
+        // Refresh status variables after manual trigger so stop button appears
         $cache_status = get_transient( 'yatco_cache_warming_status' );
         $cache_progress = get_transient( 'yatco_cache_warming_progress' );
         $is_warming_scheduled = wp_next_scheduled( 'yatco_warm_cache_hook' );
         $is_running = ( $cache_status !== false ) || ( $cache_progress !== false ) || $is_warming_scheduled;
+        
+        // Re-display stop button if running
+        if ( $is_running ) {
+            echo '<div style="margin: 15px 0;">';
+            echo '<form method="post" style="display: inline-block;">';
+            wp_nonce_field( 'yatco_stop_import', 'yatco_stop_import_nonce' );
+            echo '<button type="submit" name="yatco_stop_import" class="button button-secondary" style="background: #dc3232; border-color: #dc3232; color: #fff; font-weight: bold; padding: 8px 16px;">🛑 Stop Import Now</button>';
+            echo '</form>';
+            echo '<p style="font-size: 12px; color: #666; margin: 5px 0;">Click to stop the import and clear progress. Vessels already imported will remain in CPT.</p>';
+            echo '</div>';
+        }
     }
     
     // Troubleshooting guide
