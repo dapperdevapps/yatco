@@ -88,7 +88,7 @@ function yatco_build_brief_from_fullspecs( $vessel_id, $full ) {
  * 2. Matches existing CPT post by MLSID (primary) or VesselID (fallback)
  * 3. Creates new post if not found, or updates existing post if found
  * 4. Stores all vessel metadata in post meta fields
- * 5. Downloads and attaches gallery images if available
+ * 5. Stores image URLs in meta (images are NOT downloaded to save storage)
  * 
  * Matching Logic:
  * - First attempts to match by MLSID (yacht_mlsid meta field)
@@ -301,6 +301,11 @@ function yatco_import_single_vessel( $token, $vessel_id ) {
         );
     }
 
+    // IMAGE IMPORT DISABLED - Images are not downloaded to avoid storage issues
+    // Image URLs are stored in yacht_image_url meta field for reference
+    // If you want to enable image importing, uncomment the code below
+    
+    /*
     // Fetch gallery photos from PhotoGallery array in FullSpecsAll response.
     if ( isset( $full['PhotoGallery'] ) && is_array( $full['PhotoGallery'] ) && ! empty( $full['PhotoGallery'] ) ) {
         require_once ABSPATH . 'wp-admin/includes/media.php';
@@ -334,6 +339,33 @@ function yatco_import_single_vessel( $token, $vessel_id ) {
         if ( ! empty( $attach_ids ) ) {
             set_post_thumbnail( $post_id, $attach_ids[0] );
             update_post_meta( $post_id, 'yacht_images', $attach_ids );
+        }
+    }
+    */
+    
+    // Store image gallery URLs in meta for reference (without downloading)
+    if ( isset( $full['PhotoGallery'] ) && is_array( $full['PhotoGallery'] ) && ! empty( $full['PhotoGallery'] ) ) {
+        $image_urls = array();
+        foreach ( $full['PhotoGallery'] as $photo ) {
+            $url = '';
+            if ( ! empty( $photo['largeImageURL'] ) ) {
+                $url = $photo['largeImageURL'];
+            } elseif ( ! empty( $photo['mediumImageURL'] ) ) {
+                $url = $photo['mediumImageURL'];
+            } elseif ( ! empty( $photo['smallImageURL'] ) ) {
+                $url = $photo['smallImageURL'];
+            }
+            
+            if ( ! empty( $url ) ) {
+                $image_urls[] = array(
+                    'url'     => $url,
+                    'caption' => isset( $photo['Caption'] ) ? $photo['Caption'] : '',
+                );
+            }
+        }
+        
+        if ( ! empty( $image_urls ) ) {
+            update_post_meta( $post_id, 'yacht_image_gallery_urls', $image_urls );
         }
     }
 
