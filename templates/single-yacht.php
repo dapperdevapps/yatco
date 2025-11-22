@@ -204,69 +204,57 @@ if ( $price_on_application || empty( $asking_price ) ) {
     <?php endif; ?>
   </section>
 
-  <!-- HERO SECTION -->
-  <section class="yacht-hero">
-    <div class="yacht-hero-main">
+  <!-- TITLE AND KEY INFO SECTION -->
+  <section class="yacht-title-info">
+    <!-- Centered Title -->
+    <h1 class="yacht-title-centered">
+      <?php echo yacht_output( $yacht_title ); ?>
+    </h1>
 
-      <!-- Title: Year + Builder + Model -->
-      <h1>
-        <?php echo yacht_output( $yacht_title ); ?>
-      </h1>
-
-      <!-- Subheading: Category + Location -->
-      <p class="yacht-hero-sub">
-        <?php 
-        $sub_parts = array();
-        if ( $category_display ) $sub_parts[] = $category_display;
-        if ( $location_display ) $sub_parts[] = $location_display;
-        echo yacht_output( implode( ' • ', $sub_parts ) );
-        ?>
-      </p>
-
-      <!-- Price (handle Price on Application vs numeric) -->
-      <p class="yacht-price">
-        <?php echo yacht_output( $price_display ); ?>
-      </p>
-
-      <!-- Status / badges -->
-      <?php if ( $status_text || $agreement_type ) : ?>
-      <ul class="yacht-hero-badges">
-        <?php if ( $status_text ) : ?>
-        <li><?php echo yacht_output( $status_text ); ?></li>
-        <?php endif; ?>
-        <?php if ( $agreement_type ) : ?>
-        <li><?php echo yacht_output( $agreement_type ); ?></li>
-        <?php endif; ?>
-      </ul>
-      <?php endif; ?>
-
-      <!-- CTAs -->
-      <div class="yacht-hero-cta">
-        <a href="#yacht-enquiry" class="btn-primary">Enquire Now</a>
-
-        <?php if ( $virtual_tour_url ) : ?>
-        <a href="<?php echo esc_url( $virtual_tour_url ); ?>" target="_blank" class="btn-secondary">
-          View Virtual Tour
-        </a>
-        <?php endif; ?>
-
-        <?php if ( ! empty( $videos ) && is_array( $videos ) ) : ?>
-        <a href="#yacht-video" class="btn-secondary">
-          Watch Video
-        </a>
-        <?php endif; ?>
+    <!-- 3-Column Info Row -->
+    <div class="yacht-info-columns">
+      <div class="yacht-info-column">
+        <div class="yacht-info-label">Category</div>
+        <div class="yacht-info-value"><?php echo yacht_output( $category_display ); ?></div>
+      </div>
+      <div class="yacht-info-column">
+        <div class="yacht-info-label">Price</div>
+        <div class="yacht-info-value"><?php echo yacht_output( $price_display ); ?></div>
+      </div>
+      <div class="yacht-info-column">
+        <div class="yacht-info-label">Location</div>
+        <div class="yacht-info-value"><?php echo yacht_output( $location_display ); ?></div>
       </div>
     </div>
 
-    <!-- Hero image (main photo) -->
-    <?php if ( $main_photo_url ) : ?>
-    <figure class="yacht-hero-image">
-      <img
-        src="<?php echo esc_url( $main_photo_url ); ?>"
-        alt="<?php echo esc_attr( $yacht_title ); ?>"
-      >
-    </figure>
+    <!-- Status / badges -->
+    <?php if ( $status_text || $agreement_type ) : ?>
+    <ul class="yacht-hero-badges">
+      <?php if ( $status_text ) : ?>
+      <li><?php echo yacht_output( $status_text ); ?></li>
+      <?php endif; ?>
+      <?php if ( $agreement_type ) : ?>
+      <li><?php echo yacht_output( $agreement_type ); ?></li>
+      <?php endif; ?>
+    </ul>
     <?php endif; ?>
+
+    <!-- CTAs -->
+    <div class="yacht-hero-cta">
+      <a href="#yacht-enquiry" class="btn-primary">Enquire Now</a>
+
+      <?php if ( $virtual_tour_url ) : ?>
+      <a href="<?php echo esc_url( $virtual_tour_url ); ?>" target="_blank" class="btn-secondary">
+        View Virtual Tour
+      </a>
+      <?php endif; ?>
+
+      <?php if ( ! empty( $videos ) && is_array( $videos ) ) : ?>
+      <a href="#yacht-video" class="btn-secondary">
+        Watch Video
+      </a>
+      <?php endif; ?>
+    </div>
   </section>
 
   <!-- QUICK SPEC BAR -->
@@ -722,6 +710,134 @@ if ( $price_on_application || empty( $asking_price ) ) {
   
   .yacht-gallery-carousel .yacht-gallery-item img {
     height: 200px;
+  }
+}
+
+/* Title and Info Section Styles */
+.yacht-title-info {
+  text-align: center;
+  padding: 40px 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.yacht-title-centered {
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin: 0 0 30px 0;
+  text-align: center;
+  line-height: 1.2;
+  color: #333;
+}
+
+.yacht-info-columns {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 30px;
+  margin: 30px 0;
+  padding: 30px 0;
+  border-top: 1px solid #e0e0e0;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.yacht-info-column {
+  text-align: center;
+}
+
+.yacht-info-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #666;
+  margin-bottom: 8px;
+}
+
+.yacht-info-value {
+  font-size: 1.125rem;
+  font-weight: 500;
+  color: #333;
+  line-height: 1.4;
+}
+
+.yacht-hero-badges {
+  list-style: none;
+  padding: 0;
+  margin: 20px 0;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.yacht-hero-badges li {
+  display: inline-block;
+  padding: 6px 16px;
+  background: #f5f5f5;
+  border-radius: 20px;
+  font-size: 0.875rem;
+  color: #666;
+}
+
+.yacht-hero-cta {
+  margin-top: 30px;
+  display: flex;
+  justify-content: center;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+
+.yacht-hero-cta .btn-primary,
+.yacht-hero-cta .btn-secondary {
+  padding: 12px 24px;
+  border-radius: 4px;
+  text-decoration: none;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  display: inline-block;
+}
+
+.yacht-hero-cta .btn-primary {
+  background: #0073aa;
+  color: #fff;
+}
+
+.yacht-hero-cta .btn-primary:hover {
+  background: #005a87;
+  color: #fff;
+}
+
+.yacht-hero-cta .btn-secondary {
+  background: #fff;
+  color: #0073aa;
+  border: 2px solid #0073aa;
+}
+
+.yacht-hero-cta .btn-secondary:hover {
+  background: #0073aa;
+  color: #fff;
+}
+
+@media (max-width: 768px) {
+  .yacht-title-centered {
+    font-size: 2rem;
+  }
+  
+  .yacht-info-columns {
+    grid-template-columns: 1fr;
+    gap: 20px;
+    padding: 20px 0;
+  }
+  
+  .yacht-hero-cta {
+    flex-direction: column;
+    align-items: center;
+  }
+  
+  .yacht-hero-cta .btn-primary,
+  .yacht-hero-cta .btn-secondary {
+    width: 100%;
+    max-width: 300px;
   }
 }
 
