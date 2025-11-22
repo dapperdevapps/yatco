@@ -27,8 +27,84 @@ function yatco_create_cpt() {
             'show_in_rest' => true,
         )
     );
+    
+    // Register custom taxonomies for archives
+    yatco_register_taxonomies();
+    
     flush_rewrite_rules();
 }
+
+/**
+ * Register custom taxonomies for Builder, Vessel Type, and Category.
+ * These enable archive pages and better organization.
+ */
+function yatco_register_taxonomies() {
+    // Builder Taxonomy
+    register_taxonomy(
+        'yacht_builder',
+        'yacht',
+        array(
+            'labels'            => array(
+                'name'          => 'Builders',
+                'singular_name' => 'Builder',
+                'menu_name'     => 'Builders',
+            ),
+            'public'            => true,
+            'show_ui'           => true,
+            'show_in_menu'      => true,
+            'show_in_nav_menus' => true,
+            'show_in_rest'      => true,
+            'hierarchical'      => false, // Non-hierarchical (like tags)
+            'rewrite'           => array( 'slug' => 'yacht-builder' ),
+            'query_var'         => true,
+        )
+    );
+    
+    // Vessel Type Taxonomy
+    register_taxonomy(
+        'yacht_vessel_type',
+        'yacht',
+        array(
+            'labels'            => array(
+                'name'          => 'Vessel Types',
+                'singular_name' => 'Vessel Type',
+                'menu_name'     => 'Vessel Types',
+            ),
+            'public'            => true,
+            'show_ui'           => true,
+            'show_in_menu'      => true,
+            'show_in_nav_menus' => true,
+            'show_in_rest'      => true,
+            'hierarchical'      => false,
+            'rewrite'           => array( 'slug' => 'yacht-type' ),
+            'query_var'         => true,
+        )
+    );
+    
+    // Category Taxonomy
+    register_taxonomy(
+        'yacht_category',
+        'yacht',
+        array(
+            'labels'            => array(
+                'name'          => 'Yacht Categories',
+                'singular_name' => 'Category',
+                'menu_name'     => 'Categories',
+            ),
+            'public'            => true,
+            'show_ui'           => true,
+            'show_in_menu'      => true,
+            'show_in_nav_menus' => true,
+            'show_in_rest'      => true,
+            'hierarchical'      => true, // Hierarchical (like categories) - allows sub-categories
+            'rewrite'           => array( 'slug' => 'yacht-category' ),
+            'query_var'         => true,
+        )
+    );
+}
+
+// Register taxonomies on init (not just on activation)
+add_action( 'init', 'yatco_register_taxonomies', 0 );
 
 /**
  * Load single yacht template from plugin if theme doesn't have one.

@@ -403,6 +403,34 @@ function yatco_import_single_vessel( $token, $vessel_id ) {
     update_post_meta( $post_id, 'yacht_last_updated', time() );
     update_post_meta( $post_id, 'yacht_fullspecs_raw', $full );
 
+    // Assign taxonomy terms for archives
+    // Builder
+    if ( ! empty( $make ) ) {
+        wp_set_object_terms( $post_id, $make, 'yacht_builder', false );
+    }
+    
+    // Vessel Type
+    if ( ! empty( $type ) ) {
+        wp_set_object_terms( $post_id, $type, 'yacht_vessel_type', false );
+    }
+    
+    // Category
+    if ( ! empty( $category ) ) {
+        wp_set_object_terms( $post_id, $category, 'yacht_category', false );
+    }
+    
+    // Sub Category (if hierarchical categories are used)
+    if ( ! empty( $sub_category ) && ! empty( $category ) ) {
+        // Try to create as child term if parent exists
+        $parent_term = get_term_by( 'name', $category, 'yacht_category' );
+        if ( $parent_term ) {
+            $sub_term = wp_insert_term( $sub_category, 'yacht_category', array( 'parent' => $parent_term->term_id ) );
+            if ( ! is_wp_error( $sub_term ) ) {
+                wp_set_object_terms( $post_id, $sub_category, 'yacht_category', true );
+            }
+        }
+    }
+
     if ( ! empty( $desc ) ) {
         wp_update_post(
             array(

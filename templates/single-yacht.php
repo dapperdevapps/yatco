@@ -294,46 +294,6 @@ if ( $price_on_application || empty( $asking_price ) ) {
   </section>
   <?php endif; ?>
 
-  <!-- QUICK SPEC BAR -->
-  <section class="yacht-quick-specs">
-    <ul>
-      <?php if ( $loa ) : ?>
-      <li>
-        <span class="label">Length</span>
-        <span class="value"><?php echo yacht_output( $loa ); ?></span>
-      </li>
-      <?php endif; ?>
-      
-      <?php if ( $year_built ) : ?>
-      <li>
-        <span class="label">Year</span>
-        <span class="value"><?php echo yacht_output( $year_built ); ?></span>
-      </li>
-      <?php endif; ?>
-      
-      <?php if ( $builder ) : ?>
-      <li>
-        <span class="label">Builder</span>
-        <span class="value"><?php echo yacht_output( $builder ); ?></span>
-      </li>
-      <?php endif; ?>
-      
-      <?php if ( $hull_material ) : ?>
-      <li>
-        <span class="label">Hull Material</span>
-        <span class="value"><?php echo yacht_output( $hull_material ); ?></span>
-      </li>
-      <?php endif; ?>
-      
-      <?php if ( $location_display ) : ?>
-      <li>
-        <span class="label">Location</span>
-        <span class="value"><?php echo yacht_output( $location_display ); ?></span>
-      </li>
-      <?php endif; ?>
-    </ul>
-  </section>
-
   <!-- OVERVIEW / DESCRIPTION -->
   <?php if ( $description ) : ?>
   <section class="yacht-overview">
@@ -366,28 +326,14 @@ if ( $price_on_application || empty( $asking_price ) ) {
     <?php endif; ?>
   </section>
 
-  <!-- SPECIFICATIONS (simple table / definition list) -->
+  <!-- SPECIFICATIONS -->
   <section class="yacht-specs">
     <h2>Specifications</h2>
     <div class="yacht-specs-grid">
 
-      <?php if ( $loa || $loa_feet || $loa_meters ) : ?>
+      <?php if ( $loa || $loa_feet || $loa_meters || $builder || $model || $year_built || $vessel_type || $category_display || $hull_material || $location_display ) : ?>
       <div class="yacht-spec-group">
-        <h3>Dimensions</h3>
-        <dl>
-          <?php if ( $loa ) : ?>
-          <div>
-            <dt>Length (LOA)</dt>
-            <dd><?php echo yacht_output( $loa ); ?></dd>
-          </div>
-          <?php endif; ?>
-          <!-- Add Beam, Draft, etc. when available -->
-        </dl>
-      </div>
-      <?php endif; ?>
-
-      <div class="yacht-spec-group">
-        <h3>Construction</h3>
+        <h3>General</h3>
         <dl>
           <?php if ( $builder ) : ?>
           <div>
@@ -424,14 +370,51 @@ if ( $price_on_application || empty( $asking_price ) ) {
           </div>
           <?php endif; ?>
           
+          <?php if ( $location_display ) : ?>
+          <div>
+            <dt>Location</dt>
+            <dd><?php echo yacht_output( $location_display ); ?></dd>
+          </div>
+          <?php endif; ?>
+        </dl>
+      </div>
+      <?php endif; ?>
+
+      <?php if ( $loa || $loa_feet || $loa_meters || $hull_material ) : ?>
+      <div class="yacht-spec-group">
+        <h3>Dimensions & Construction</h3>
+        <dl>
+          <?php if ( $loa ) : ?>
+          <div>
+            <dt>Length (LOA)</dt>
+            <dd><?php echo yacht_output( $loa ); ?></dd>
+          </div>
+          <?php endif; ?>
+          
+          <?php if ( $loa_feet ) : ?>
+          <div>
+            <dt>Length (Feet)</dt>
+            <dd><?php echo yacht_output( $loa_feet ); ?> ft</dd>
+          </div>
+          <?php endif; ?>
+          
+          <?php if ( $loa_meters ) : ?>
+          <div>
+            <dt>Length (Meters)</dt>
+            <dd><?php echo yacht_output( $loa_meters ); ?> m</dd>
+          </div>
+          <?php endif; ?>
+          
           <?php if ( $hull_material ) : ?>
           <div>
             <dt>Hull Material</dt>
             <dd><?php echo yacht_output( $hull_material ); ?></dd>
           </div>
           <?php endif; ?>
+          <!-- Add Beam, Draft, etc. when available -->
         </dl>
       </div>
+      <?php endif; ?>
 
       <!-- Performance section - add when you have speed data -->
       <!-- <div class="yacht-spec-group">
