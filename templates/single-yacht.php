@@ -284,7 +284,12 @@ if ( $price_on_application || empty( $asking_price ) ) {
             if ( empty( $img_url ) ) continue;
           ?>
           <div class="swiper-slide">
-            <a href="<?php echo esc_url( $img_url ); ?>" class="yacht-gallery-item" data-lightbox="yacht-gallery">
+            <a href="<?php echo esc_url( $img_url ); ?>" 
+               class="yacht-gallery-item" 
+               data-glightbox="type: image; gallery: yacht-gallery"
+               <?php if ( ! empty( $img_caption ) ) : ?>
+               data-glightbox-title="<?php echo esc_attr( $img_caption ); ?>"
+               <?php endif; ?>>
               <img
                 src="<?php echo esc_url( $img_medium ?: $img_url ); ?>"
                 alt="<?php echo esc_attr( $img_caption ?: $yacht_title . ' image' ); ?>"
@@ -561,6 +566,12 @@ if ( $price_on_application || empty( $asking_price ) ) {
 <!-- Swiper JS -->
 <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
 
+<!-- GLightbox CSS -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/glightbox/dist/css/glightbox.min.css" />
+
+<!-- GLightbox JS -->
+<script src="https://cdn.jsdelivr.net/npm/glightbox/dist/js/glightbox.min.js"></script>
+
 <!-- Custom Gallery Carousel Styles -->
 <style>
 .yacht-gallery-carousel-wrapper {
@@ -702,6 +713,80 @@ if ( $price_on_application || empty( $asking_price ) ) {
     height: 200px;
   }
 }
+
+/* GLightbox Custom Styles */
+.glightbox-clean .gslide-description {
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  padding: 15px 20px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.glightbox-clean .gslide-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #fff;
+}
+
+.glightbox-clean .gslide-media {
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+
+.glightbox-clean .gbtn.focused,
+.glightbox-clean .gbtn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.glightbox-clean .gprev,
+.glightbox-clean .gnext {
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 50%;
+  width: 50px;
+  height: 50px;
+  transition: all 0.3s ease;
+}
+
+.glightbox-clean .gprev:hover,
+.glightbox-clean .gnext:hover {
+  background: rgba(0, 0, 0, 0.8);
+  transform: scale(1.1);
+}
+
+.glightbox-clean .gclose {
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  top: 20px;
+  right: 20px;
+  transition: all 0.3s ease;
+}
+
+.glightbox-clean .gclose:hover {
+  background: rgba(0, 0, 0, 0.8);
+  transform: scale(1.1) rotate(90deg);
+}
+
+.glightbox-clean .gslide-inline {
+  background: transparent;
+}
+
+@media (max-width: 768px) {
+  .glightbox-clean .gprev,
+  .glightbox-clean .gnext {
+    width: 40px;
+    height: 40px;
+  }
+  
+  .glightbox-clean .gclose {
+    width: 35px;
+    height: 35px;
+    top: 15px;
+    right: 15px;
+  }
+}
 </style>
 
 <!-- Initialize Swiper -->
@@ -751,6 +836,29 @@ document.addEventListener('DOMContentLoaded', function() {
       },
     });
   }
+  
+  // Initialize GLightbox for gallery images
+  const lightbox = GLightbox({
+    selector: '.yacht-gallery-item',
+    touchNavigation: true,
+    loop: true,
+    autoplayVideos: false,
+    moreText: 'See more',
+    moreLength: 60,
+    closeButton: true,
+    touchFollowAxis: true,
+    keyboardNavigation: true,
+    closeOnOutsideClick: true,
+    zoomable: true,
+    draggable: true,
+    openEffect: 'fade',
+    closeEffect: 'fade',
+    slideEffect: 'slide',
+    cssEffects: {
+      fade: { in: 'fadeIn', out: 'fadeOut' },
+      zoom: { in: 'zoomIn', out: 'zoomOut' },
+    },
+  });
 });
 </script>
 
