@@ -272,22 +272,37 @@ if ( $price_on_application || empty( $asking_price ) ) {
   <section class="yacht-media" id="yacht-media">
     <?php if ( ! empty( $gallery_images ) && is_array( $gallery_images ) ) : ?>
     <h2>Gallery</h2>
-    <div class="yacht-gallery">
-      <?php foreach ( $gallery_images as $image ) : 
-        // Handle array structure: ['url' => '...', 'caption' => '...'] or just URL string
-        $img_url = is_array( $image ) ? ( $image['url'] ?? $image['largeImageURL'] ?? '' ) : $image;
-        $img_medium = is_array( $image ) ? ( $image['mediumImageURL'] ?? $img_url ) : $img_url;
-        $img_caption = is_array( $image ) ? ( $image['caption'] ?? '' ) : '';
-        
-        if ( empty( $img_url ) ) continue;
-      ?>
-      <a href="<?php echo esc_url( $img_url ); ?>" class="yacht-gallery-item" data-lightbox="yacht-gallery">
-        <img
-          src="<?php echo esc_url( $img_medium ?: $img_url ); ?>"
-          alt="<?php echo esc_attr( $img_caption ?: $yacht_title . ' image' ); ?>"
-        >
-      </a>
-      <?php endforeach; ?>
+    <div class="yacht-gallery-carousel-wrapper">
+      <div class="swiper yacht-gallery-carousel">
+        <div class="swiper-wrapper">
+          <?php foreach ( $gallery_images as $image ) : 
+            // Handle array structure: ['url' => '...', 'caption' => '...'] or just URL string
+            $img_url = is_array( $image ) ? ( $image['url'] ?? $image['largeImageURL'] ?? '' ) : $image;
+            $img_medium = is_array( $image ) ? ( $image['mediumImageURL'] ?? $img_url ) : $img_url;
+            $img_caption = is_array( $image ) ? ( $image['caption'] ?? '' ) : '';
+            
+            if ( empty( $img_url ) ) continue;
+          ?>
+          <div class="swiper-slide">
+            <a href="<?php echo esc_url( $img_url ); ?>" class="yacht-gallery-item" data-lightbox="yacht-gallery">
+              <img
+                src="<?php echo esc_url( $img_medium ?: $img_url ); ?>"
+                alt="<?php echo esc_attr( $img_caption ?: $yacht_title . ' image' ); ?>"
+                loading="lazy"
+              >
+              <?php if ( ! empty( $img_caption ) ) : ?>
+                <div class="yacht-gallery-caption"><?php echo esc_html( $img_caption ); ?></div>
+              <?php endif; ?>
+            </a>
+          </div>
+          <?php endforeach; ?>
+        </div>
+        <!-- Navigation buttons -->
+        <div class="swiper-button-next"></div>
+        <div class="swiper-button-prev"></div>
+        <!-- Pagination -->
+        <div class="swiper-pagination"></div>
+      </div>
     </div>
     <?php endif; ?>
 
@@ -539,6 +554,205 @@ if ( $price_on_application || empty( $asking_price ) ) {
   <?php endif; ?>
 
 </article>
+
+<!-- Swiper CSS -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css" />
+
+<!-- Swiper JS -->
+<script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+
+<!-- Custom Gallery Carousel Styles -->
+<style>
+.yacht-gallery-carousel-wrapper {
+  position: relative;
+  padding: 20px 0 60px;
+  margin: 30px 0;
+}
+
+.yacht-gallery-carousel {
+  width: 100%;
+  padding-bottom: 20px;
+}
+
+.yacht-gallery-carousel .swiper-slide {
+  height: auto;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.yacht-gallery-carousel .yacht-gallery-item {
+  display: block;
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  background: #f5f5f5;
+}
+
+.yacht-gallery-carousel .yacht-gallery-item:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.yacht-gallery-carousel .yacht-gallery-item img {
+  width: 100%;
+  height: 300px;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.3s ease;
+}
+
+.yacht-gallery-carousel .yacht-gallery-item:hover img {
+  transform: scale(1.05);
+}
+
+.yacht-gallery-carousel .yacht-gallery-caption {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.7), transparent);
+  color: #fff;
+  padding: 15px 12px 8px;
+  font-size: 13px;
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.yacht-gallery-carousel .yacht-gallery-item:hover .yacht-gallery-caption {
+  opacity: 1;
+}
+
+/* Navigation buttons */
+.yacht-gallery-carousel .swiper-button-next,
+.yacht-gallery-carousel .swiper-button-prev {
+  color: #0073aa;
+  background: rgba(255, 255, 255, 0.9);
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  transition: all 0.3s ease;
+}
+
+.yacht-gallery-carousel .swiper-button-next:hover,
+.yacht-gallery-carousel .swiper-button-prev:hover {
+  background: #fff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  transform: scale(1.1);
+}
+
+.yacht-gallery-carousel .swiper-button-next::after,
+.yacht-gallery-carousel .swiper-button-prev::after {
+  font-size: 20px;
+  font-weight: bold;
+}
+
+/* Pagination */
+.yacht-gallery-carousel .swiper-pagination {
+  bottom: 0 !important;
+  position: relative;
+  margin-top: 20px;
+}
+
+.yacht-gallery-carousel .swiper-pagination-bullet {
+  width: 10px;
+  height: 10px;
+  background: #0073aa;
+  opacity: 0.3;
+  transition: all 0.3s ease;
+}
+
+.yacht-gallery-carousel .swiper-pagination-bullet-active {
+  opacity: 1;
+  width: 24px;
+  border-radius: 5px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .yacht-gallery-carousel .yacht-gallery-item img {
+    height: 250px;
+  }
+  
+  .yacht-gallery-carousel .swiper-button-next,
+  .yacht-gallery-carousel .swiper-button-prev {
+    width: 36px;
+    height: 36px;
+  }
+  
+  .yacht-gallery-carousel .swiper-button-next::after,
+  .yacht-gallery-carousel .swiper-button-prev::after {
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .yacht-gallery-carousel {
+    padding-left: 40px;
+    padding-right: 40px;
+  }
+  
+  .yacht-gallery-carousel .yacht-gallery-item img {
+    height: 200px;
+  }
+}
+</style>
+
+<!-- Initialize Swiper -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const yachtGalleryCarousel = document.querySelector('.yacht-gallery-carousel');
+  if (yachtGalleryCarousel) {
+    new Swiper('.yacht-gallery-carousel', {
+      slidesPerView: 1,
+      spaceBetween: 20,
+      loop: true,
+      autoplay: {
+        delay: 4000,
+        disableOnInteraction: false,
+        pauseOnMouseEnter: true,
+      },
+      speed: 600,
+      grabCursor: true,
+      breakpoints: {
+        640: {
+          slidesPerView: 2,
+          spaceBetween: 20,
+        },
+        768: {
+          slidesPerView: 3,
+          spaceBetween: 24,
+        },
+        1024: {
+          slidesPerView: 4,
+          spaceBetween: 24,
+        },
+      },
+      navigation: {
+        nextEl: '.swiper-button-next',
+        prevEl: '.swiper-button-prev',
+      },
+      pagination: {
+        el: '.swiper-pagination',
+        clickable: true,
+        dynamicBullets: true,
+      },
+      keyboard: {
+        enabled: true,
+      },
+      mousewheel: {
+        forceToAxis: true,
+      },
+    });
+  }
+});
+</script>
 
 <?php
 // Get WordPress footer
