@@ -139,30 +139,112 @@ function yatco_options_page() {
     $pre_cache_progress = get_transient( 'yatco_cache_warming_progress' );
     $pre_is_warming_scheduled = wp_next_scheduled( 'yatco_warm_cache_hook' );
     
+    // Only consider active if progress shows incomplete import (very strict check)
     $pre_has_active_progress = false;
     if ( $pre_cache_progress !== false && is_array( $pre_cache_progress ) && ! empty( $pre_cache_progress ) ) {
         $pre_last_processed = isset( $pre_cache_progress['last_processed'] ) ? intval( $pre_cache_progress['last_processed'] ) : 0;
         $pre_total = isset( $pre_cache_progress['total'] ) ? intval( $pre_cache_progress['total'] ) : 0;
-        $pre_has_active_progress = ( $pre_total > 0 && $pre_last_processed < $pre_total );
+        // Only disable if there's actual active progress (not completed)
+        // Check timestamp too - if progress is older than 5 minutes, consider it stale
+        $pre_timestamp = isset( $pre_cache_progress['timestamp'] ) ? intval( $pre_cache_progress['timestamp'] ) : 0;
+        $pre_is_recent = ( $pre_timestamp > 0 && ( time() - $pre_timestamp ) < 300 ); // 5 minutes
+        $pre_has_active_progress = ( $pre_total > 0 && $pre_last_processed < $pre_total && $pre_is_recent );
+    }
+    
+    // Also check if there's a scheduled event that hasn't run yet (within next 60 seconds)
+    $pre_has_upcoming_scheduled = false;
+    if ( $pre_is_warming_scheduled && $pre_is_warming_scheduled > time() && $pre_is_warming_scheduled <= ( time() + 60 ) ) {
+        $pre_has_upcoming_scheduled = true;
     }
     
     // Show import button at the top (prominently) before the "How Updates Work" section
     echo '<div style="background: #fff; border: 2px solid #2271b1; border-radius: 4px; padding: 20px; margin: 20px 0;">';
     echo '<h3 style="margin-top: 0; color: #2271b1;">📥 Import Vessels to CPT</h3>';
-    echo '<form method="post" style="margin: 15px 0;">';
+    
+    // Check if buttons should be disabled (only if truly active import happening now)
+    // Be very permissive - only disable if there's clear evidence of active import
+    $pre_button_disabled = false;
+    
+    // Only disable if there's very recent progress (within last 30 seconds) AND it's incomplete
+    // This ensures buttons are enabled unless import is actively running right now
+    if ( $pre_has_active_progress ) {
+        $pre_timestamp = isset( $pre_cache_progress['timestamp'] ) ? intval( $pre_cache_progress['timestamp'] ) : 0;
+        // Only consider active if progress was updated in last 30 seconds (truly active)
+        if ( $pre_timestamp > 0 && ( time() - $pre_timestamp ) < 30 ) {
+            $pre_button_disabled = true;
+        } else {
+            // Progress exists but is stale (>30 seconds old) - clear it to enable buttons
+            $pre_button_disabled = false;
+            // Optionally auto-clear stale progress
+            if ( $pre_timestamp > 0 && ( time() - $pre_timestamp ) > 300 ) {
+                // Progress is older than 5 minutes - consider it stale/abandoned
+                delete_transient( 'yatco_cache_warming_progress' );
+                delete_transient( 'yatco_cache_warming_status' );
+                $pre_cache_progress = false;
+                $pre_cache_status = false;
+            }
+        }
+    }
+    
+    // Don't disable based on scheduled events alone
+    // if ( $pre_has_upcoming_scheduled ) {
+    //     $pre_button_disabled = true;
+    // }
+    
+    // Show buttons side by side
+    echo '<div style="display: flex; gap: 15px; align-items: center; margin: 15px 0; flex-wrap: wrap;">';
+    
+    // Import button
+    echo '<form method="post" style="margin: 0;">';
     wp_nonce_field( 'yatco_warm_cache', 'yatco_warm_cache_nonce' );
-    $pre_button_disabled = $pre_has_active_progress ? true : false;
     submit_button( 'Import All Vessels to CPT', 'primary', 'yatco_warm_cache', false, array( 
         'disabled' => $pre_button_disabled,
         'style' => 'font-size: 16px; padding: 10px 20px; height: auto;'
     ) );
     echo '</form>';
     
-    if ( $pre_button_disabled ) {
-        echo '<p style="color: #d63638; font-weight: bold;">⚠️ Import is currently running. Progress is shown below.</p>';
-    } else {
-        echo '<p style="color: #666; font-size: 13px;">Click the button above to import all active vessels from YATCO API into your WordPress Custom Post Type.</p>';
+    // ALWAYS show stop/clear button when buttons are disabled OR if there's any status/progress (for easy recovery)
+    // This ensures users can always clear stuck states
+    if ( $pre_button_disabled || $pre_cache_status !== false || $pre_cache_progress !== false || $pre_is_warming_scheduled ) {
+        echo '<form method="post" style="margin: 0;">';
+        wp_nonce_field( 'yatco_clear_all', 'yatco_clear_all_nonce' );
+        submit_button( '🛑 Stop & Clear All', 'secondary', 'yatco_clear_all', false, array( 
+            'style' => 'background: #dc3232; border-color: #dc3232; color: #fff; font-weight: bold; font-size: 16px; padding: 10px 20px; height: auto;'
+        ) );
+        echo '</form>';
     }
+    
+    // Show warning message if buttons are disabled
+    if ( $pre_button_disabled ) {
+        echo '<p style="color: #d63638; font-size: 12px; margin: 5px 0 0 0; font-weight: bold;">⚠️ Buttons are disabled because import is running. Click "Stop & Clear All" above to cancel.</p>';
+    } elseif ( $pre_cache_status !== false || $pre_cache_progress !== false || $pre_is_warming_scheduled ) {
+        echo '<p style="color: #dc3232; font-size: 12px; margin: 5px 0 0 0; font-weight: bold;">⚠️ Status/Progress detected. If buttons are stuck disabled, click "Stop & Clear All" above to reset.</p>';
+    }
+    
+    echo '</div>';
+    
+    if ( $pre_button_disabled ) {
+        echo '<p style="color: #d63638; font-weight: bold; margin-top: 10px;">⚠️ Import is currently running. Use "Stop & Clear All" button above to cancel. Progress is shown below.</p>';
+    } else {
+        echo '<p style="color: #666; font-size: 13px; margin-top: 10px;">Click the button above to import all active vessels from YATCO API into your WordPress Custom Post Type.</p>';
+    }
+    
+    // Show what's causing buttons to be disabled
+    if ( $pre_cache_status !== false || $pre_cache_progress !== false || $pre_is_warming_scheduled ) {
+        echo '<div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px; margin-top: 10px; font-size: 12px;">';
+        echo '<strong>Debug Info:</strong> ';
+        $debug_items = array();
+        if ( $pre_cache_status !== false ) $debug_items[] = 'Status: ' . esc_html( substr( $pre_cache_status, 0, 60 ) );
+        if ( $pre_cache_progress !== false ) {
+            $last = isset( $pre_cache_progress['last_processed'] ) ? $pre_cache_progress['last_processed'] : 0;
+            $total = isset( $pre_cache_progress['total'] ) ? $pre_cache_progress['total'] : 0;
+            $debug_items[] = "Progress: {$last}/{$total}";
+        }
+        if ( $pre_is_warming_scheduled ) $debug_items[] = 'Scheduled event found';
+        echo implode( ' | ', $debug_items );
+        echo '</div>';
+    }
+    
     echo '</div>';
     
     echo '<div style="background: #f0f6fc; border-left: 4px solid #2271b1; padding: 15px; margin: 15px 0;">';
@@ -274,37 +356,45 @@ function yatco_options_page() {
         $button_disabled = false;
     }
     
+    // Use same disabled logic as top button (very permissive)
+    $button_disabled = false;
+    if ( $has_active_progress && $cache_progress !== false && is_array( $cache_progress ) ) {
+        $timestamp = isset( $cache_progress['timestamp'] ) ? intval( $cache_progress['timestamp'] ) : 0;
+        // Only disable if progress was updated in last 30 seconds (truly active)
+        if ( $timestamp > 0 && ( time() - $timestamp ) < 30 ) {
+            $button_disabled = true;
+        } else {
+            // Progress is stale - clear it
+            if ( $timestamp > 0 && ( time() - $timestamp ) > 300 ) {
+                delete_transient( 'yatco_cache_warming_progress' );
+                delete_transient( 'yatco_cache_warming_status' );
+                $cache_progress = false;
+                $cache_status = false;
+            }
+        }
+    }
+    
     echo '<form method="post" style="margin-bottom: 15px;">';
     wp_nonce_field( 'yatco_warm_cache', 'yatco_warm_cache_nonce' );
-    // Only disable button if there's actually an active import happening right now
-    // Be very strict - default to enabled to avoid stuck states
-    // Only disable if we have BOTH active progress AND it's not completed
-    $button_disabled = false;
     
-    // Only disable if there's active progress (vessels being processed right now)
-    // AND the progress shows it's not finished
-    if ( $has_active_progress ) {
-        // Double-check progress is actually active (not completed)
-        $last_processed = isset( $cache_progress['last_processed'] ) ? intval( $cache_progress['last_processed'] ) : 0;
-        $total = isset( $cache_progress['total'] ) ? intval( $cache_progress['total'] ) : 0;
-        if ( $total > 0 && $last_processed < $total ) {
-            $button_disabled = true;
-        }
-    }
+    // Show buttons side by side
+    echo '<div style="display: flex; gap: 15px; align-items: center; margin: 10px 0; flex-wrap: wrap;">';
     
-    // Don't disable based on status alone - status can be stale
-    // Only check status if we also have progress
-    if ( ! $button_disabled && $has_active_status && $cache_status !== false && $has_active_progress ) {
-        $status_lower = strtolower( $cache_status );
-        if ( strpos( $status_lower, 'starting' ) !== false || 
-             strpos( $status_lower, 'processing' ) !== false || 
-             strpos( $status_lower, 'fetching' ) !== false ) {
-            $button_disabled = true;
-        }
-    }
-    
+    // Second import button (for consistency)
     submit_button( 'Import All Vessels to CPT', 'primary', 'yatco_warm_cache', false, array( 'disabled' => $button_disabled ) );
     echo '</form>';
+    
+    // Always show stop/clear button if buttons are disabled OR if there's any status/progress (for stuck states)
+    if ( $button_disabled || $cache_status !== false || $cache_progress !== false || $is_warming_scheduled ) {
+        echo '<form method="post" style="margin: 0;">';
+        wp_nonce_field( 'yatco_clear_all', 'yatco_clear_all_nonce' );
+        submit_button( '🛑 Stop & Clear All', 'secondary', 'yatco_clear_all', false, array( 
+            'style' => 'background: #dc3232; border-color: #dc3232; color: #fff; font-weight: bold;'
+        ) );
+        echo '</form>';
+    }
+    
+    echo '</div>';
     
     // Always show clear all button if button is disabled (for easy recovery)
     if ( $button_disabled ) {
