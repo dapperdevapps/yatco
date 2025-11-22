@@ -144,4 +144,3 @@ function yatco_test_connection( $token ) {
     $count = count( $data );
     return '<div class="notice notice-success"><p>Connection successful! Found ' . number_format( $count ) . ' active vessel ID(s).</p></div>';
 }
-
