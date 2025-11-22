@@ -130,6 +130,106 @@ function yatco_options_page() {
     }
 
     echo '<hr />';
+    echo '<h2>Test Single Vessel Data</h2>';
+    echo '<p>This test fetches the first active vessel ID and displays the full <code>FullSpecsAll</code> data so you can see exactly what data structure we\'re getting from the YATCO API.</p>';
+    echo '<form method="post">';
+    wp_nonce_field( 'yatco_test_vessel', 'yatco_test_vessel_nonce' );
+    submit_button( 'Fetch First Vessel Details', 'secondary', 'yatco_test_vessel' );
+    echo '</form>';
+
+    if ( isset( $_POST['yatco_test_vessel'] ) && check_admin_referer( 'yatco_test_vessel', 'yatco_test_vessel_nonce' ) ) {
+        if ( empty( $token ) ) {
+            echo '<div class="notice notice-error"><p>Missing token. Please configure your API token first.</p></div>';
+        } else {
+            echo '<div style="background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; padding: 20px; margin: 20px 0;">';
+            echo '<h3>Step 1: Getting Active Vessel IDs</h3>';
+            
+            // Get first active vessel ID
+            $vessel_ids = yatco_get_active_vessel_ids( $token, 1 ); // Get just 1 ID
+            
+            if ( is_wp_error( $vessel_ids ) ) {
+                echo '<div class="notice notice-error"><p><strong>Error getting vessel IDs:</strong> ' . esc_html( $vessel_ids->get_error_message() ) . '</p></div>';
+                echo '</div>';
+            } elseif ( empty( $vessel_ids ) || ! is_array( $vessel_ids ) ) {
+                echo '<div class="notice notice-error"><p><strong>Error:</strong> No vessel IDs returned. The API response may be empty or invalid.</p></div>';
+                echo '</div>';
+            } else {
+                $first_vessel_id = $vessel_ids[0];
+                echo '<p><strong>✅ Success!</strong> Found first vessel ID: <code>' . esc_html( $first_vessel_id ) . '</code></p>';
+                
+                echo '<h3>Step 2: Fetching FullSpecsAll for Vessel ID ' . esc_html( $first_vessel_id ) . '</h3>';
+                
+                // Fetch full specs (yatco-api.php is already included in main plugin file)
+                $fullspecs = yatco_fetch_fullspecs( $token, $first_vessel_id );
+                
+                if ( is_wp_error( $fullspecs ) ) {
+                    echo '<div class="notice notice-error"><p><strong>Error fetching vessel data:</strong> ' . esc_html( $fullspecs->get_error_message() ) . '</p></div>';
+                } else {
+                    echo '<p><strong>✅ Success!</strong> FullSpecsAll data retrieved.</p>';
+                    
+                    echo '<h3>Raw API Response Data Structure</h3>';
+                    echo '<p style="color: #666; font-size: 13px;">Below is the complete JSON response from the YATCO API. You can expand/collapse sections to explore the data structure.</p>';
+                    
+                    // Display formatted JSON
+                    echo '<div style="background: #fff; border: 1px solid #ccc; border-radius: 4px; padding: 15px; max-height: 800px; overflow: auto; font-family: monospace; font-size: 12px; line-height: 1.5;">';
+                    echo '<pre style="margin: 0; white-space: pre-wrap; word-wrap: break-word;">';
+                    echo esc_html( wp_json_encode( $fullspecs, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) );
+                    echo '</pre>';
+                    echo '</div>';
+                    
+                    // Also show a summary of key sections
+                    echo '<h3 style="margin-top: 30px;">Key Data Sections Summary</h3>';
+                    echo '<div style="background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 15px;">';
+                    echo '<ul style="list-style: disc; margin-left: 20px;">';
+                    
+                    $sections = array(
+                        'Result' => 'Main vessel result data',
+                        'BasicInfo' => 'Basic vessel information',
+                        'Dimensions' => 'Vessel dimensions',
+                        'VD' => 'Vessel details',
+                        'MiscInfo' => 'Miscellaneous information',
+                        'PhotoGallery' => 'Photo gallery array',
+                        'Specifications' => 'Detailed specifications',
+                    );
+                    
+                    foreach ( $sections as $section => $description ) {
+                        if ( isset( $fullspecs[ $section ] ) ) {
+                            $count = is_array( $fullspecs[ $section ] ) ? count( $fullspecs[ $section ] ) : 'N/A';
+                            echo '<li><strong>' . esc_html( $section ) . ':</strong> ' . esc_html( $description ) . ' (' . esc_html( $count ) . ' items)</li>';
+                        } else {
+                            echo '<li><strong>' . esc_html( $section ) . ':</strong> <span style="color: #999;">Not present in response</span></li>';
+                        }
+                    }
+                    
+                    // Show sample of key fields
+                    if ( isset( $fullspecs['Result'] ) ) {
+                        $result = $fullspecs['Result'];
+                        echo '</ul>';
+                        echo '<h4>Sample Fields from Result Section:</h4>';
+                        echo '<table class="widefat" style="margin-top: 10px;">';
+                        echo '<tr><th style="width: 200px; text-align: left;">Field</th><th style="text-align: left;">Value</th></tr>';
+                        
+                        $key_fields = array( 'VesselID', 'VesselName', 'MLSID', 'AskingPriceCompare', 'YearBuilt', 'LOAFeet' );
+                        foreach ( $key_fields as $field ) {
+                            $value = isset( $result[ $field ] ) ? $result[ $field ] : '<em>Not set</em>';
+                            if ( is_array( $value ) ) {
+                                $value = json_encode( $value );
+                            }
+                            echo '<tr><td><strong>' . esc_html( $field ) . '</strong></td><td>' . esc_html( $value ) . '</td></tr>';
+                        }
+                        echo '</table>';
+                    } else {
+                        echo '</ul>';
+                    }
+                    
+                    echo '</div>';
+                }
+                echo '</div>';
+            }
+        }
+    }
+
+    echo '<hr />';
     echo '<h2>CPT Import Management</h2>';
     echo '<p>Import all vessels into the Yacht Custom Post Type (CPT) for faster queries, better SEO, and individual vessel pages. This may take several minutes for 7000+ vessels.</p>';
     echo '<p><strong>Benefits of CPT import:</strong> Better performance with WP_Query, individual pages per vessel, improved SEO, easier management via WordPress admin.</p>';
@@ -139,57 +239,37 @@ function yatco_options_page() {
     $pre_cache_progress = get_transient( 'yatco_cache_warming_progress' );
     $pre_is_warming_scheduled = wp_next_scheduled( 'yatco_warm_cache_hook' );
     
-    // Only consider active if progress shows incomplete import (very strict check)
-    $pre_has_active_progress = false;
+    // SIMPLIFIED LOGIC: Buttons default to ENABLED - only disable if import is actively running RIGHT NOW
+    // Check for very recent progress (within last 30 seconds) to determine if import is active
+    $pre_button_disabled = false;
+    
     if ( $pre_cache_progress !== false && is_array( $pre_cache_progress ) && ! empty( $pre_cache_progress ) ) {
         $pre_last_processed = isset( $pre_cache_progress['last_processed'] ) ? intval( $pre_cache_progress['last_processed'] ) : 0;
         $pre_total = isset( $pre_cache_progress['total'] ) ? intval( $pre_cache_progress['total'] ) : 0;
-        // Only disable if there's actual active progress (not completed)
-        // Check timestamp too - if progress is older than 5 minutes, consider it stale
         $pre_timestamp = isset( $pre_cache_progress['timestamp'] ) ? intval( $pre_cache_progress['timestamp'] ) : 0;
-        $pre_is_recent = ( $pre_timestamp > 0 && ( time() - $pre_timestamp ) < 300 ); // 5 minutes
-        $pre_has_active_progress = ( $pre_total > 0 && $pre_last_processed < $pre_total && $pre_is_recent );
-    }
-    
-    // Also check if there's a scheduled event that hasn't run yet (within next 60 seconds)
-    $pre_has_upcoming_scheduled = false;
-    if ( $pre_is_warming_scheduled && $pre_is_warming_scheduled > time() && $pre_is_warming_scheduled <= ( time() + 60 ) ) {
-        $pre_has_upcoming_scheduled = true;
+        
+        // Only disable if:
+        // 1. Progress shows incomplete import (last_processed < total)
+        // 2. AND progress was updated in last 30 seconds (truly active)
+        if ( $pre_total > 0 && $pre_last_processed < $pre_total ) {
+            if ( $pre_timestamp > 0 && ( time() - $pre_timestamp ) < 30 ) {
+                $pre_button_disabled = true;
+            } else {
+                // Progress is stale (>30 seconds old) - auto-clear it
+                if ( $pre_timestamp > 0 && ( time() - $pre_timestamp ) > 60 ) {
+                    delete_transient( 'yatco_cache_warming_progress' );
+                    delete_transient( 'yatco_cache_warming_status' );
+                    $pre_cache_progress = false;
+                    $pre_cache_status = false;
+                    $pre_button_disabled = false;
+                }
+            }
+        }
     }
     
     // Show import button at the top (prominently) before the "How Updates Work" section
     echo '<div style="background: #fff; border: 2px solid #2271b1; border-radius: 4px; padding: 20px; margin: 20px 0;">';
     echo '<h3 style="margin-top: 0; color: #2271b1;">📥 Import Vessels to CPT</h3>';
-    
-    // Check if buttons should be disabled (only if truly active import happening now)
-    // Be very permissive - only disable if there's clear evidence of active import
-    $pre_button_disabled = false;
-    
-    // Only disable if there's very recent progress (within last 30 seconds) AND it's incomplete
-    // This ensures buttons are enabled unless import is actively running right now
-    if ( $pre_has_active_progress ) {
-        $pre_timestamp = isset( $pre_cache_progress['timestamp'] ) ? intval( $pre_cache_progress['timestamp'] ) : 0;
-        // Only consider active if progress was updated in last 30 seconds (truly active)
-        if ( $pre_timestamp > 0 && ( time() - $pre_timestamp ) < 30 ) {
-            $pre_button_disabled = true;
-        } else {
-            // Progress exists but is stale (>30 seconds old) - clear it to enable buttons
-            $pre_button_disabled = false;
-            // Optionally auto-clear stale progress
-            if ( $pre_timestamp > 0 && ( time() - $pre_timestamp ) > 300 ) {
-                // Progress is older than 5 minutes - consider it stale/abandoned
-                delete_transient( 'yatco_cache_warming_progress' );
-                delete_transient( 'yatco_cache_warming_status' );
-                $pre_cache_progress = false;
-                $pre_cache_status = false;
-            }
-        }
-    }
-    
-    // Don't disable based on scheduled events alone
-    // if ( $pre_has_upcoming_scheduled ) {
-    //     $pre_button_disabled = true;
-    // }
     
     // Show buttons side by side
     echo '<div style="display: flex; gap: 15px; align-items: center; margin: 15px 0; flex-wrap: wrap;">';
@@ -203,9 +283,21 @@ function yatco_options_page() {
     ) );
     echo '</form>';
     
-    // ALWAYS show stop/clear button when buttons are disabled OR if there's any status/progress (for easy recovery)
-    // This ensures users can always clear stuck states
-    if ( $pre_button_disabled || $pre_cache_status !== false || $pre_cache_progress !== false || $pre_is_warming_scheduled ) {
+    // ALWAYS show stop/clear button when import button is disabled OR if there's any status/progress
+    // This ensures users can always clear stuck states and recover
+    $should_show_stop = ( $pre_button_disabled || $pre_cache_status !== false || $pre_cache_progress !== false || $pre_is_warming_scheduled );
+    
+    if ( $should_show_stop ) {
+        echo '<form method="post" style="margin: 0;">';
+        wp_nonce_field( 'yatco_clear_all', 'yatco_clear_all_nonce' );
+        submit_button( '🛑 Stop & Clear All', 'secondary', 'yatco_clear_all', false, array( 
+            'style' => 'background: #dc3232; border-color: #dc3232; color: #fff; font-weight: bold; font-size: 16px; padding: 10px 20px; height: auto;'
+        ) );
+        echo '</form>';
+    }
+    
+    // If button is disabled but stop button didn't show, show it anyway (safety net)
+    if ( $pre_button_disabled && ! $should_show_stop ) {
         echo '<form method="post" style="margin: 0;">';
         wp_nonce_field( 'yatco_clear_all', 'yatco_clear_all_nonce' );
         submit_button( '🛑 Stop & Clear All', 'secondary', 'yatco_clear_all', false, array( 
@@ -356,68 +448,7 @@ function yatco_options_page() {
         $button_disabled = false;
     }
     
-    // Use same disabled logic as top button (very permissive)
-    $button_disabled = false;
-    if ( $has_active_progress && $cache_progress !== false && is_array( $cache_progress ) ) {
-        $timestamp = isset( $cache_progress['timestamp'] ) ? intval( $cache_progress['timestamp'] ) : 0;
-        // Only disable if progress was updated in last 30 seconds (truly active)
-        if ( $timestamp > 0 && ( time() - $timestamp ) < 30 ) {
-            $button_disabled = true;
-        } else {
-            // Progress is stale - clear it
-            if ( $timestamp > 0 && ( time() - $timestamp ) > 300 ) {
-                delete_transient( 'yatco_cache_warming_progress' );
-                delete_transient( 'yatco_cache_warming_status' );
-                $cache_progress = false;
-                $cache_status = false;
-            }
-        }
-    }
-    
-    echo '<form method="post" style="margin-bottom: 15px;">';
-    wp_nonce_field( 'yatco_warm_cache', 'yatco_warm_cache_nonce' );
-    
-    // Show buttons side by side
-    echo '<div style="display: flex; gap: 15px; align-items: center; margin: 10px 0; flex-wrap: wrap;">';
-    
-    // Second import button (for consistency)
-    submit_button( 'Import All Vessels to CPT', 'primary', 'yatco_warm_cache', false, array( 'disabled' => $button_disabled ) );
-    echo '</form>';
-    
-    // Always show stop/clear button if buttons are disabled OR if there's any status/progress (for stuck states)
-    if ( $button_disabled || $cache_status !== false || $cache_progress !== false || $is_warming_scheduled ) {
-        echo '<form method="post" style="margin: 0;">';
-        wp_nonce_field( 'yatco_clear_all', 'yatco_clear_all_nonce' );
-        submit_button( '🛑 Stop & Clear All', 'secondary', 'yatco_clear_all', false, array( 
-            'style' => 'background: #dc3232; border-color: #dc3232; color: #fff; font-weight: bold;'
-        ) );
-        echo '</form>';
-    }
-    
-    echo '</div>';
-    
-    // Always show clear all button if button is disabled (for easy recovery)
-    if ( $button_disabled ) {
-        echo '<form method="post" style="margin: 10px 0;">';
-        wp_nonce_field( 'yatco_clear_all', 'yatco_clear_all_nonce' );
-        submit_button( '🔧 Clear All & Enable Button', 'secondary', 'yatco_clear_all', false, array( 'style' => 'background: #ff9800; border-color: #ff9800; color: #fff;' ) );
-        echo '<p style="font-size: 12px; color: #666; margin: 5px 0;">Button is disabled. Click this to clear all status and enable it.</p>';
-        echo '</form>';
-        
-        // Show debug info
-        echo '<p style="font-size: 11px; color: #999; margin-top: 5px;">';
-        echo 'Debug: ';
-        $debug_info = array();
-        if ( $cache_status !== false ) $debug_info[] = 'Status: ' . esc_html( substr( $cache_status, 0, 50 ) );
-        if ( $cache_progress !== false ) {
-            $last = isset( $cache_progress['last_processed'] ) ? $cache_progress['last_processed'] : 0;
-            $total = isset( $cache_progress['total'] ) ? $cache_progress['total'] : 0;
-            $debug_info[] = "Progress: {$last}/{$total}";
-        }
-        if ( $is_warming_scheduled ) $debug_info[] = 'Scheduled: ' . date( 'Y-m-d H:i:s', $is_warming_scheduled );
-        echo implode( ' | ', $debug_info );
-        echo '</p>';
-    }
+    // REMOVED: Second import button - only one button needed at the top
     
     if ( $is_running ) {
         echo '<form method="post" style="margin-bottom: 15px;">';
