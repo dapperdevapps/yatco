@@ -130,22 +130,40 @@ function yatco_options_page() {
     }
 
     echo '<hr />';
-    echo '<h2>Test Single Vessel Data</h2>';
+    echo '<h2>Test Single Vessel Data (View Only - No Import)</h2>';
+    echo '<div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; margin: 15px 0;">';
+    echo '<p style="margin: 0; font-weight: bold; color: #856404;"><strong>⚠️ Important:</strong> This test button <strong>ONLY</strong> fetches and displays data from the YATCO API. It does <strong>NOT</strong> import anything to your Custom Post Type.</p>';
+    echo '</div>';
     echo '<p>This test fetches the first active vessel ID and displays the full <code>FullSpecsAll</code> data so you can see exactly what data structure we\'re getting from the YATCO API.</p>';
-    echo '<form method="post">';
+    echo '<form method="post" id="yatco-test-vessel-form" action="' . esc_url( admin_url( 'admin.php?page=yatco' ) ) . '">';
     wp_nonce_field( 'yatco_test_vessel', 'yatco_test_vessel_nonce' );
-    submit_button( 'Fetch First Vessel Details', 'secondary', 'yatco_test_vessel' );
+    // Use a unique button name to avoid conflicts with import buttons
+    submit_button( '🔍 Fetch First Vessel Details (View Only - No Import)', 'secondary', 'yatco_test_vessel_data_only', false, array( 'id' => 'yatco-test-vessel-btn' ) );
     echo '</form>';
 
-    if ( isset( $_POST['yatco_test_vessel'] ) && check_admin_referer( 'yatco_test_vessel', 'yatco_test_vessel_nonce' ) ) {
-        if ( empty( $token ) ) {
+    // Check for test vessel button FIRST - handle it immediately and prevent other handlers
+    // IMPORTANT: This is VIEW ONLY - does NOT import anything to CPT
+    // This check MUST come before any import handlers to prevent conflicts
+    if ( isset( $_POST['yatco_test_vessel_data_only'] ) && ! empty( $_POST['yatco_test_vessel_data_only'] ) ) {
+        // Verify nonce separately
+        if ( ! check_admin_referer( 'yatco_test_vessel', 'yatco_test_vessel_nonce' ) ) {
+            echo '<div class="notice notice-error"><p>Security check failed. Please try again.</p></div>';
+        } elseif ( empty( $token ) ) {
             echo '<div class="notice notice-error"><p>Missing token. Please configure your API token first.</p></div>';
         } else {
-            echo '<div style="background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; padding: 20px; margin: 20px 0;">';
-            echo '<h3>Step 1: Getting Active Vessel IDs</h3>';
+            // This is a TEST ONLY operation - no imports should happen here
+            // Explicitly prevent any import triggers
+            echo '<div class="notice notice-info" style="background: #e3f2fd; border-left: 4px solid #2196f3; padding: 12px; margin: 15px 0;">';
+            echo '<p><strong>🔍 Test Mode - View Only</strong></p>';
+            echo '<p>This test fetches and displays data from the YATCO API. <strong>No vessels will be imported to your CPT.</strong> This operation is read-only.</p>';
+            echo '</div>';
             
-            // Get first active vessel ID
-            $vessel_ids = yatco_get_active_vessel_ids( $token, 1 ); // Get just 1 ID
+            echo '<div style="background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; padding: 20px; margin: 20px 0;">';
+            echo '<h3>Step 1: Getting Active Vessel IDs (Read Only)</h3>';
+            
+            // Get first active vessel ID - READ ONLY operation, no import
+            // IMPORTANT: This only fetches data - does NOT call yatco_import_single_vessel() or any import functions
+            $vessel_ids = yatco_get_active_vessel_ids( $token, 1 ); // Get just 1 ID for testing ONLY - NO IMPORT
             
             if ( is_wp_error( $vessel_ids ) ) {
                 echo '<div class="notice notice-error"><p><strong>Error getting vessel IDs:</strong> ' . esc_html( $vessel_ids->get_error_message() ) . '</p></div>';
@@ -159,70 +177,136 @@ function yatco_options_page() {
                 
                 echo '<h3>Step 2: Fetching FullSpecsAll for Vessel ID ' . esc_html( $first_vessel_id ) . '</h3>';
                 
-                // Fetch full specs (yatco-api.php is already included in main plugin file)
-                $fullspecs = yatco_fetch_fullspecs( $token, $first_vessel_id );
+                // Fetch full specs using direct API call to get better error details
+                $endpoint = 'https://api.yatcoboss.com/api/v1/ForSale/Vessel/' . intval( $first_vessel_id ) . '/Details/FullSpecsAll';
+                echo '<p style="color: #666; font-size: 13px;">Endpoint: <code>' . esc_html( $endpoint ) . '</code></p>';
                 
-                if ( is_wp_error( $fullspecs ) ) {
-                    echo '<div class="notice notice-error"><p><strong>Error fetching vessel data:</strong> ' . esc_html( $fullspecs->get_error_message() ) . '</p></div>';
+                $response = wp_remote_get(
+                    $endpoint,
+                    array(
+                        'headers' => array(
+                            'Authorization' => 'Basic ' . $token,
+                            'Accept'        => 'application/json',
+                        ),
+                        'timeout' => 30,
+                    )
+                );
+                
+                if ( is_wp_error( $response ) ) {
+                    echo '<div class="notice notice-error"><p><strong>WP_Remote Error:</strong> ' . esc_html( $response->get_error_message() ) . '</p></div>';
                 } else {
-                    echo '<p><strong>✅ Success!</strong> FullSpecsAll data retrieved.</p>';
+                    $response_code = wp_remote_retrieve_response_code( $response );
+                    $response_body = wp_remote_retrieve_body( $response );
                     
-                    echo '<h3>Raw API Response Data Structure</h3>';
-                    echo '<p style="color: #666; font-size: 13px;">Below is the complete JSON response from the YATCO API. You can expand/collapse sections to explore the data structure.</p>';
+                    echo '<p><strong>Response Code:</strong> ' . esc_html( $response_code ) . '</p>';
+                    echo '<p><strong>Content-Type:</strong> ' . esc_html( wp_remote_retrieve_header( $response, 'content-type' ) ) . '</p>';
+                    echo '<p><strong>Response Length:</strong> ' . strlen( $response_body ) . ' characters</p>';
                     
-                    // Display formatted JSON
-                    echo '<div style="background: #fff; border: 1px solid #ccc; border-radius: 4px; padding: 15px; max-height: 800px; overflow: auto; font-family: monospace; font-size: 12px; line-height: 1.5;">';
-                    echo '<pre style="margin: 0; white-space: pre-wrap; word-wrap: break-word;">';
-                    echo esc_html( wp_json_encode( $fullspecs, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) );
-                    echo '</pre>';
-                    echo '</div>';
-                    
-                    // Also show a summary of key sections
-                    echo '<h3 style="margin-top: 30px;">Key Data Sections Summary</h3>';
-                    echo '<div style="background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 15px;">';
-                    echo '<ul style="list-style: disc; margin-left: 20px;">';
-                    
-                    $sections = array(
-                        'Result' => 'Main vessel result data',
-                        'BasicInfo' => 'Basic vessel information',
-                        'Dimensions' => 'Vessel dimensions',
-                        'VD' => 'Vessel details',
-                        'MiscInfo' => 'Miscellaneous information',
-                        'PhotoGallery' => 'Photo gallery array',
-                        'Specifications' => 'Detailed specifications',
-                    );
-                    
-                    foreach ( $sections as $section => $description ) {
-                        if ( isset( $fullspecs[ $section ] ) ) {
-                            $count = is_array( $fullspecs[ $section ] ) ? count( $fullspecs[ $section ] ) : 'N/A';
-                            echo '<li><strong>' . esc_html( $section ) . ':</strong> ' . esc_html( $description ) . ' (' . esc_html( $count ) . ' items)</li>';
-                        } else {
-                            echo '<li><strong>' . esc_html( $section ) . ':</strong> <span style="color: #999;">Not present in response</span></li>';
+                    if ( 200 !== $response_code ) {
+                        echo '<div class="notice notice-error">';
+                        echo '<p><strong>HTTP Error:</strong> ' . esc_html( $response_code ) . '</p>';
+                        echo '<p><strong>Response Body:</strong></p>';
+                        echo '<div style="background: #fff; border: 1px solid #ccc; border-radius: 4px; padding: 15px; max-height: 400px; overflow: auto; font-family: monospace; font-size: 12px; white-space: pre-wrap; word-wrap: break-word;">';
+                        echo esc_html( substr( $response_body, 0, 2000 ) );
+                        if ( strlen( $response_body ) > 2000 ) {
+                            echo '<br/><br/><em>... (truncated, total length: ' . strlen( $response_body ) . ' characters)</em>';
                         }
-                    }
-                    
-                    // Show sample of key fields
-                    if ( isset( $fullspecs['Result'] ) ) {
-                        $result = $fullspecs['Result'];
-                        echo '</ul>';
-                        echo '<h4>Sample Fields from Result Section:</h4>';
-                        echo '<table class="widefat" style="margin-top: 10px;">';
-                        echo '<tr><th style="width: 200px; text-align: left;">Field</th><th style="text-align: left;">Value</th></tr>';
-                        
-                        $key_fields = array( 'VesselID', 'VesselName', 'MLSID', 'AskingPriceCompare', 'YearBuilt', 'LOAFeet' );
-                        foreach ( $key_fields as $field ) {
-                            $value = isset( $result[ $field ] ) ? $result[ $field ] : '<em>Not set</em>';
-                            if ( is_array( $value ) ) {
-                                $value = json_encode( $value );
-                            }
-                            echo '<tr><td><strong>' . esc_html( $field ) . '</strong></td><td>' . esc_html( $value ) . '</td></tr>';
-                        }
-                        echo '</table>';
+                        echo '</div>';
+                        echo '</div>';
                     } else {
-                        echo '</ul>';
+                        // Try to decode JSON
+                        $fullspecs = json_decode( $response_body, true );
+                        $json_error = json_last_error();
+                        
+                        if ( $json_error !== JSON_ERROR_NONE ) {
+                            echo '<div class="notice notice-error">';
+                            echo '<p><strong>JSON Parse Error:</strong> ' . esc_html( json_last_error_msg() ) . ' (Error code: ' . $json_error . ')</p>';
+                            echo '<p><strong>Raw Response (first 2000 characters):</strong></p>';
+                            echo '<div style="background: #fff; border: 1px solid #ccc; border-radius: 4px; padding: 15px; max-height: 400px; overflow: auto; font-family: monospace; font-size: 12px; white-space: pre-wrap; word-wrap: break-word;">';
+                            echo esc_html( substr( $response_body, 0, 2000 ) );
+                            if ( strlen( $response_body ) > 2000 ) {
+                                echo '<br/><br/><em>... (truncated, total length: ' . strlen( $response_body ) . ' characters)</em>';
+                            }
+                            echo '</div>';
+                            
+                            // Try to detect if it's HTML (error page)
+                            if ( stripos( $response_body, '<html' ) !== false || stripos( $response_body, '<!DOCTYPE' ) !== false ) {
+                                echo '<p style="color: #d63638; font-weight: bold;"><strong>⚠️ Warning:</strong> The response appears to be HTML (possibly an error page) rather than JSON.</p>';
+                            }
+                            
+                            // Check if response is empty
+                            if ( empty( trim( $response_body ) ) ) {
+                                echo '<p style="color: #d63638; font-weight: bold;"><strong>⚠️ Warning:</strong> The response body is empty.</p>';
+                            }
+                            
+                            // Show first 100 chars to help diagnose
+                            echo '<p><strong>First 100 characters:</strong></p>';
+                            echo '<div style="background: #f9f9f9; border: 1px solid #ddd; padding: 10px; font-family: monospace; font-size: 11px; white-space: pre-wrap; word-wrap: break-word;">';
+                            echo esc_html( substr( $response_body, 0, 100 ) );
+                            echo '</div>';
+                            
+                            echo '</div>';
+                        } else {
+                            echo '<p><strong>✅ Success!</strong> FullSpecsAll data retrieved and parsed successfully.</p>';
+                            
+                            echo '<h3>Raw API Response Data Structure</h3>';
+                            echo '<p style="color: #666; font-size: 13px;">Below is the complete JSON response from the YATCO API. You can expand/collapse sections to explore the data structure.</p>';
+                            
+                            // Display formatted JSON
+                            echo '<div style="background: #fff; border: 1px solid #ccc; border-radius: 4px; padding: 15px; max-height: 800px; overflow: auto; font-family: monospace; font-size: 12px; line-height: 1.5;">';
+                            echo '<pre style="margin: 0; white-space: pre-wrap; word-wrap: break-word;">';
+                            echo esc_html( wp_json_encode( $fullspecs, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) );
+                            echo '</pre>';
+                            echo '</div>';
+                            
+                            // Also show a summary of key sections
+                            echo '<h3 style="margin-top: 30px;">Key Data Sections Summary</h3>';
+                            echo '<div style="background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 15px;">';
+                            echo '<ul style="list-style: disc; margin-left: 20px;">';
+                            
+                            $sections = array(
+                                'Result' => 'Main vessel result data',
+                                'BasicInfo' => 'Basic vessel information',
+                                'Dimensions' => 'Vessel dimensions',
+                                'VD' => 'Vessel details',
+                                'MiscInfo' => 'Miscellaneous information',
+                                'PhotoGallery' => 'Photo gallery array',
+                                'Specifications' => 'Detailed specifications',
+                            );
+                            
+                            foreach ( $sections as $section => $description ) {
+                                if ( isset( $fullspecs[ $section ] ) ) {
+                                    $count = is_array( $fullspecs[ $section ] ) ? count( $fullspecs[ $section ] ) : 'N/A';
+                                    echo '<li><strong>' . esc_html( $section ) . ':</strong> ' . esc_html( $description ) . ' (' . esc_html( $count ) . ' items)</li>';
+                                } else {
+                                    echo '<li><strong>' . esc_html( $section ) . ':</strong> <span style="color: #999;">Not present in response</span></li>';
+                                }
+                            }
+                            
+                            // Show sample of key fields
+                            if ( isset( $fullspecs['Result'] ) ) {
+                                $result = $fullspecs['Result'];
+                                echo '</ul>';
+                                echo '<h4>Sample Fields from Result Section:</h4>';
+                                echo '<table class="widefat" style="margin-top: 10px;">';
+                                echo '<tr><th style="width: 200px; text-align: left;">Field</th><th style="text-align: left;">Value</th></tr>';
+                                
+                                $key_fields = array( 'VesselID', 'VesselName', 'MLSID', 'AskingPriceCompare', 'YearBuilt', 'LOAFeet' );
+                                foreach ( $key_fields as $field ) {
+                                    $value = isset( $result[ $field ] ) ? $result[ $field ] : '<em>Not set</em>';
+                                    if ( is_array( $value ) ) {
+                                        $value = json_encode( $value );
+                                    }
+                                    echo '<tr><td><strong>' . esc_html( $field ) . '</strong></td><td>' . esc_html( $value ) . '</td></tr>';
+                                }
+                                echo '</table>';
+                            } else {
+                                echo '</ul>';
+                            }
+                            
+                            echo '</div>';
+                        }
                     }
-                    
-                    echo '</div>';
                 }
                 echo '</div>';
             }
