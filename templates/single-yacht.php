@@ -257,6 +257,26 @@ if ( $price_on_application || empty( $asking_price ) ) {
     </div>
   </section>
 
+  <!-- DESCRIPTION / POST CONTENT -->
+  <?php 
+  // Get WordPress post content
+  $post_content = get_the_content();
+  $post_content = apply_filters( 'the_content', $post_content );
+  $post_content = str_replace( ']]>', ']]&gt;', $post_content );
+  
+  // Also check meta description as fallback
+  if ( empty( $post_content ) && ! empty( $description ) ) {
+    $post_content = $description;
+  }
+  ?>
+  <?php if ( ! empty( $post_content ) ) : ?>
+  <section class="yacht-description">
+    <div class="yacht-description-content">
+      <?php echo $post_content; ?>
+    </div>
+  </section>
+  <?php endif; ?>
+
   <!-- QUICK SPEC BAR -->
   <section class="yacht-quick-specs">
     <ul>
@@ -813,9 +833,64 @@ if ( $price_on_application || empty( $asking_price ) ) {
   border: 2px solid #0073aa;
 }
 
-.yacht-hero-cta .btn-secondary:hover {
-  background: #0073aa;
-  color: #fff;
+  .yacht-hero-cta .btn-secondary:hover {
+    background: #0073aa;
+    color: #fff;
+  }
+
+/* Description Section Styles */
+.yacht-description {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 40px 20px;
+}
+
+.yacht-description-content {
+  font-size: 1.125rem;
+  line-height: 1.8;
+  color: #555;
+}
+
+.yacht-description-content p {
+  margin-bottom: 1.5em;
+}
+
+.yacht-description-content p:last-child {
+  margin-bottom: 0;
+}
+
+.yacht-description-content h2,
+.yacht-description-content h3,
+.yacht-description-content h4 {
+  margin-top: 2em;
+  margin-bottom: 1em;
+  color: #333;
+  font-weight: 600;
+}
+
+.yacht-description-content h2:first-child,
+.yacht-description-content h3:first-child,
+.yacht-description-content h4:first-child {
+  margin-top: 0;
+}
+
+.yacht-description-content ul,
+.yacht-description-content ol {
+  margin: 1.5em 0;
+  padding-left: 2em;
+}
+
+.yacht-description-content li {
+  margin-bottom: 0.75em;
+}
+
+.yacht-description-content a {
+  color: #0073aa;
+  text-decoration: underline;
+}
+
+.yacht-description-content a:hover {
+  color: #005a87;
 }
 
 @media (max-width: 768px) {
