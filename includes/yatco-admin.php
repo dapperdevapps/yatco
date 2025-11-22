@@ -492,7 +492,10 @@ function yatco_options_page() {
         delete_transient( 'yatco_cache_warming_progress' );
         delete_transient( 'yatco_cache_warming_status' );
         
-        echo '<div class="notice notice-success"><p><strong>Import stopped!</strong> All scheduled events have been cleared and progress has been reset.</p></div>';
+        // Flush rewrite rules to ensure permalinks work correctly after stopping
+        flush_rewrite_rules( false );
+        
+        echo '<div class="notice notice-success"><p><strong>Import stopped!</strong> All scheduled events have been cleared, progress has been reset, and permalinks have been refreshed.</p></div>';
         $is_running = false;
         $has_active_status = false;
         $has_active_progress = false;
@@ -505,7 +508,10 @@ function yatco_options_page() {
         delete_transient( 'yatco_cache_warming_progress' );
         delete_transient( 'yatco_cache_warming_status' );
         
-        echo '<div class="notice notice-success"><p><strong>All cleared!</strong> All scheduled events and progress data have been cleared. The import button should now be enabled.</p></div>';
+        // Flush rewrite rules to ensure permalinks work correctly after stopping
+        flush_rewrite_rules( false );
+        
+        echo '<div class="notice notice-success"><p><strong>All cleared!</strong> All scheduled events and progress data have been cleared. Permalinks have been refreshed. The import button should now be enabled.</p></div>';
         
         $cache_status = false;
         $cache_progress = false;

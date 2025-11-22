@@ -118,24 +118,45 @@ function yatco_warm_cache_function() {
         set_transient( $cache_key_progress, $initial_progress, 3600 );
     }
 
-    $batch_size = 20; // Process 20 at a time
+    // Process one vessel at a time with 45-second delay between vessels
     $processed = 0;
     $errors = 0;
-    $batch_num = 0;
+    $delay_seconds = 45; // 45 seconds between vessels
 
     foreach ( $ids as $index => $id ) {
         $processed++;
         $actual_index = $start_from + $index;
         
-        // Reset execution time periodically
-        if ( $processed % 10 === 0 ) {
-            @set_time_limit( 0 );
-        }
+        // Reset execution time
+        @set_time_limit( 300 ); // 5 minutes per vessel
 
-        // Import vessel to CPT instead of just caching in transients
+        // Import vessel to CPT
         $import_result = yatco_import_single_vessel( $token, $id );
         if ( is_wp_error( $import_result ) ) {
             $errors++;
+            
+            // Save progress even on error
+            $progress_data = array(
+                'last_processed' => $actual_index + 1,
+                'total'         => $vessel_count,
+                'processed'     => count( $vessels ),
+                'vessels'       => $vessels,
+                'start_time'    => $start_time,
+                'timestamp'     => time(),
+                'errors'        => $errors,
+            );
+            if ( function_exists( 'set_transient' ) ) {
+                set_transient( $cache_key_progress, $progress_data, 3600 );
+            }
+            
+            // Update status
+            $percent = round( ( ( $actual_index + 1 ) / $vessel_count ) * 100, 1 );
+            if ( function_exists( 'set_transient' ) ) {
+                set_transient( 'yatco_cache_warming_status', "Error importing vessel {$id}. Continuing... Processed " . ( $actual_index + 1 ) . " of {$vessel_count} ({$percent}%)...", 600 );
+            }
+            
+            // Wait 45 seconds before next vessel (even on error)
+            sleep( $delay_seconds );
             continue;
         }
         
@@ -166,39 +187,34 @@ function yatco_warm_cache_function() {
 
         $vessels[] = $vessel_data;
         
-        // Save progress every batch OR after first vessel (to show immediate feedback)
-        if ( $processed % $batch_size === 0 || $processed === 1 ) {
-            $batch_num++;
-            
-            // Save progress
-            $progress_data = array(
-                'last_processed' => $actual_index + 1, // +1 because we just processed this one
-                'total'         => $vessel_count,
-                'processed'     => count( $vessels ),
-                'vessels'       => $vessels,
-                'start_time'    => $start_time,
-                'timestamp'     => time(),
-            );
-            if ( function_exists( 'set_transient' ) ) {
-                set_transient( $cache_key_progress, $progress_data, 3600 );
-            }
-            
-            // Update status
-            $percent = round( ( ( $actual_index + 1 ) / $vessel_count ) * 100, 1 );
-            if ( function_exists( 'set_transient' ) ) {
-                set_transient( 'yatco_cache_warming_status', "Processing vessel " . ( $actual_index + 1 ) . " of {$vessel_count} ({$percent}%)...", 600 );
-            }
-            
-            // Reset execution time and flush
-            @set_time_limit( 0 );
-            if ( function_exists( 'fastcgi_finish_request' ) ) {
-                @fastcgi_finish_request();
-            }
-            
-            // Small delay to reduce server load (skip on first vessel for faster feedback)
-            if ( $processed > 1 ) {
-                usleep( 100000 ); // 0.1 second
-            }
+        // Save progress after EACH vessel (so it can resume if interrupted)
+        $progress_data = array(
+            'last_processed' => $actual_index + 1,
+            'total'         => $vessel_count,
+            'processed'     => count( $vessels ),
+            'vessels'       => $vessels,
+            'start_time'    => $start_time,
+            'timestamp'     => time(),
+            'errors'        => $errors,
+        );
+        if ( function_exists( 'set_transient' ) ) {
+            set_transient( $cache_key_progress, $progress_data, 3600 );
+        }
+        
+        // Update status after each vessel
+        $percent = round( ( ( $actual_index + 1 ) / $vessel_count ) * 100, 1 );
+        $vessel_name_short = strlen( $vessel_name ) > 40 ? substr( $vessel_name, 0, 40 ) . '...' : $vessel_name;
+        if ( function_exists( 'set_transient' ) ) {
+            set_transient( 'yatco_cache_warming_status', "Completed: {$vessel_name_short}. Processed " . ( $actual_index + 1 ) . " of {$vessel_count} ({$percent}%). Waiting 45 seconds before next vessel...", 600 );
+        }
+        
+        // Reset execution time
+        @set_time_limit( 300 );
+        
+        // Wait 45 seconds before processing next vessel (to prevent server overload)
+        // Skip delay on last vessel
+        if ( $index < count( $ids ) - 1 ) {
+            sleep( $delay_seconds );
         }
     }
 
@@ -225,6 +241,9 @@ function yatco_warm_cache_function() {
     if ( function_exists( 'set_transient' ) ) {
         set_transient( 'yatco_cache_warming_status', $success_msg, 300 );
     }
+    
+    // Flush rewrite rules to ensure permalinks work correctly
+    flush_rewrite_rules( false );
 }
 
 /**
