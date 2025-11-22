@@ -284,16 +284,24 @@ if ( $price_on_application || empty( $asking_price ) ) {
             if ( empty( $img_url ) ) continue;
           ?>
           <div class="swiper-slide">
-            <a href="<?php echo esc_url( $img_url ); ?>" 
+            <?php 
+            // Ensure we have absolute URLs
+            $full_img_url = $img_url;
+            if ( ! empty( $img_url ) && ! preg_match( '/^https?:\/\//', $img_url ) ) {
+              $full_img_url = 'https://' . ltrim( $img_url, '/' );
+            }
+            ?>
+            <a href="<?php echo esc_url( $full_img_url ); ?>" 
                class="yacht-gallery-item" 
                data-glightbox="type: image; gallery: yacht-gallery"
                <?php if ( ! empty( $img_caption ) ) : ?>
                data-glightbox-title="<?php echo esc_attr( $img_caption ); ?>"
                <?php endif; ?>>
               <img
-                src="<?php echo esc_url( $img_medium ?: $img_url ); ?>"
+                src="<?php echo esc_url( $img_medium ?: $full_img_url ); ?>"
                 alt="<?php echo esc_attr( $img_caption ?: $yacht_title . ' image' ); ?>"
                 loading="lazy"
+                data-src="<?php echo esc_url( $full_img_url ); ?>"
               >
               <?php if ( ! empty( $img_caption ) ) : ?>
                 <div class="yacht-gallery-caption"><?php echo esc_html( $img_caption ); ?></div>
@@ -570,7 +578,7 @@ if ( $price_on_application || empty( $asking_price ) ) {
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/glightbox/dist/css/glightbox.min.css" />
 
 <!-- GLightbox JS -->
-<script src="https://cdn.jsdelivr.net/npm/glightbox/dist/js/glightbox.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/glightbox/dist/js/glightbox.min.js" onload="window.glightboxLoaded = true;"></script>
 
 <!-- Custom Gallery Carousel Styles -->
 <style>
@@ -838,27 +846,51 @@ document.addEventListener('DOMContentLoaded', function() {
   }
   
   // Initialize GLightbox for gallery images
-  const lightbox = GLightbox({
-    selector: '.yacht-gallery-item',
-    touchNavigation: true,
-    loop: true,
-    autoplayVideos: false,
-    moreText: 'See more',
-    moreLength: 60,
-    closeButton: true,
-    touchFollowAxis: true,
-    keyboardNavigation: true,
-    closeOnOutsideClick: true,
-    zoomable: true,
-    draggable: true,
-    openEffect: 'fade',
-    closeEffect: 'fade',
-    slideEffect: 'slide',
-    cssEffects: {
-      fade: { in: 'fadeIn', out: 'fadeOut' },
-      zoom: { in: 'zoomIn', out: 'zoomOut' },
-    },
-  });
+  // Wait for GLightbox to be available and Swiper to initialize
+  function initLightbox() {
+    if (typeof GLightbox !== 'undefined' && (window.glightboxLoaded || true)) {
+      const galleryItems = document.querySelectorAll('.yacht-gallery-item');
+      if (galleryItems.length > 0) {
+        try {
+          // Verify URLs are set correctly
+          galleryItems.forEach(function(item) {
+            const href = item.getAttribute('href');
+            if (!href || href === '#') {
+              console.warn('Gallery item missing href:', item);
+            }
+          });
+          
+          const lightbox = GLightbox({
+            selector: '.yacht-gallery-item',
+            touchNavigation: true,
+            loop: true,
+            autoplayVideos: false,
+            closeButton: true,
+            touchFollowAxis: true,
+            keyboardNavigation: true,
+            closeOnOutsideClick: true,
+            zoomable: true,
+            draggable: true,
+            openEffect: 'fade',
+            closeEffect: 'fade',
+            slideEffect: 'slide',
+          });
+          
+          console.log('GLightbox initialized with', galleryItems.length, 'items');
+        } catch (e) {
+          console.error('GLightbox initialization error:', e);
+        }
+      } else {
+        console.warn('No gallery items found for GLightbox');
+      }
+    } else {
+      // Retry if GLightbox not loaded yet
+      setTimeout(initLightbox, 100);
+    }
+  }
+  
+  // Start initialization after a short delay
+  setTimeout(initLightbox, 300);
 });
 </script>
 
