@@ -156,7 +156,6 @@ if ( $price_on_application || empty( $asking_price ) ) {
   <!-- MEDIA SECTION - GALLERY -->
   <section class="yacht-media" id="yacht-media">
     <?php if ( ! empty( $gallery_images ) && is_array( $gallery_images ) ) : ?>
-    <h2>Gallery</h2>
     <div class="yacht-gallery-carousel-wrapper">
       <div class="swiper yacht-gallery-carousel">
         <div class="swiper-wrapper">
