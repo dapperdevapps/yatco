@@ -536,31 +536,85 @@ function yatco_options_page() {
         $is_running = false;
     }
     
-    echo '<form method="post" style="margin-bottom: 15px;">';
-    wp_nonce_field( 'yatco_warm_cache', 'yatco_warm_cache_nonce' );
-    submit_button( 'Run Cache Warming Function NOW (Direct)', 'secondary', 'yatco_run_cache_warming_direct' );
-    echo '</form>';
+    // Check for stuck progress and show clear button
+    $has_stuck_progress = $is_stuck || ( $has_active_progress && isset( $cache_progress['timestamp'] ) && ( time() - intval( $cache_progress['timestamp'] ) > 60 ) );
     
-    if ( isset( $_POST['yatco_run_cache_warming_direct'] ) && check_admin_referer( 'yatco_warm_cache', 'yatco_warm_cache_nonce' ) ) {
-        if ( empty( $token ) ) {
-            echo '<div class="notice notice-error"><p>Missing token.</p></div>';
+    if ( $has_stuck_progress ) {
+        echo '<div class="notice notice-warning" style="margin-bottom: 15px;">';
+        echo '<p><strong>⚠️ Stuck progress detected!</strong> The previous import appears to have crashed or stopped. Please clear it before starting a new import.</p>';
+        echo '<form method="post" style="margin-top: 10px; display: inline-block;">';
+        wp_nonce_field( 'yatco_clear_all', 'yatco_clear_all_nonce' );
+        submit_button( '🛑 Clear Stuck Progress & Start Fresh', 'primary', 'yatco_clear_all', false, array( 
+            'style' => 'background: #dc3232; border-color: #dc3232; color: #fff; font-weight: bold;'
+        ) );
+        echo '</form>';
+        echo '</div>';
+    }
+    
+    echo '<div style="background: #f0f6fc; border-left: 4px solid #2271b1; padding: 15px; margin: 15px 0;">';
+    echo '<h3 style="margin-top: 0;">Run Cache Warming Directly</h3>';
+    echo '<p>This will run the cache warming function synchronously. <strong>Warning:</strong> This may take a long time and will block the page until complete.</p>';
+    echo '<form method="post" action="' . esc_url( admin_url( 'options-general.php?page=yatco_api' ) ) . '" style="margin-top: 15px;" id="yatco_cache_warming_direct_form">';
+    wp_nonce_field( 'yatco_warm_cache', 'yatco_warm_cache_nonce' );
+    submit_button( '▶️ Run Cache Warming Function NOW (Direct)', 'primary', 'yatco_run_cache_warming_direct', false, array( 
+        'id' => 'yatco_direct_cache_warming_btn',
+        'style' => 'font-size: 14px; padding: 10px 20px; height: auto; font-weight: bold;'
+    ) );
+    echo '</form>';
+    echo '</div>';
+    
+    // Debug: Check if form was submitted
+    if ( isset( $_POST['yatco_run_cache_warming_direct'] ) ) {
+        // Check nonce
+        if ( ! check_admin_referer( 'yatco_warm_cache', 'yatco_warm_cache_nonce' ) ) {
+            echo '<div class="notice notice-error"><p><strong>Security check failed!</strong> Please refresh the page and try again.</p></div>';
+        } elseif ( empty( $token ) ) {
+            echo '<div class="notice notice-error"><p><strong>Error:</strong> Missing API token. Please configure your API token in the settings above.</p></div>';
         } else {
             if ( ! function_exists( 'yatco_warm_cache_function' ) ) {
                 require_once YATCO_PLUGIN_DIR . 'includes/yatco-cache.php';
             }
             
+            // Clear any stale progress data first
+            delete_transient( 'yatco_cache_warming_progress' );
+            delete_transient( 'yatco_cache_warming_status' );
+            delete_transient( 'yatco_cache_warming_stop' );
+            
             set_transient( 'yatco_cache_warming_status', 'Starting direct import...', 600 );
+            set_transient( 'yatco_cache_warming_progress', array( 
+                'last_processed' => 0, 
+                'total' => 0, 
+                'timestamp' => time(),
+                'vessel_ids' => array()
+            ), 600 );
             
             echo '<div class="notice notice-info">';
             echo '<p><strong>Starting direct cache warming...</strong></p>';
             echo '<p>This will run synchronously (blocking) and may take several minutes. <strong>Do not close this page.</strong></p>';
             echo '</div>';
             
-            ob_flush();
+            // Force output buffering to show message immediately
+            if ( ob_get_level() > 0 ) {
+                ob_flush();
+            }
             flush();
             
             $is_running = true;
-            yatco_warm_cache_function();
+            
+            // Try to call the function and catch any fatal errors
+            try {
+                yatco_warm_cache_function();
+            } catch ( Exception $e ) {
+                set_transient( 'yatco_cache_warming_status', 'Error: ' . $e->getMessage(), 300 );
+                echo '<div class="notice notice-error">';
+                echo '<p><strong>Error during cache warming:</strong> ' . esc_html( $e->getMessage() ) . '</p>';
+                echo '</div>';
+            } catch ( Error $e ) {
+                set_transient( 'yatco_cache_warming_status', 'Fatal Error: ' . $e->getMessage(), 300 );
+                echo '<div class="notice notice-error">';
+                echo '<p><strong>Fatal error during cache warming:</strong> ' . esc_html( $e->getMessage() ) . '</p>';
+                echo '</div>';
+            }
             
             echo '<div class="notice notice-success">';
             echo '<p><strong>Cache warming completed!</strong> Check the progress section below for details.</p>';
