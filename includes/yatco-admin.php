@@ -1471,6 +1471,17 @@ function yatco_update_vessel_meta_box_callback( $post ) {
     echo '<p><a href="' . esc_url( $update_url ) . '" class="button button-primary button-large" style="width: 100%; text-align: center;">🔄 Update Vessel from YATCO</a></p>';
     
     echo '<p style="font-size: 11px; color: #666; margin-top: 10px;">This will update all meta fields, images, and taxonomy terms with the latest data from YATCO.</p>';
+    
+    // Display detailed specifications (Overview section)
+    $detailed_specs = get_post_meta( $post->ID, 'yacht_detailed_specifications', true );
+    if ( ! empty( $detailed_specs ) ) {
+        echo '<hr style="margin: 20px 0; border: none; border-top: 1px solid #ddd;">';
+        echo '<h3 style="margin: 0 0 12px 0; font-size: 14px; font-weight: 600;">📋 Overview / Detailed Specifications</h3>';
+        echo '<div style="background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; padding: 15px; max-height: 400px; overflow-y: auto; font-size: 13px; line-height: 1.6;">';
+        echo wp_kses_post( $detailed_specs );
+        echo '</div>';
+        echo '<p style="font-size: 11px; color: #666; margin-top: 8px;">This content is shown in a collapsible section on the frontend.</p>';
+    }
 }
 
 /**

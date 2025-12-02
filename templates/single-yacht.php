@@ -360,6 +360,24 @@ if ( $price_on_application || empty( $asking_price ) ) {
   </section>
   <?php endif; ?>
 
+  <?php 
+  // Display detailed specifications (Overview, Equipment, Features, etc.) in a collapsible toggle
+  $detailed_specs = yacht_meta( 'yacht_detailed_specifications', '' );
+  if ( ! empty( $detailed_specs ) ) : 
+  ?>
+  <section class="yacht-detailed-specs-toggle">
+    <button class="yacht-toggle-button" type="button" aria-expanded="false" aria-controls="yacht-detailed-specs-content">
+      <span class="yacht-toggle-label">View Full Specifications</span>
+      <span class="yacht-toggle-icon" aria-hidden="true">▼</span>
+    </button>
+    <div class="yacht-toggle-content" id="yacht-detailed-specs-content" aria-hidden="true">
+      <div class="yacht-detailed-specs-content">
+        <?php echo yacht_output_html( $detailed_specs ); ?>
+      </div>
+    </div>
+  </section>
+  <?php endif; ?>
+
   <!-- OVERVIEW / DESCRIPTION -->
   <?php if ( $description ) : ?>
   <section class="yacht-overview">
@@ -636,17 +654,6 @@ if ( $price_on_application || empty( $asking_price ) ) {
       </div>
       <?php endif; ?>
 
-      <?php 
-      // Display detailed specifications (Overview, Equipment, Features, etc.)
-      $detailed_specs = yacht_meta( 'yacht_detailed_specifications', '' );
-      if ( ! empty( $detailed_specs ) ) : 
-      ?>
-      <div class="yacht-spec-group yacht-detailed-specs" style="grid-column: 1 / -1;">
-        <div class="yacht-detailed-specs-content">
-          <?php echo yacht_output_html( $detailed_specs ); ?>
-        </div>
-      </div>
-      <?php endif; ?>
 
     </div>
   </section>
@@ -1052,6 +1059,119 @@ if ( $price_on_application || empty( $asking_price ) ) {
   color: #005a87;
 }
 
+/* Detailed Specifications Toggle Styles */
+.yacht-detailed-specs-toggle {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px 40px;
+}
+
+.yacht-toggle-button {
+  width: 100%;
+  background: #f5f5f5;
+  border: 2px solid #0073aa;
+  border-radius: 8px;
+  padding: 16px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #0073aa;
+  transition: all 0.3s ease;
+  text-align: left;
+}
+
+.yacht-toggle-button:hover {
+  background: #e8f4f8;
+  border-color: #005a87;
+}
+
+.yacht-toggle-button[aria-expanded="true"] {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-bottom: none;
+}
+
+.yacht-toggle-button[aria-expanded="true"] .yacht-toggle-icon {
+  transform: rotate(180deg);
+}
+
+.yacht-toggle-label {
+  flex: 1;
+}
+
+.yacht-toggle-icon {
+  font-size: 0.875rem;
+  transition: transform 0.3s ease;
+  margin-left: 12px;
+}
+
+.yacht-toggle-content {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.4s ease-out;
+  background: #f9f9f9;
+  border: 2px solid #0073aa;
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+}
+
+.yacht-toggle-content[aria-hidden="false"] {
+  max-height: 10000px; /* Large value to accommodate content */
+  transition: max-height 0.5s ease-in;
+}
+
+.yacht-detailed-specs-content {
+  padding: 30px 20px;
+  font-size: 1.125rem;
+  line-height: 1.8;
+  color: #555;
+}
+
+.yacht-detailed-specs-content h2,
+.yacht-detailed-specs-content h3,
+.yacht-detailed-specs-content h4 {
+  margin-top: 2em;
+  margin-bottom: 1em;
+  color: #333;
+  font-weight: 600;
+}
+
+.yacht-detailed-specs-content h2:first-child,
+.yacht-detailed-specs-content h3:first-child,
+.yacht-detailed-specs-content h4:first-child {
+  margin-top: 0;
+}
+
+.yacht-detailed-specs-content ul,
+.yacht-detailed-specs-content ol {
+  margin: 1.5em 0;
+  padding-left: 2em;
+}
+
+.yacht-detailed-specs-content li {
+  margin-bottom: 0.75em;
+}
+
+.yacht-detailed-specs-content p {
+  margin-bottom: 1.5em;
+}
+
+.yacht-detailed-specs-content p:last-child {
+  margin-bottom: 0;
+}
+
+.yacht-detailed-specs-content a {
+  color: #0073aa;
+  text-decoration: underline;
+}
+
+.yacht-detailed-specs-content a:hover {
+  color: #005a87;
+}
+
 @media (max-width: 1024px) {
   .yacht-info-columns {
     grid-template-columns: repeat(2, 1fr);
@@ -1277,6 +1397,28 @@ document.addEventListener('DOMContentLoaded', function() {
   // Start initialization after a short delay
   setTimeout(initLightbox, 300);
 });
+
+// Toggle functionality for detailed specifications
+(function() {
+  const toggleButton = document.querySelector('.yacht-toggle-button');
+  const toggleContent = document.querySelector('.yacht-toggle-content');
+  
+  if (toggleButton && toggleContent) {
+    toggleButton.addEventListener('click', function() {
+      const isExpanded = toggleButton.getAttribute('aria-expanded') === 'true';
+      const newExpanded = !isExpanded;
+      
+      toggleButton.setAttribute('aria-expanded', newExpanded);
+      toggleContent.setAttribute('aria-hidden', !newExpanded);
+      
+      // Update button text if needed
+      const label = toggleButton.querySelector('.yacht-toggle-label');
+      if (label) {
+        label.textContent = newExpanded ? 'Hide Full Specifications' : 'View Full Specifications';
+      }
+    });
+  }
+})();
 </script>
 
 <?php
