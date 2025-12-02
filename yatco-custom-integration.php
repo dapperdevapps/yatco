@@ -69,12 +69,26 @@ function yatco_show_yacht_list_column( $column, $post_id ) {
     if ( $column === 'yatco_link' ) {
         $listing_url = get_post_meta( $post_id, 'yacht_yatco_listing_url', true );
         if ( empty( $listing_url ) ) {
-            // Try to build URL from stored IDs if meta doesn't exist
+            // Try to build URL from stored meta if it doesn't exist
             $mlsid = get_post_meta( $post_id, 'yacht_mlsid', true );
             $vessel_id = get_post_meta( $post_id, 'yacht_vessel_id', true );
+            $length = get_post_meta( $post_id, 'yacht_length_feet', true );
+            $builder = get_post_meta( $post_id, 'yacht_make', true );
+            $category = get_post_meta( $post_id, 'yacht_sub_category', true );
+            if ( empty( $category ) ) {
+                $category = get_post_meta( $post_id, 'yacht_category', true );
+            }
+            if ( empty( $category ) ) {
+                $category = get_post_meta( $post_id, 'yacht_type', true );
+            }
+            $year = get_post_meta( $post_id, 'yacht_year', true );
+            
+            if ( ! function_exists( 'yatco_build_listing_url' ) ) {
+                require_once YATCO_PLUGIN_DIR . 'includes/yatco-helpers.php';
+            }
+            
             if ( ! empty( $mlsid ) || ! empty( $vessel_id ) ) {
-                $listing_id = ! empty( $mlsid ) ? $mlsid : $vessel_id;
-                $listing_url = 'https://www.yatcoboss.com/yacht/' . $listing_id . '/';
+                $listing_url = yatco_build_listing_url( $post_id, $mlsid, $vessel_id, $length, $builder, $category, $year );
             }
         }
         if ( ! empty( $listing_url ) ) {

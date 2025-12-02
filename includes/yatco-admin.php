@@ -522,43 +522,43 @@ function yatco_options_page() {
     $is_running = ( $has_active_status || $has_active_progress || ( $is_warming_scheduled && $is_warming_scheduled > time() ) ) && ! $is_stuck;
     
     if ( isset( $_POST['yatco_stop_import'] ) && check_admin_referer( 'yatco_stop_import', 'yatco_stop_import_nonce' ) ) {
-        // Set stop flag for running processes
-        set_transient( 'yatco_cache_warming_stop', true, 60 );
+        // Set stop flag for running processes - keep it active for 5 minutes so running processes can detect it
+        set_transient( 'yatco_cache_warming_stop', true, 300 );
         
+        // Cancel any scheduled cron jobs
         $scheduled = wp_next_scheduled( 'yatco_warm_cache_hook' );
         if ( $scheduled ) {
             wp_unschedule_event( $scheduled, 'yatco_warm_cache_hook' );
         }
         wp_clear_scheduled_hook( 'yatco_warm_cache_hook' );
         
+        // Clear progress and status - the running process will detect the stop flag and stop itself
         delete_transient( 'yatco_cache_warming_progress' );
         delete_transient( 'yatco_cache_warming_status' );
-        delete_transient( 'yatco_cache_warming_stop' ); // Clear after a moment
         
         // Flush rewrite rules to ensure permalinks work correctly after stopping
         flush_rewrite_rules( false );
         
-        echo '<div class="notice notice-success"><p><strong>Import stopped!</strong> All scheduled events have been cleared, progress has been reset, and permalinks have been refreshed.</p></div>';
+        echo '<div class="notice notice-success"><p><strong>Stop signal sent!</strong> Scheduled events have been cancelled. The import process will stop at the next check point (within 1-5 seconds). Progress has been reset.</p></div>';
         $is_running = false;
         $has_active_status = false;
         $has_active_progress = false;
     }
     
     if ( isset( $_POST['yatco_clear_all'] ) && check_admin_referer( 'yatco_clear_all', 'yatco_clear_all_nonce' ) ) {
-        // Set stop flag for running processes
-        set_transient( 'yatco_cache_warming_stop', true, 60 );
+        // Set stop flag for running processes - keep it active for 5 minutes
+        set_transient( 'yatco_cache_warming_stop', true, 300 );
         
         wp_clear_scheduled_hook( 'yatco_warm_cache_hook' );
         wp_clear_scheduled_hook( 'yatco_auto_refresh_cache_hook' );
         
         delete_transient( 'yatco_cache_warming_progress' );
         delete_transient( 'yatco_cache_warming_status' );
-        delete_transient( 'yatco_cache_warming_stop' ); // Clear after a moment
         
         // Flush rewrite rules to ensure permalinks work correctly after stopping
         flush_rewrite_rules( false );
         
-        echo '<div class="notice notice-success"><p><strong>All cleared!</strong> All scheduled events and progress data have been cleared. Permalinks have been refreshed. The import button should now be enabled.</p></div>';
+        echo '<div class="notice notice-success"><p><strong>All cleared!</strong> All scheduled events and progress data have been cleared. Stop signal sent to any running processes. Permalinks have been refreshed. The import button should now be enabled.</p></div>';
         
         $cache_status = false;
         $cache_progress = false;
@@ -607,12 +607,17 @@ function yatco_options_page() {
                 require_once YATCO_PLUGIN_DIR . 'includes/yatco-cache.php';
             }
             
+            // Mark this as a direct run
+            if ( ! defined( 'YATCO_DIRECT_RUN' ) ) {
+                define( 'YATCO_DIRECT_RUN', true );
+            }
+            
             // Clear any stale progress data first
             delete_transient( 'yatco_cache_warming_progress' );
             delete_transient( 'yatco_cache_warming_status' );
             delete_transient( 'yatco_cache_warming_stop' );
             
-            set_transient( 'yatco_cache_warming_status', 'Starting direct import...', 600 );
+            set_transient( 'yatco_cache_warming_status', 'Starting direct import (limited to 50 vessels per run)...', 600 );
             set_transient( 'yatco_cache_warming_progress', array( 
                 'last_processed' => 0, 
                 'total' => 0, 
@@ -622,7 +627,8 @@ function yatco_options_page() {
             
             echo '<div class="notice notice-info">';
             echo '<p><strong>Starting direct cache warming...</strong></p>';
-            echo '<p>This will run synchronously (blocking) and may take several minutes. <strong>Do not close this page.</strong></p>';
+            echo '<p><strong>Note:</strong> Direct runs are limited to 50 vessels at a time to prevent timeouts. Click the button again to continue processing more vessels, or use WP-Cron for automatic full imports.</p>';
+            echo '<p>This will run synchronously (blocking) and may take a few minutes. <strong>Do not close this page.</strong></p>';
             echo '</div>';
             
             // Force output buffering to show message immediately
@@ -1390,12 +1396,27 @@ function yatco_update_vessel_meta_box_callback( $post ) {
     // Get YATCO listing URL from stored meta, or build it if not stored
     $yatco_listing_url = get_post_meta( $post->ID, 'yacht_yatco_listing_url', true );
     if ( empty( $yatco_listing_url ) ) {
-        // Build YATCO listing URL - prefer MLSID if available, otherwise use VesselID
-        $yatco_listing_id = ! empty( $mlsid ) ? $mlsid : $vessel_id;
-        // Common YATCO listing URL formats - try yatcoboss.com first
-        $yatco_listing_url = 'https://www.yatcoboss.com/yacht/' . esc_attr( $yatco_listing_id ) . '/';
+        // Build YATCO listing URL using helper function
+        $length = get_post_meta( $post->ID, 'yacht_length_feet', true );
+        $builder = get_post_meta( $post->ID, 'yacht_make', true );
+        $category = get_post_meta( $post->ID, 'yacht_sub_category', true );
+        if ( empty( $category ) ) {
+            $category = get_post_meta( $post->ID, 'yacht_category', true );
+        }
+        if ( empty( $category ) ) {
+            $category = get_post_meta( $post->ID, 'yacht_type', true );
+        }
+        $year = get_post_meta( $post->ID, 'yacht_year', true );
+        
+        if ( ! function_exists( 'yatco_build_listing_url' ) ) {
+            require_once YATCO_PLUGIN_DIR . 'includes/yatco-helpers.php';
+        }
+        
+        $yatco_listing_url = yatco_build_listing_url( $post->ID, $mlsid, $vessel_id, $length, $builder, $category, $year );
         // Save it for future use
-        update_post_meta( $post->ID, 'yacht_yatco_listing_url', $yatco_listing_url );
+        if ( ! empty( $yatco_listing_url ) ) {
+            update_post_meta( $post->ID, 'yacht_yatco_listing_url', $yatco_listing_url );
+        }
     }
     
     // Display link to original YATCO listing - make it very visible

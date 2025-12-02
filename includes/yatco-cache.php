@@ -34,6 +34,17 @@ if ( ! defined( 'ABSPATH' ) ) {
  * stays synchronized with YATCO API data.
  */
 function yatco_warm_cache_function() {
+    // Check stop flag at the very start - don't even begin if stop is requested
+    $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+    if ( $stop_flag !== false ) {
+        delete_transient( 'yatco_cache_warming_stop' );
+        delete_transient( 'yatco_cache_warming_progress' );
+        if ( function_exists( 'set_transient' ) ) {
+            set_transient( 'yatco_cache_warming_status', 'Import cancelled before starting.', 60 );
+        }
+        return;
+    }
+    
     // Save initial status immediately
     if ( function_exists( 'set_transient' ) ) {
         set_transient( 'yatco_cache_warming_status', 'Starting cache warm-up...', 600 );
@@ -71,9 +82,23 @@ function yatco_warm_cache_function() {
     }
     
     // Increase limits for cache warming
-    @ini_set( 'max_execution_time', 0 ); // Unlimited
+    @ini_set( 'max_execution_time', 3600 ); // 1 hour max (many servers don't allow unlimited)
     @ini_set( 'memory_limit', '512M' ); // Increase memory
-    @set_time_limit( 0 ); // Remove time limit
+    
+    // Check if this is a direct run (synchronous) - limit processing for direct runs
+    $is_direct_run = ( defined( 'YATCO_DIRECT_RUN' ) && YATCO_DIRECT_RUN ) || ( ! wp_doing_cron() && ! wp_doing_ajax() );
+    $max_vessels_per_run = $is_direct_run ? 50 : 999999; // Process only 50 at a time for direct runs
+    
+    // Check stop flag again after getting token
+    $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+    if ( $stop_flag !== false ) {
+        delete_transient( 'yatco_cache_warming_stop' );
+        delete_transient( 'yatco_cache_warming_progress' );
+        if ( function_exists( 'set_transient' ) ) {
+            set_transient( 'yatco_cache_warming_status', 'Import cancelled after token validation.', 60 );
+        }
+        return;
+    }
     
     // Fetch all vessel IDs
     $ids = yatco_get_active_vessel_ids( $token, 0 );
@@ -81,6 +106,17 @@ function yatco_warm_cache_function() {
     if ( is_wp_error( $ids ) ) {
         if ( function_exists( 'set_transient' ) ) {
             set_transient( 'yatco_cache_warming_status', 'Error: ' . $ids->get_error_message(), 60 );
+        }
+        return;
+    }
+    
+    // Check stop flag after fetching IDs
+    $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+    if ( $stop_flag !== false ) {
+        delete_transient( 'yatco_cache_warming_stop' );
+        delete_transient( 'yatco_cache_warming_progress' );
+        if ( function_exists( 'set_transient' ) ) {
+            set_transient( 'yatco_cache_warming_status', 'Import cancelled after fetching vessel IDs.', 60 );
         }
         return;
     }
@@ -102,12 +138,20 @@ function yatco_warm_cache_function() {
         // Support both old format (vessels) and new format (vessel_ids) for backward compatibility
         if ( isset( $progress['vessel_ids'] ) && is_array( $progress['vessel_ids'] ) ) {
             $cached_vessel_ids = $progress['vessel_ids'];
+            // Only keep last 1000 IDs to prevent memory issues
+            if ( count( $cached_vessel_ids ) > 1000 ) {
+                $cached_vessel_ids = array_slice( $cached_vessel_ids, -1000 );
+            }
         } elseif ( isset( $progress['vessels'] ) && is_array( $progress['vessels'] ) ) {
             // Extract IDs from old format
             foreach ( $progress['vessels'] as $vessel ) {
                 if ( isset( $vessel['id'] ) ) {
                     $cached_vessel_ids[] = intval( $vessel['id'] );
                 }
+            }
+            // Only keep last 1000 IDs
+            if ( count( $cached_vessel_ids ) > 1000 ) {
+                $cached_vessel_ids = array_slice( $cached_vessel_ids, -1000 );
             }
         }
         $start_time = isset( $progress['start_time'] ) ? intval( $progress['start_time'] ) : time();
@@ -125,12 +169,25 @@ function yatco_warm_cache_function() {
         );
         set_transient( $cache_key_progress, $initial_progress, 3600 );
     }
+    
+    // Limit processing for direct runs to prevent timeouts
+    if ( $is_direct_run && count( $ids ) > $max_vessels_per_run ) {
+        $ids = array_slice( $ids, 0, $max_vessels_per_run );
+        if ( function_exists( 'set_transient' ) ) {
+            set_transient( 'yatco_cache_warming_status', "Direct run: Processing first {$max_vessels_per_run} vessels. Use WP-Cron or batch processing for full import.", 600 );
+        }
+    }
 
-    // Process one vessel at a time with 45-second delay between vessels
+    // Process one vessel at a time with delay between vessels
     $processed = 0;
     $errors = 0;
-    $delay_seconds = 45; // 45 seconds between vessels
+    // Shorter delay for direct runs (5 seconds) vs background runs (45 seconds)
+    $delay_seconds = $is_direct_run ? 5 : 45;
     $vessel_ids = $cached_vessel_ids; // Start with previously processed IDs
+    
+    // For direct runs, track start time to prevent timeout
+    $direct_run_start = time();
+    $direct_run_max_time = 300; // 5 minutes max for direct runs
 
     foreach ( $ids as $index => $id ) {
         $processed++;
@@ -168,19 +225,64 @@ function yatco_warm_cache_function() {
             }
         }
         
+        // For direct runs, check if we're approaching timeout
+        if ( $is_direct_run && ( time() - $direct_run_start ) > $direct_run_max_time ) {
+            // Save progress and stop
+            $progress_data = array(
+                'last_processed' => $actual_index,
+                'total'         => $vessel_count,
+                'processed'     => count( $vessel_ids ),
+                'vessel_ids'    => array_slice( $vessel_ids, -1000 ), // Only keep last 1000
+                'start_time'    => $start_time,
+                'timestamp'     => time(),
+                'errors'        => $errors,
+            );
+            set_transient( $cache_key_progress, $progress_data, 3600 );
+            set_transient( 'yatco_cache_warming_status', "Direct run time limit reached. Processed {$actual_index} of {$vessel_count}. Continue by running again or use WP-Cron for full import.", 600 );
+            return;
+        }
+        
+        // Check stop flag again right before importing (in case it was set during delay)
+        $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+        if ( $stop_flag !== false ) {
+            delete_transient( 'yatco_cache_warming_stop' );
+            delete_transient( $cache_key_progress );
+            if ( function_exists( 'set_transient' ) ) {
+                set_transient( 'yatco_cache_warming_status', 'Import stopped by user.', 60 );
+            }
+            return;
+        }
+        
         // Reset execution time
         @set_time_limit( 300 ); // 5 minutes per vessel
         
-        // Clear memory periodically to prevent buildup
-        if ( $processed % 10 == 0 ) {
+        // Clear memory periodically to prevent buildup (every 5 vessels for direct runs, every 10 for background)
+        $memory_clear_interval = $is_direct_run ? 5 : 10;
+        if ( $processed % $memory_clear_interval == 0 ) {
             if ( function_exists( 'gc_collect_cycles' ) ) {
                 gc_collect_cycles();
+            }
+            // Flush output buffer for direct runs to keep connection alive
+            if ( $is_direct_run && ob_get_level() > 0 ) {
+                ob_flush();
+                flush();
             }
         }
 
         try {
             // Import vessel to CPT
             $import_result = yatco_import_single_vessel( $token, $id );
+            
+            // Check stop flag immediately after import (in case stop was clicked during import)
+            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            if ( $stop_flag !== false ) {
+                delete_transient( 'yatco_cache_warming_stop' );
+                delete_transient( $cache_key_progress );
+                if ( function_exists( 'set_transient' ) ) {
+                    set_transient( 'yatco_cache_warming_status', 'Import stopped by user.', 60 );
+                }
+                return;
+            }
             if ( is_wp_error( $import_result ) ) {
                 $errors++;
                 
@@ -188,11 +290,13 @@ function yatco_warm_cache_function() {
                 $vessel_ids[] = intval( $id );
                 
                 // Save progress even on error (only store essential data, not full vessel data)
+                // Only keep last 1000 vessel IDs to prevent memory issues
+                $vessel_ids_to_save = count( $vessel_ids ) > 1000 ? array_slice( $vessel_ids, -1000 ) : $vessel_ids;
                 $progress_data = array(
                     'last_processed' => $actual_index + 1,
                     'total'         => $vessel_count,
                     'processed'     => count( $vessel_ids ),
-                    'vessel_ids'    => $vessel_ids, // Only store IDs, not full data
+                    'vessel_ids'    => $vessel_ids_to_save, // Only store IDs, not full data, limit to 1000
                     'start_time'    => $start_time,
                     'timestamp'     => time(),
                     'errors'        => $errors,
@@ -207,8 +311,48 @@ function yatco_warm_cache_function() {
                     set_transient( 'yatco_cache_warming_status', "Error importing vessel {$id}. Continuing... Processed " . ( $actual_index + 1 ) . " of {$vessel_count} ({$percent}%)...", 600 );
                 }
                 
-                // Wait 45 seconds before next vessel (even on error)
-                sleep( $delay_seconds );
+                // For direct runs, flush output
+                if ( $is_direct_run && ob_get_level() > 0 ) {
+                    ob_flush();
+                    flush();
+                }
+                
+                // Wait before next vessel (even on error)
+                if ( $is_direct_run ) {
+                    for ( $i = 0; $i < $delay_seconds; $i++ ) {
+                        // Check stop flag every second
+                        $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+                        if ( $stop_flag !== false ) {
+                            delete_transient( 'yatco_cache_warming_stop' );
+                            delete_transient( $cache_key_progress );
+                            if ( function_exists( 'set_transient' ) ) {
+                                set_transient( 'yatco_cache_warming_status', 'Import stopped by user during delay.', 60 );
+                            }
+                            return;
+                        }
+                        sleep( 1 );
+                        if ( ( time() - $direct_run_start ) > ( $direct_run_max_time - 10 ) ) {
+                            break;
+                        }
+                    }
+                } else {
+                    // Check stop flag during delay
+                    $remaining_delay = $delay_seconds;
+                    while ( $remaining_delay > 0 ) {
+                        $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+                        if ( $stop_flag !== false ) {
+                            delete_transient( 'yatco_cache_warming_stop' );
+                            delete_transient( $cache_key_progress );
+                            if ( function_exists( 'set_transient' ) ) {
+                                set_transient( 'yatco_cache_warming_status', 'Import stopped by user during delay.', 60 );
+                            }
+                            return;
+                        }
+                        $sleep_time = min( 5, $remaining_delay );
+                        sleep( $sleep_time );
+                        $remaining_delay -= $sleep_time;
+                    }
+                }
                 continue;
             }
             
@@ -216,17 +360,25 @@ function yatco_warm_cache_function() {
             $vessel_ids[] = intval( $id ); // Store ID for statistics
             
             // Save progress after EACH vessel (only essential data, not full vessel data)
+            // Only keep last 1000 vessel IDs to prevent memory issues with large arrays
+            $vessel_ids_to_save = count( $vessel_ids ) > 1000 ? array_slice( $vessel_ids, -1000 ) : $vessel_ids;
             $progress_data = array(
                 'last_processed' => $actual_index + 1,
                 'total'         => $vessel_count,
                 'processed'     => count( $vessel_ids ),
-                'vessel_ids'    => $vessel_ids, // Only store IDs, not full data
+                'vessel_ids'    => $vessel_ids_to_save, // Only store IDs, not full data, limit to 1000
                 'start_time'    => $start_time,
                 'timestamp'     => time(),
                 'errors'        => $errors,
             );
             if ( function_exists( 'set_transient' ) ) {
                 set_transient( $cache_key_progress, $progress_data, 3600 );
+            }
+            
+            // For direct runs, flush output to keep connection alive
+            if ( $is_direct_run && ob_get_level() > 0 ) {
+                ob_flush();
+                flush();
             }
             
             // Update status after each vessel
@@ -245,21 +397,62 @@ function yatco_warm_cache_function() {
             // Reset execution time
             @set_time_limit( 300 );
             
-            // Wait 45 seconds before processing next vessel (to prevent server overload)
+            // Wait before processing next vessel (to prevent server overload)
             // Skip delay on last vessel
             if ( $index < count( $ids ) - 1 ) {
-                sleep( $delay_seconds );
+                // For direct runs, shorter delay and check for timeout/stop
+                if ( $is_direct_run ) {
+                    // Break delay into 1-second intervals to check stop flag frequently
+                    for ( $i = 0; $i < $delay_seconds; $i++ ) {
+                        // Check stop flag every second
+                        $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+                        if ( $stop_flag !== false ) {
+                            delete_transient( 'yatco_cache_warming_stop' );
+                            delete_transient( $cache_key_progress );
+                            if ( function_exists( 'set_transient' ) ) {
+                                set_transient( 'yatco_cache_warming_status', 'Import stopped by user during delay.', 60 );
+                            }
+                            return;
+                        }
+                        sleep( 1 );
+                        // Check if we're approaching timeout every second
+                        if ( ( time() - $direct_run_start ) > ( $direct_run_max_time - 10 ) ) {
+                            break;
+                        }
+                    }
+                } else {
+                    // For background runs, break delay into 5-second intervals to check stop flag
+                    $remaining_delay = $delay_seconds;
+                    while ( $remaining_delay > 0 ) {
+                        // Check stop flag every 5 seconds
+                        $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+                        if ( $stop_flag !== false ) {
+                            delete_transient( 'yatco_cache_warming_stop' );
+                            delete_transient( $cache_key_progress );
+                            if ( function_exists( 'set_transient' ) ) {
+                                set_transient( 'yatco_cache_warming_status', 'Import stopped by user during delay.', 60 );
+                            }
+                            return;
+                        }
+                        $sleep_time = min( 5, $remaining_delay );
+                        sleep( $sleep_time );
+                        $remaining_delay -= $sleep_time;
+                    }
+                }
             }
         } catch ( Exception $e ) {
             // Handle exceptions gracefully
             $errors++;
             $vessel_ids[] = intval( $id );
             
+            // Only keep last 1000 vessel IDs to prevent memory issues
+            $vessel_ids_to_save = count( $vessel_ids ) > 1000 ? array_slice( $vessel_ids, -1000 ) : $vessel_ids;
+            
             $progress_data = array(
                 'last_processed' => $actual_index + 1,
                 'total'         => $vessel_count,
                 'processed'     => count( $vessel_ids ),
-                'vessel_ids'    => $vessel_ids,
+                'vessel_ids'    => $vessel_ids_to_save,
                 'start_time'    => $start_time,
                 'timestamp'     => time(),
                 'errors'        => $errors,
@@ -269,8 +462,48 @@ function yatco_warm_cache_function() {
                 set_transient( 'yatco_cache_warming_status', "Exception importing vessel {$id}: " . $e->getMessage() . ". Continuing...", 600 );
             }
             
+            // For direct runs, flush output
+            if ( $is_direct_run && ob_get_level() > 0 ) {
+                ob_flush();
+                flush();
+            }
+            
             if ( $index < count( $ids ) - 1 ) {
-                sleep( $delay_seconds );
+                if ( $is_direct_run ) {
+                    for ( $i = 0; $i < $delay_seconds; $i++ ) {
+                        // Check stop flag every second
+                        $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+                        if ( $stop_flag !== false ) {
+                            delete_transient( 'yatco_cache_warming_stop' );
+                            delete_transient( $cache_key_progress );
+                            if ( function_exists( 'set_transient' ) ) {
+                                set_transient( 'yatco_cache_warming_status', 'Import stopped by user during delay.', 60 );
+                            }
+                            return;
+                        }
+                        sleep( 1 );
+                        if ( ( time() - $direct_run_start ) > ( $direct_run_max_time - 10 ) ) {
+                            break;
+                        }
+                    }
+                } else {
+                    // Check stop flag during delay
+                    $remaining_delay = $delay_seconds;
+                    while ( $remaining_delay > 0 ) {
+                        $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+                        if ( $stop_flag !== false ) {
+                            delete_transient( 'yatco_cache_warming_stop' );
+                            delete_transient( $cache_key_progress );
+                            if ( function_exists( 'set_transient' ) ) {
+                                set_transient( 'yatco_cache_warming_status', 'Import stopped by user during delay.', 60 );
+                            }
+                            return;
+                        }
+                        $sleep_time = min( 5, $remaining_delay );
+                        sleep( $sleep_time );
+                        $remaining_delay -= $sleep_time;
+                    }
+                }
             }
         }
     }

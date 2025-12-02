@@ -10,6 +10,45 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
+ * Build YATCO listing URL with proper slug format.
+ * Format: https://www.yatco.com/yacht/[length]-[builder]-[type]-[year]-[mlsid]/
+ * 
+ * @param int    $post_id   WordPress post ID
+ * @param string $mlsid     MLS ID
+ * @param int    $vessel_id Vessel ID (fallback if no MLS ID)
+ * @param float  $length    Length in feet
+ * @param string $builder   Builder/make name
+ * @param string $type      Vessel type/category
+ * @param int    $year      Year built
+ * @return string YATCO listing URL
+ */
+function yatco_build_listing_url( $post_id = 0, $mlsid = '', $vessel_id = 0, $length = 0, $builder = '', $type = '', $year = 0 ) {
+    // Get MLS ID or use Vessel ID as fallback
+    $listing_id = ! empty( $mlsid ) ? $mlsid : $vessel_id;
+    
+    if ( empty( $listing_id ) ) {
+        return '';
+    }
+    
+    // If we have all the data, build the full slug
+    if ( ! empty( $length ) && ! empty( $builder ) && ! empty( $type ) && ! empty( $year ) ) {
+        // Clean and format each part
+        $length_slug = intval( $length ); // Just the number
+        $builder_slug = sanitize_title( $builder ); // Convert to slug (lowercase, hyphens)
+        $type_slug = sanitize_title( $type ); // Convert to slug
+        $year_slug = intval( $year );
+        
+        // Build the full slug: length-builder-type-year-mlsid
+        $slug = $length_slug . '-' . $builder_slug . '-' . $type_slug . '-' . $year_slug . '-' . $listing_id;
+    } else {
+        // Fallback: just use the MLS ID/Vessel ID
+        $slug = $listing_id;
+    }
+    
+    return 'https://www.yatco.com/yacht/' . $slug . '/';
+}
+
+/**
  * Helper: parse a brief summary from FullSpecsAll for preview table.
  * Updated to match actual API response structure.
  */
@@ -360,8 +399,10 @@ function yatco_import_single_vessel( $token, $vessel_id ) {
     update_post_meta( $post_id, 'yacht_vessel_id', $vessel_id ); // Store vessel ID for reference
     
     // Store YATCO listing URL for easy access in admin
-    $yatco_listing_id = ! empty( $mlsid ) ? $mlsid : $vessel_id;
-    $yatco_listing_url = 'https://www.yatcoboss.com/yacht/' . $yatco_listing_id . '/';
+    // Build proper YATCO URL with slug format: length-builder-category-year-mlsid
+    // Use category or sub_category for the type part (e.g., "motor-yacht")
+    $category_for_url = ! empty( $sub_category ) ? $sub_category : ( ! empty( $category ) ? $category : $type );
+    $yatco_listing_url = yatco_build_listing_url( $post_id, $mlsid, $vessel_id, $loa_feet, $make, $category_for_url, $year );
     update_post_meta( $post_id, 'yacht_yatco_listing_url', $yatco_listing_url );
     update_post_meta( $post_id, 'yacht_price', $price_formatted_display ); // Save formatted price string
     update_post_meta( $post_id, 'yacht_price_usd', $price_usd );
