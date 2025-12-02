@@ -205,6 +205,10 @@ function yatco_import_single_vessel( $token, $vessel_id ) {
     $vd     = isset( $full['VD'] ) ? $full['VD'] : array();
     $misc   = isset( $full['MiscInfo'] ) ? $full['MiscInfo'] : array();
     $sections = isset( $full['Sections'] ) && is_array( $full['Sections'] ) ? $full['Sections'] : array();
+    $engines = isset( $full['Engines'] ) && is_array( $full['Engines'] ) ? $full['Engines'] : array();
+    $accommodations = isset( $full['Accommodations'] ) ? $full['Accommodations'] : array();
+    $speed_weight = isset( $full['SpeedWeight'] ) ? $full['SpeedWeight'] : array();
+    $hull_deck = isset( $full['HullDeck'] ) ? $full['HullDeck'] : array();
 
     // Basic fields – updated to match actual API structure.
     $name   = '';
@@ -474,11 +478,80 @@ function yatco_import_single_vessel( $token, $vessel_id ) {
     }
 
     // Get additional fields for filtering and display
-    $loa_feet = isset( $result['LOAFeet'] ) && $result['LOAFeet'] > 0 ? floatval( $result['LOAFeet'] ) : ( isset( $dims['LOAFeet'] ) && $dims['LOAFeet'] > 0 ? floatval( $dims['LOAFeet'] ) : null );
+    // Get numeric LOA values for calculations (not the formatted display string)
+    $loa_feet = isset( $result['LOAFeet'] ) && $result['LOAFeet'] > 0 ? floatval( $result['LOAFeet'] ) : ( isset( $dims['Length'] ) && $dims['Length'] > 0 ? floatval( $dims['Length'] ) : ( isset( $dims['LOAFeetValue'] ) && $dims['LOAFeetValue'] > 0 ? floatval( $dims['LOAFeetValue'] ) : null ) );
     $loa_meters = isset( $result['LOAMeters'] ) && $result['LOAMeters'] > 0 ? floatval( $result['LOAMeters'] ) : null;
     if ( ! $loa_meters && $loa_feet ) {
         $loa_meters = $loa_feet * 0.3048;
     }
+    
+    // Get beam (width) from Dimensions - use formatted string if available
+    $beam = '';
+    if ( ! empty( $dims['Beam'] ) ) {
+        $beam = $dims['Beam']; // Formatted like "13' 11\" (4.24m)"
+    } elseif ( ! empty( $dims['BeamFeet'] ) ) {
+        $beam = $dims['BeamFeet']; // Formatted like "13' 11\""
+    } elseif ( isset( $dims['BeamValue'] ) && $dims['BeamValue'] > 0 ) {
+        // Format manually if we only have numeric value
+        $beam_ft = floatval( $dims['BeamValue'] );
+        $beam_m = $beam_ft * 0.3048;
+        $beam = number_format( $beam_ft, 1 ) . "' (" . number_format( $beam_m, 2 ) . "m)";
+    }
+    
+    // Get gross tonnage from Result or Dimensions
+    $gross_tonnage = '';
+    if ( isset( $result['GrossTonnage'] ) && $result['GrossTonnage'] !== 0 ) {
+        $gross_tonnage = $result['GrossTonnage'];
+    } elseif ( isset( $result['GrossTonnageConverted'] ) && $result['GrossTonnageConverted'] !== 0 ) {
+        $gross_tonnage = $result['GrossTonnageConverted'];
+    } elseif ( isset( $dims['GrossTonnage'] ) && $dims['GrossTonnage'] !== 0 ) {
+        $gross_tonnage = $dims['GrossTonnage'];
+    }
+    // Format gross tonnage if it's a number
+    if ( $gross_tonnage !== '' && is_numeric( $gross_tonnage ) ) {
+        $gross_tonnage = number_format( floatval( $gross_tonnage ), 2 );
+    }
+    
+    // Get engine information from Engines array
+    $engine_count = count( $engines );
+    $engine_manufacturer = '';
+    $engine_model = '';
+    $engine_type = '';
+    $engine_fuel_type = '';
+    $engine_horsepower = '';
+    
+    // Get engine details from first engine (most vessels have consistent engines)
+    if ( ! empty( $engines ) && isset( $engines[0] ) ) {
+        $first_engine = $engines[0];
+        $engine_manufacturer = isset( $first_engine['Manufacturer'] ) ? $first_engine['Manufacturer'] : '';
+        $engine_model = isset( $first_engine['Model'] ) ? trim( $first_engine['Model'] ) : '';
+        $engine_type = isset( $first_engine['EngineType'] ) ? $first_engine['EngineType'] : '';
+        $engine_fuel_type = isset( $first_engine['FuelType'] ) ? $first_engine['FuelType'] : '';
+        
+        // Get horsepower - may be total or per engine
+        if ( isset( $first_engine['Horsepower'] ) && $first_engine['Horsepower'] > 0 ) {
+            $hp = intval( $first_engine['Horsepower'] );
+            // If multiple engines, show total if consistent, otherwise show per engine
+            if ( $engine_count > 1 ) {
+                $total_hp = $hp * $engine_count;
+                $engine_horsepower = $total_hp . ' HP';
+            } else {
+                $engine_horsepower = $hp . ' HP';
+            }
+        }
+    }
+    
+    // Get accommodations data
+    $heads = isset( $accommodations['HeadsValue'] ) && $accommodations['HeadsValue'] > 0 ? intval( $accommodations['HeadsValue'] ) : 0;
+    $sleeps = isset( $accommodations['SleepsValue'] ) && $accommodations['SleepsValue'] > 0 ? intval( $accommodations['SleepsValue'] ) : 0;
+    $berths = isset( $accommodations['BerthsValue'] ) && $accommodations['BerthsValue'] > 0 ? intval( $accommodations['BerthsValue'] ) : 0;
+    
+    // Get speed and weight data
+    $cruise_speed = isset( $speed_weight['CruiseSpeed'] ) ? $speed_weight['CruiseSpeed'] : '';
+    $max_speed = isset( $speed_weight['MaxSpeed'] ) ? $speed_weight['MaxSpeed'] : '';
+    $fuel_capacity = isset( $speed_weight['FuelCapacity'] ) ? $speed_weight['FuelCapacity'] : '';
+    $water_capacity = isset( $speed_weight['WaterCapacity'] ) ? $speed_weight['WaterCapacity'] : '';
+    $holding_tank = isset( $speed_weight['HoldingTank'] ) ? $speed_weight['HoldingTank'] : '';
     
     // Get price in USD and EUR separately
     $price_usd = isset( $basic['AskingPriceUSD'] ) && $basic['AskingPriceUSD'] > 0 ? floatval( $basic['AskingPriceUSD'] ) : null;
@@ -579,10 +652,13 @@ function yatco_import_single_vessel( $token, $vessel_id ) {
     update_post_meta( $post_id, 'yacht_price_formatted', $price_formatted );
     update_post_meta( $post_id, 'yacht_currency', $currency );
     update_post_meta( $post_id, 'yacht_price_on_application', $price_on_application );
+    update_post_meta( $post_id, 'yacht_boat_name', $name );
     update_post_meta( $post_id, 'yacht_year', $year );
     update_post_meta( $post_id, 'yacht_length', $loa );
     update_post_meta( $post_id, 'yacht_length_feet', $loa_feet );
     update_post_meta( $post_id, 'yacht_length_meters', $loa_meters );
+    update_post_meta( $post_id, 'yacht_beam', $beam );
+    update_post_meta( $post_id, 'yacht_gross_tonnage', $gross_tonnage );
     update_post_meta( $post_id, 'yacht_make', $make );
     update_post_meta( $post_id, 'yacht_model', $model );
     update_post_meta( $post_id, 'yacht_class', $class );
@@ -596,6 +672,20 @@ function yatco_import_single_vessel( $token, $vessel_id ) {
     update_post_meta( $post_id, 'yacht_location_state', $location_state );
     update_post_meta( $post_id, 'yacht_location_country', $location_country );
     update_post_meta( $post_id, 'yacht_state_rooms', $state_rooms );
+    update_post_meta( $post_id, 'yacht_heads', $heads );
+    update_post_meta( $post_id, 'yacht_sleeps', $sleeps );
+    update_post_meta( $post_id, 'yacht_berths', $berths );
+    update_post_meta( $post_id, 'yacht_engine_count', $engine_count );
+    update_post_meta( $post_id, 'yacht_engine_manufacturer', $engine_manufacturer );
+    update_post_meta( $post_id, 'yacht_engine_model', $engine_model );
+    update_post_meta( $post_id, 'yacht_engine_type', $engine_type );
+    update_post_meta( $post_id, 'yacht_engine_fuel_type', $engine_fuel_type );
+    update_post_meta( $post_id, 'yacht_engine_horsepower', $engine_horsepower );
+    update_post_meta( $post_id, 'yacht_cruise_speed', $cruise_speed );
+    update_post_meta( $post_id, 'yacht_max_speed', $max_speed );
+    update_post_meta( $post_id, 'yacht_fuel_capacity', $fuel_capacity );
+    update_post_meta( $post_id, 'yacht_water_capacity', $water_capacity );
+    update_post_meta( $post_id, 'yacht_holding_tank', $holding_tank );
     update_post_meta( $post_id, 'yacht_image_url', $image_url );
     update_post_meta( $post_id, 'yacht_hull_material', $hull_material );
     update_post_meta( $post_id, 'yacht_status_text', $status_text );

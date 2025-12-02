@@ -110,8 +110,30 @@ $days_on_market = yacht_meta( 'yacht_days_on_market', '' );
 $loa = yacht_meta( 'yacht_length', '' ); // or yacht_loa
 $loa_feet = yacht_meta( 'yacht_length_feet', '' );
 $loa_meters = yacht_meta( 'yacht_length_meters', '' );
+$beam = yacht_meta( 'yacht_beam', '' );
+$gross_tonnage = yacht_meta( 'yacht_gross_tonnage', '' );
 $hull_material = yacht_meta( 'yacht_hull_material', '' );
 $vessel_type = yacht_meta( 'yacht_type', '' );
+$state_rooms = yacht_meta( 'yacht_state_rooms', '' );
+$heads = yacht_meta( 'yacht_heads', '' );
+$sleeps = yacht_meta( 'yacht_sleeps', '' );
+$berths = yacht_meta( 'yacht_berths', '' );
+$engine_count = yacht_meta( 'yacht_engine_count', '' );
+$engine_manufacturer = yacht_meta( 'yacht_engine_manufacturer', '' );
+$engine_model = yacht_meta( 'yacht_engine_model', '' );
+$engine_type = yacht_meta( 'yacht_engine_type', '' );
+$engine_fuel_type = yacht_meta( 'yacht_engine_fuel_type', '' );
+$engine_horsepower = yacht_meta( 'yacht_engine_horsepower', '' );
+$cruise_speed = yacht_meta( 'yacht_cruise_speed', '' );
+$max_speed = yacht_meta( 'yacht_max_speed', '' );
+$fuel_capacity = yacht_meta( 'yacht_fuel_capacity', '' );
+$water_capacity = yacht_meta( 'yacht_water_capacity', '' );
+$holding_tank = yacht_meta( 'yacht_holding_tank', '' );
+$boat_name = yacht_meta( 'yacht_boat_name', '' );
+if ( empty( $boat_name ) ) {
+    // Fallback to post title if boat name not stored separately
+    $boat_name = get_the_title( $post_id );
+}
 $main_photo_url = yacht_meta( 'yacht_image_url', '' ); // or yacht_main_photo_url
 $virtual_tour_url = yacht_meta( 'yacht_virtual_tour_url', '' );
 $description = yacht_meta( 'yacht_description', '' ); // or yacht_short_description
@@ -375,10 +397,17 @@ if ( $price_on_application || empty( $asking_price ) ) {
     <h2>Specifications</h2>
     <div class="yacht-specs-grid">
 
-      <?php if ( $loa || $loa_feet || $loa_meters || $builder || $model || $year_built || $vessel_type || $category_display || $hull_material || $location_display ) : ?>
+      <?php if ( $boat_name || $loa || $loa_feet || $loa_meters || $builder || $model || $year_built || $vessel_type || $category_display || $hull_material || $location_display || $asking_price_formatted ) : ?>
       <div class="yacht-spec-group">
         <h3>General</h3>
         <dl>
+          <?php if ( $boat_name ) : ?>
+          <div>
+            <dt>Boat Name</dt>
+            <dd><?php echo yacht_output( $boat_name ); ?></dd>
+          </div>
+          <?php endif; ?>
+          
           <?php if ( $builder ) : ?>
           <div>
             <dt>Builder</dt>
@@ -435,32 +464,39 @@ if ( $price_on_application || empty( $asking_price ) ) {
             <dd><?php echo yacht_output( $location_display ); ?></dd>
           </div>
           <?php endif; ?>
+          
+          <?php if ( $asking_price_formatted && ! $price_on_application ) : ?>
+          <div>
+            <dt>Asking Price</dt>
+            <dd><?php echo yacht_output( $asking_price_formatted ); ?></dd>
+          </div>
+          <?php endif; ?>
         </dl>
       </div>
       <?php endif; ?>
 
-      <?php if ( $loa || $loa_feet || $loa_meters || $hull_material ) : ?>
+      <?php if ( $loa || $loa_feet || $loa_meters || $beam || $gross_tonnage || $hull_material ) : ?>
       <div class="yacht-spec-group">
         <h3>Dimensions & Construction</h3>
         <dl>
           <?php if ( $loa ) : ?>
           <div>
-            <dt>Length (LOA)</dt>
+            <dt>Length</dt>
             <dd><?php echo yacht_output( $loa ); ?></dd>
           </div>
           <?php endif; ?>
           
-          <?php if ( $loa_feet ) : ?>
+          <?php if ( $beam ) : ?>
           <div>
-            <dt>Length (Feet)</dt>
-            <dd><?php echo yacht_output( $loa_feet ); ?> ft</dd>
+            <dt>Beam</dt>
+            <dd><?php echo yacht_output( $beam ); ?></dd>
           </div>
           <?php endif; ?>
           
-          <?php if ( $loa_meters ) : ?>
+          <?php if ( $gross_tonnage ) : ?>
           <div>
-            <dt>Length (Meters)</dt>
-            <dd><?php echo yacht_output( $loa_meters ); ?> m</dd>
+            <dt>Gross Tonnage</dt>
+            <dd><?php echo yacht_output( $gross_tonnage ); ?></dd>
           </div>
           <?php endif; ?>
           
@@ -470,34 +506,135 @@ if ( $price_on_application || empty( $asking_price ) ) {
             <dd><?php echo yacht_output( $hull_material ); ?></dd>
           </div>
           <?php endif; ?>
-          <!-- Add Beam, Draft, etc. when available -->
         </dl>
       </div>
       <?php endif; ?>
 
-      <!-- Performance section - add when you have speed data -->
-      <!-- <div class="yacht-spec-group">
-        <h3>Performance</h3>
-        <dl>
-          Only show if values exist (not 0/empty)
-        </dl>
-      </div> -->
-
-      <!-- Accommodations section - add when you have room data -->
-      <!-- <div class="yacht-spec-group">
+      <?php if ( $state_rooms || $heads || $sleeps || $berths ) : ?>
+      <div class="yacht-spec-group">
         <h3>Accommodations</h3>
         <dl>
-          Only show rows with non-zero values
+          <?php if ( $state_rooms && yacht_has_value( $state_rooms ) ) : ?>
+          <div>
+            <dt>Cabins</dt>
+            <dd><?php echo yacht_output( $state_rooms ); ?></dd>
+          </div>
+          <?php endif; ?>
+          
+          <?php if ( $heads && yacht_has_value( $heads ) ) : ?>
+          <div>
+            <dt>Heads</dt>
+            <dd><?php echo yacht_output( $heads ); ?></dd>
+          </div>
+          <?php endif; ?>
+          
+          <?php if ( $sleeps && yacht_has_value( $sleeps ) ) : ?>
+          <div>
+            <dt>Sleeps</dt>
+            <dd><?php echo yacht_output( $sleeps ); ?></dd>
+          </div>
+          <?php endif; ?>
+          
+          <?php if ( $berths && yacht_has_value( $berths ) ) : ?>
+          <div>
+            <dt>Berths</dt>
+            <dd><?php echo yacht_output( $berths ); ?></dd>
+          </div>
+          <?php endif; ?>
         </dl>
-      </div> -->
+      </div>
+      <?php endif; ?>
 
-      <!-- Engines section - add when you have engine data -->
-      <!-- <div class="yacht-spec-group">
-        <h3>Engines</h3>
+      <?php if ( $engine_count || $engine_manufacturer || $engine_model || $engine_type || $engine_fuel_type || $engine_horsepower ) : ?>
+      <div class="yacht-spec-group">
+        <h3>Engine Details</h3>
         <dl>
-          Loop over engines array
+          <?php if ( $engine_count && yacht_has_value( $engine_count ) ) : ?>
+          <div>
+            <dt>Engine Count</dt>
+            <dd><?php echo yacht_output( $engine_count ); ?></dd>
+          </div>
+          <?php endif; ?>
+          
+          <?php if ( $engine_manufacturer ) : ?>
+          <div>
+            <dt>Engine Manufacturer</dt>
+            <dd><?php echo yacht_output( $engine_manufacturer ); ?></dd>
+          </div>
+          <?php endif; ?>
+          
+          <?php if ( $engine_model ) : ?>
+          <div>
+            <dt>Engine Model</dt>
+            <dd><?php echo yacht_output( $engine_model ); ?></dd>
+          </div>
+          <?php endif; ?>
+          
+          <?php if ( $engine_type ) : ?>
+          <div>
+            <dt>Engine Type</dt>
+            <dd><?php echo yacht_output( $engine_type ); ?></dd>
+          </div>
+          <?php endif; ?>
+          
+          <?php if ( $engine_fuel_type ) : ?>
+          <div>
+            <dt>Fuel Type</dt>
+            <dd><?php echo yacht_output( $engine_fuel_type ); ?></dd>
+          </div>
+          <?php endif; ?>
+          
+          <?php if ( $engine_horsepower ) : ?>
+          <div>
+            <dt>Horsepower</dt>
+            <dd><?php echo yacht_output( $engine_horsepower ); ?></dd>
+          </div>
+          <?php endif; ?>
         </dl>
-      </div> -->
+      </div>
+      <?php endif; ?>
+
+      <?php if ( $cruise_speed || $max_speed || $fuel_capacity || $water_capacity || $holding_tank ) : ?>
+      <div class="yacht-spec-group">
+        <h3>Performance</h3>
+        <dl>
+          <?php if ( $cruise_speed ) : ?>
+          <div>
+            <dt>Cruise Speed</dt>
+            <dd><?php echo yacht_output( $cruise_speed ); ?></dd>
+          </div>
+          <?php endif; ?>
+          
+          <?php if ( $max_speed ) : ?>
+          <div>
+            <dt>Max Speed</dt>
+            <dd><?php echo yacht_output( $max_speed ); ?></dd>
+          </div>
+          <?php endif; ?>
+          
+          <?php if ( $fuel_capacity ) : ?>
+          <div>
+            <dt>Fuel Capacity</dt>
+            <dd><?php echo yacht_output( $fuel_capacity ); ?></dd>
+          </div>
+          <?php endif; ?>
+          
+          <?php if ( $water_capacity ) : ?>
+          <div>
+            <dt>Water Capacity</dt>
+            <dd><?php echo yacht_output( $water_capacity ); ?></dd>
+          </div>
+          <?php endif; ?>
+          
+          <?php if ( $holding_tank ) : ?>
+          <div>
+            <dt>Holding Tank</dt>
+            <dd><?php echo yacht_output( $holding_tank ); ?></dd>
+          </div>
+          <?php endif; ?>
+        </dl>
+      </div>
+      <?php endif; ?>
 
       <?php 
       // Display detailed specifications (Overview, Equipment, Features, etc.)
