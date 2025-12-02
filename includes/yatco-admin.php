@@ -239,13 +239,7 @@ function yatco_options_page() {
                     echo '<p style="margin-top: 15px;">Please verify your API token permissions or contact YATCO support.</p>';
                     echo '</div>';
                 } else {
-                            echo '<p><strong>✅ Success!</strong> FullSpecsAll data retrieved and parsed successfully.</p>';
-                            
-                            if ( is_array( $fullspecs ) && ! empty( $fullspecs ) ) {
-                                $sections_found = array_keys( $fullspecs );
-                                echo '<p style="color: #666; font-size: 13px;">Data sections found: <strong>' . esc_html( count( $sections_found ) ) . '</strong> sections (' . esc_html( implode( ', ', array_slice( $sections_found, 0, 5 ) ) ) . ( count( $sections_found ) > 5 ? ', ...' : '' ) . ')</p>';
-                            }
-                            
+                    // Found a vessel with accessible FullSpecsAll data
                     echo '<p><strong>Response Code:</strong> ' . esc_html( wp_remote_retrieve_response_code( $response ) ) . '</p>';
                     echo '<p><strong>Content-Type:</strong> ' . esc_html( wp_remote_retrieve_header( $response, 'content-type' ) ) . '</p>';
                     echo '<p><strong>Response Length:</strong> ' . strlen( wp_remote_retrieve_body( $response ) ) . ' characters</p>';
@@ -262,72 +256,70 @@ function yatco_options_page() {
                     require_once YATCO_PLUGIN_DIR . 'includes/yatco-helpers.php';
                     
                     $import_result = yatco_import_single_vessel( $token, $found_vessel_id );
-                            
-                            if ( is_wp_error( $import_result ) ) {
-                                echo '<div class="notice notice-error">';
-                                echo '<p><strong>❌ Import Failed:</strong> ' . esc_html( $import_result->get_error_message() ) . '</p>';
-                                echo '<p>This might be due to missing or invalid data in the API response. Check the raw JSON below for details.</p>';
-                                echo '</div>';
-                            } else {
-                                $post_id = $import_result;
-                                $post_title = get_the_title( $post_id );
-                                $post_permalink = get_permalink( $post_id );
-                                
-                                echo '<div class="notice notice-success" style="background: #d4edda; border-left: 4px solid #46b450; padding: 15px; margin: 20px 0;">';
-                                echo '<p style="font-size: 16px; font-weight: bold; margin: 0 0 10px 0;"><strong>✅ Vessel Imported Successfully!</strong></p>';
-                                echo '<p style="margin: 5px 0;"><strong>Post ID:</strong> ' . esc_html( $post_id ) . '</p>';
-                                echo '<p style="margin: 5px 0;"><strong>Title:</strong> ' . esc_html( $post_title ) . '</p>';
-                                echo '<p style="margin: 15px 0 5px 0;"><strong>View the post:</strong></p>';
-                                echo '<p style="margin: 5px 0;">';
-                                echo '<a href="' . esc_url( $post_permalink ) . '" target="_blank" class="button button-primary" style="margin-right: 10px; display: inline-block; padding: 8px 16px; text-decoration: none; background: #2271b1; color: #fff; border-radius: 3px; font-weight: bold;">👁️ View Post (New Tab)</a>';
-                                echo '<a href="' . esc_url( admin_url( 'post.php?post=' . $post_id . '&action=edit' ) ) . '" class="button button-secondary" style="display: inline-block; padding: 8px 16px; text-decoration: none; background: #f0f0f1; color: #2c3338; border-radius: 3px; border: 1px solid #8c8f94;">✏️ Edit Post</a>';
-                                echo '</p>';
-                                echo '</div>';
-                                
-                                echo '<h4 style="margin-top: 20px;">Import Summary:</h4>';
-                                echo '<div style="background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 15px;">';
-                                echo '<ul style="list-style: disc; margin-left: 20px;">';
-                                
-                                $meta_fields_to_check = array(
-                                    'yacht_vessel_id' => 'Vessel ID',
-                                    'yacht_year' => 'Year',
-                                    'yacht_make' => 'Builder',
-                                    'yacht_model' => 'Model',
-                                    'yacht_price' => 'Price',
-                                    'yacht_length' => 'Length',
-                                    'yacht_location_custom_rjc' => 'Location',
-                                );
-                                
-                                foreach ( $meta_fields_to_check as $meta_key => $label ) {
-                                    $meta_value = get_post_meta( $post_id, $meta_key, true );
-                                    if ( ! empty( $meta_value ) ) {
-                                        echo '<li><strong>' . esc_html( $label ) . ':</strong> ' . esc_html( $meta_value ) . '</li>';
-                                    }
-                                }
-                                
-                                $gallery_count = 0;
-                                $gallery_urls = get_post_meta( $post_id, 'yacht_image_gallery_urls', true );
-                                if ( is_array( $gallery_urls ) ) {
-                                    $gallery_count = count( $gallery_urls );
-                                }
-                                if ( $gallery_count > 0 ) {
-                                    echo '<li><strong>Gallery Images:</strong> ' . esc_html( $gallery_count ) . ' images</li>';
-                                }
-                                
-                                echo '</ul>';
-                                echo '</div>';
+                    
+                    if ( is_wp_error( $import_result ) ) {
+                        echo '<div class="notice notice-error">';
+                        echo '<p><strong>❌ Import Failed:</strong> ' . esc_html( $import_result->get_error_message() ) . '</p>';
+                        echo '<p>This might be due to missing or invalid data in the API response. Check the raw JSON below for details.</p>';
+                        echo '</div>';
+                    } else {
+                        $post_id = $import_result;
+                        $post_title = get_the_title( $post_id );
+                        $post_permalink = get_permalink( $post_id );
+                        
+                        echo '<div class="notice notice-success" style="background: #d4edda; border-left: 4px solid #46b450; padding: 15px; margin: 20px 0;">';
+                        echo '<p style="font-size: 16px; font-weight: bold; margin: 0 0 10px 0;"><strong>✅ Vessel Imported Successfully!</strong></p>';
+                        echo '<p style="margin: 5px 0;"><strong>Post ID:</strong> ' . esc_html( $post_id ) . '</p>';
+                        echo '<p style="margin: 5px 0;"><strong>Title:</strong> ' . esc_html( $post_title ) . '</p>';
+                        echo '<p style="margin: 15px 0 5px 0;"><strong>View the post:</strong></p>';
+                        echo '<p style="margin: 5px 0;">';
+                        echo '<a href="' . esc_url( $post_permalink ) . '" target="_blank" class="button button-primary" style="margin-right: 10px; display: inline-block; padding: 8px 16px; text-decoration: none; background: #2271b1; color: #fff; border-radius: 3px; font-weight: bold;">👁️ View Post (New Tab)</a>';
+                        echo '<a href="' . esc_url( admin_url( 'post.php?post=' . $post_id . '&action=edit' ) ) . '" class="button button-secondary" style="display: inline-block; padding: 8px 16px; text-decoration: none; background: #f0f0f1; color: #2c3338; border-radius: 3px; border: 1px solid #8c8f94;">✏️ Edit Post</a>';
+                        echo '</p>';
+                        echo '</div>';
+                        
+                        echo '<h4 style="margin-top: 20px;">Import Summary:</h4>';
+                        echo '<div style="background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 15px;">';
+                        echo '<ul style="list-style: disc; margin-left: 20px;">';
+                        
+                        $meta_fields_to_check = array(
+                            'yacht_vessel_id' => 'Vessel ID',
+                            'yacht_year' => 'Year',
+                            'yacht_make' => 'Builder',
+                            'yacht_model' => 'Model',
+                            'yacht_price' => 'Price',
+                            'yacht_length' => 'Length',
+                            'yacht_location_custom_rjc' => 'Location',
+                        );
+                        
+                        foreach ( $meta_fields_to_check as $meta_key => $label ) {
+                            $meta_value = get_post_meta( $post_id, $meta_key, true );
+                            if ( ! empty( $meta_value ) ) {
+                                echo '<li><strong>' . esc_html( $label ) . ':</strong> ' . esc_html( $meta_value ) . '</li>';
                             }
-                            
-                            echo '<h3 style="margin-top: 30px;">Raw API Response Data Structure</h3>';
-                            echo '<p style="color: #666; font-size: 13px;">Below is the complete JSON response from the YATCO API for reference:</p>';
-                            
-                            echo '<div style="background: #fff; border: 1px solid #ccc; border-radius: 4px; padding: 15px; max-height: 400px; overflow: auto; font-family: monospace; font-size: 11px; line-height: 1.4;">';
-                            echo '<pre style="margin: 0; white-space: pre-wrap; word-wrap: break-word;">';
-                            echo esc_html( wp_json_encode( $fullspecs, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) );
-                            echo '</pre>';
-                            echo '</div>';
                         }
+                        
+                        $gallery_count = 0;
+                        $gallery_urls = get_post_meta( $post_id, 'yacht_image_gallery_urls', true );
+                        if ( is_array( $gallery_urls ) ) {
+                            $gallery_count = count( $gallery_urls );
+                        }
+                        if ( $gallery_count > 0 ) {
+                            echo '<li><strong>Gallery Images:</strong> ' . esc_html( $gallery_count ) . ' images</li>';
+                        }
+                        
+                        echo '</ul>';
+                        echo '</div>';
                     }
+                    
+                    echo '<h3 style="margin-top: 30px;">Raw API Response Data Structure</h3>';
+                    echo '<p style="color: #666; font-size: 13px;">Below is the complete JSON response from the YATCO API for reference:</p>';
+                    
+                    echo '<div style="background: #fff; border: 1px solid #ccc; border-radius: 4px; padding: 15px; max-height: 400px; overflow: auto; font-family: monospace; font-size: 11px; line-height: 1.4;">';
+                    echo '<pre style="margin: 0; white-space: pre-wrap; word-wrap: break-word;">';
+                    echo esc_html( wp_json_encode( $fullspecs, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) );
+                    echo '</pre>';
+                    echo '</div>';
                 }
                 echo '</div>';
             }
