@@ -48,6 +48,10 @@ add_action( 'admin_init', 'yatco_settings_init' );
 add_action( 'add_meta_boxes', 'yatco_add_update_vessel_meta_box' );
 add_action( 'admin_post_yatco_update_vessel', 'yatco_handle_update_vessel' );
 
+// Add meta box for editing detailed specifications
+add_action( 'add_meta_boxes', 'yatco_add_detailed_specs_meta_box' );
+add_action( 'save_post', 'yatco_save_detailed_specs' );
+
 /**
  * Add custom column to show YATCO link in yacht list table.
  */

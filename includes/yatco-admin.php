@@ -1472,15 +1472,119 @@ function yatco_update_vessel_meta_box_callback( $post ) {
     
     echo '<p style="font-size: 11px; color: #666; margin-top: 10px;">This will update all meta fields, images, and taxonomy terms with the latest data from YATCO.</p>';
     
-    // Display detailed specifications (Overview section)
+    // Display link to edit detailed specifications
     $detailed_specs = get_post_meta( $post->ID, 'yacht_detailed_specifications', true );
     if ( ! empty( $detailed_specs ) ) {
         echo '<hr style="margin: 20px 0; border: none; border-top: 1px solid #ddd;">';
-        echo '<h3 style="margin: 0 0 12px 0; font-size: 14px; font-weight: 600;">📋 Overview / Detailed Specifications</h3>';
-        echo '<div style="background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; padding: 15px; max-height: 400px; overflow-y: auto; font-size: 13px; line-height: 1.6;">';
-        echo wp_kses_post( $detailed_specs );
-        echo '</div>';
-        echo '<p style="font-size: 11px; color: #666; margin-top: 8px;">This content is shown in a collapsible section on the frontend.</p>';
+        echo '<p style="font-size: 12px; color: #666; margin: 0;"><strong>📋 Overview / Detailed Specifications:</strong> Use the "Overview / Detailed Specifications" meta box below to edit this content.</p>';
+    } else {
+        echo '<hr style="margin: 20px 0; border: none; border-top: 1px solid #ddd;">';
+        echo '<p style="font-size: 12px; color: #666; margin: 0;">📋 No detailed specifications found. They will be imported when you update the vessel from YATCO.</p>';
+    }
+}
+
+/**
+ * Add meta box for editing detailed specifications (Overview).
+ */
+function yatco_add_detailed_specs_meta_box() {
+    add_meta_box(
+        'yatco_detailed_specs',
+        'Overview / Detailed Specifications',
+        'yatco_detailed_specs_meta_box_callback',
+        'yacht',
+        'normal',
+        'high'
+    );
+}
+
+/**
+ * Meta box callback - displays WYSIWYG editor for detailed specifications.
+ */
+function yatco_detailed_specs_meta_box_callback( $post ) {
+    // Add nonce for security
+    wp_nonce_field( 'yatco_save_detailed_specs', 'yatco_detailed_specs_nonce' );
+    
+    // Get current value
+    $detailed_specs = get_post_meta( $post->ID, 'yacht_detailed_specifications', true );
+    
+    // If no content yet, show a helpful message
+    if ( empty( $detailed_specs ) ) {
+        echo '<p style="padding: 15px; background: #fff3cd; border-left: 4px solid #ffc107; margin-bottom: 15px;"><strong>No overview content yet.</strong> This content will be automatically imported when you click "Update Vessel from YATCO" in the sidebar. You can also manually add content here.</p>';
+    }
+    
+    // Settings for wp_editor
+    // The textarea_name must match the field name we check in save function
+    $editor_settings = array(
+        'textarea_name' => 'yacht_detailed_specifications', // This sets the form field name
+        'textarea_rows' => 20,
+        'media_buttons' => true,
+        'teeny' => false,
+        'tinymce' => array(
+            'toolbar1' => 'bold,italic,underline,strikethrough,bullist,numlist,blockquote,hr,alignleft,aligncenter,alignright,link,unlink,wp_adv',
+            'toolbar2' => 'formatselect,fontselect,fontsizeselect,forecolor,backcolor,pastetext,removeformat,charmap,outdent,indent,undo,redo',
+            'toolbar3' => '',
+            'toolbar4' => '',
+        ),
+        'quicktags' => true,
+    );
+    
+    echo '<p style="margin-bottom: 15px; color: #666;">Edit the overview and detailed specifications content. This content appears in the collapsible "View Full Overview" section on the frontend.</p>';
+    
+    // Output the editor
+    // The second parameter is the editor ID (used for DOM element ID)
+    // The textarea_name in settings ensures the form field name is correct
+    wp_editor( $detailed_specs, 'yacht_detailed_specifications_editor', $editor_settings );
+    
+    echo '<p style="margin-top: 15px; font-size: 12px; color: #666;"><strong>Note:</strong> This content will be displayed in a toggle section on the frontend. HTML tags are preserved.</p>';
+    
+    // Show content info
+    if ( ! empty( $detailed_specs ) ) {
+        echo '<p style="margin-top: 10px; font-size: 11px; color: #999;">Current content: ' . strlen( $detailed_specs ) . ' characters</p>';
+    }
+}
+
+/**
+ * Save detailed specifications when post is saved.
+ */
+function yatco_save_detailed_specs( $post_id ) {
+    // Check if this is an autosave
+    if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) {
+        return;
+    }
+    
+    // Check if this is a revision
+    if ( wp_is_post_revision( $post_id ) ) {
+        return;
+    }
+    
+    // Check post type
+    if ( get_post_type( $post_id ) !== 'yacht' ) {
+        return;
+    }
+    
+    // Check user permissions
+    if ( ! current_user_can( 'edit_post', $post_id ) ) {
+        return;
+    }
+    
+    // Verify nonce
+    if ( ! isset( $_POST['yatco_detailed_specs_nonce'] ) || ! wp_verify_nonce( $_POST['yatco_detailed_specs_nonce'], 'yatco_save_detailed_specs' ) ) {
+        return;
+    }
+    
+    // Save the meta field
+    // wp_editor submits content with the textarea_name, which is 'yacht_detailed_specifications'
+    if ( isset( $_POST['yacht_detailed_specifications'] ) ) {
+        // Sanitize content (allows HTML but removes dangerous tags)
+        $detailed_specs = wp_kses_post( $_POST['yacht_detailed_specifications'] );
+        update_post_meta( $post_id, 'yacht_detailed_specifications', $detailed_specs );
+    } else {
+        // If field is empty string, allow it to be cleared (empty content is valid)
+        // This handles the case where user clears all content
+        if ( isset( $_POST['yacht_detailed_specifications'] ) && $_POST['yacht_detailed_specifications'] === '' ) {
+            update_post_meta( $post_id, 'yacht_detailed_specifications', '' );
+        }
+        // If field is not set at all, don't modify existing value
     }
 }
 

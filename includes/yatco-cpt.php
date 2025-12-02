@@ -23,7 +23,7 @@ function yatco_create_cpt() {
             'public'       => true,
             'has_archive'  => true,
             'rewrite'      => array( 'slug' => 'yachts' ),
-            'supports'     => array( 'title', 'editor', 'thumbnail', 'custom-fields' ),
+            'supports'     => array( 'title', 'editor', 'thumbnail', 'custom-fields', 'excerpt' ),
             'show_in_rest' => true,
             'taxonomies'   => array(), // Explicitly don't register default taxonomies (category, post_tag)
         )
@@ -121,6 +121,26 @@ function yatco_register_taxonomies() {
             'query_var'         => true,
             'meta_box_cb'       => 'post_categories_meta_box', // Use standard category meta box style
             'show_admin_column' => true, // Show in post list table
+        )
+    );
+}
+
+// Register post type on init (not just on activation) to ensure it's always available
+add_action( 'init', 'yatco_register_yacht_cpt' );
+function yatco_register_yacht_cpt() {
+    register_post_type(
+        'yacht',
+        array(
+            'labels'       => array(
+                'name'          => 'Yachts',
+                'singular_name' => 'Yacht',
+            ),
+            'public'       => true,
+            'has_archive'  => true,
+            'rewrite'      => array( 'slug' => 'yachts' ),
+            'supports'     => array( 'title', 'editor', 'thumbnail', 'custom-fields', 'excerpt' ),
+            'show_in_rest' => true,
+            'taxonomies'   => array(), // Explicitly don't register default taxonomies (category, post_tag)
         )
     );
 }
