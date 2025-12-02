@@ -499,6 +499,18 @@ if ( $price_on_application || empty( $asking_price ) ) {
         </dl>
       </div> -->
 
+      <?php 
+      // Display detailed specifications (Overview, Equipment, Features, etc.)
+      $detailed_specs = yacht_meta( 'yacht_detailed_specifications', '' );
+      if ( ! empty( $detailed_specs ) ) : 
+      ?>
+      <div class="yacht-spec-group yacht-detailed-specs" style="grid-column: 1 / -1;">
+        <div class="yacht-detailed-specs-content">
+          <?php echo yacht_output_html( $detailed_specs ); ?>
+        </div>
+      </div>
+      <?php endif; ?>
+
     </div>
   </section>
 

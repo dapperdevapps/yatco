@@ -298,12 +298,15 @@ function yatco_import_single_vessel( $token, $vessel_id ) {
     }
 
     // Description: Build from Sections array (preserves h2/h3 headings), or fallback to short description.
-    // Sections contain structured content with headings that matches what's displayed on YATCO website.
+    // Only include "Description" sections - exclude "Overview" and other detailed spec sections that aren't shown on YATCO website.
+    // Store excluded sections separately as detailed specifications.
     $desc = '';
+    $detailed_specs = '';
     
     if ( ! empty( $sections ) ) {
         // Build description from Sections array - this preserves h2/h3 tags and structure
         $desc_parts = array();
+        $specs_parts = array();
         
         // Sort sections by SortOrder if available
         usort( $sections, function( $a, $b ) {
@@ -311,6 +314,9 @@ function yatco_import_single_vessel( $token, $vessel_id ) {
             $order_b = isset( $b['SortOrder'] ) ? intval( $b['SortOrder'] ) : 999;
             return $order_a - $order_b;
         } );
+        
+        // Sections to exclude from description (these contain detailed specs to be shown in specifications section)
+        $excluded_sections = array( 'Overview', 'Specifications', 'Equipment', 'Features' );
         
         foreach ( $sections as $section ) {
             if ( empty( $section['SectionText'] ) ) {
@@ -323,18 +329,39 @@ function yatco_import_single_vessel( $token, $vessel_id ) {
             // Strip inline CSS styles and class attributes from section text
             $section_text = yatco_strip_inline_styles_and_classes( $section_text );
             
-            // If SectionText already contains h2/h3 tags, use it as-is
-            // Otherwise, wrap SectionName as h2 if it exists
-            if ( ! empty( $section_name ) && stripos( $section_text, '<h2' ) === false && stripos( $section_text, '<h3' ) === false ) {
-                // Add section name as h2 heading if the text doesn't already have headings
-                $desc_parts[] = '<h2>' . esc_html( $section_name ) . '</h2>';
+            // Check if this is an excluded section (case-insensitive)
+            $is_excluded = false;
+            if ( ! empty( $section_name ) ) {
+                $section_name_lower = strtolower( $section_name );
+                foreach ( $excluded_sections as $excluded ) {
+                    if ( $section_name_lower === strtolower( $excluded ) ) {
+                        $is_excluded = true;
+                        break;
+                    }
+                }
             }
             
-            $desc_parts[] = $section_text;
+            if ( $is_excluded ) {
+                // Add to detailed specifications instead
+                if ( ! empty( $section_name ) && stripos( $section_text, '<h2' ) === false && stripos( $section_text, '<h3' ) === false ) {
+                    $specs_parts[] = '<h2>' . esc_html( $section_name ) . '</h2>';
+                }
+                $specs_parts[] = $section_text;
+            } else {
+                // Add to description
+                if ( ! empty( $section_name ) && stripos( $section_text, '<h2' ) === false && stripos( $section_text, '<h3' ) === false ) {
+                    $desc_parts[] = '<h2>' . esc_html( $section_name ) . '</h2>';
+                }
+                $desc_parts[] = $section_text;
+            }
         }
         
         if ( ! empty( $desc_parts ) ) {
             $desc = implode( "\n\n", $desc_parts );
+        }
+        
+        if ( ! empty( $specs_parts ) ) {
+            $detailed_specs = implode( "\n\n", $specs_parts );
         }
     }
     
@@ -643,6 +670,11 @@ function yatco_import_single_vessel( $token, $vessel_id ) {
                 'post_content' => $desc,
             )
         );
+    }
+    
+    // Save detailed specifications (Overview, Equipment, Features, etc.) to separate meta field
+    if ( ! empty( $detailed_specs ) ) {
+        update_post_meta( $post_id, 'yacht_detailed_specifications', $detailed_specs );
     }
 
     // IMAGE IMPORT DISABLED - Images are not downloaded to avoid storage issues
