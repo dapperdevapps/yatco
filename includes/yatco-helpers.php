@@ -10,6 +10,52 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
+ * Strip inline CSS styles and class attributes from HTML content.
+ * Also removes span tags that only contain styling (unwraps their content).
+ * 
+ * @param string $html HTML content with inline styles and classes
+ * @return string Clean HTML without style and class attributes, and spans unwrapped
+ */
+function yatco_strip_inline_styles_and_classes( $html ) {
+    if ( empty( $html ) ) {
+        return $html;
+    }
+    
+    // First, unwrap span tags that only have style/class attributes (or no attributes after we strip them)
+    // Pattern matches: <span class="..." style="...">content</span> or <span style="...">content</span>
+    // This will unwrap spans that are purely for styling
+    
+    // Remove style and class from spans, then unwrap empty spans (spans with no other attributes)
+    // We do this before removing attributes so we can identify spans that are purely for styling
+    
+    // Step 1: Remove style and class attributes from all tags
+    $html = preg_replace( '/\s*style\s*=\s*["\'][^"\']*["\']/i', '', $html );
+    $html = preg_replace( '/\s*class\s*=\s*["\'][^"\']*["\']/i', '', $html );
+    
+    // Step 2: Unwrap span tags that have no attributes (or only empty attributes)
+    // Match opening span with optional whitespace, no attributes, then content, then closing span
+    $html = preg_replace( '/<span\s*>\s*(.*?)\s*<\/span>/is', '$1', $html );
+    
+    // Also handle spans that might have empty attributes after stripping
+    $html = preg_replace( '/<span\s+>\s*(.*?)\s*<\/span>/is', '$1', $html );
+    
+    // Clean up any double spaces that might have been created
+    $html = preg_replace( '/\s+/', ' ', $html );
+    
+    // Clean up spaces before closing tags
+    $html = preg_replace( '/\s+>/', '>', $html );
+    
+    // Clean up extra whitespace between tags
+    $html = preg_replace( '/>\s+</', '><', $html );
+    $html = preg_replace( '/>\s+</', '><', $html ); // Run twice to catch nested cases
+    
+    // Clean up multiple spaces within text
+    $html = preg_replace( '/\s{2,}/', ' ', $html );
+    
+    return trim( $html );
+}
+
+/**
  * Build YATCO listing URL with proper slug format.
  * Format: https://www.yatco.com/yacht/[length]-[builder]-[type]-[year]-[mlsid]/
  * 
@@ -274,6 +320,9 @@ function yatco_import_single_vessel( $token, $vessel_id ) {
             $section_name = isset( $section['SectionName'] ) ? trim( $section['SectionName'] ) : '';
             $section_text = trim( $section['SectionText'] );
             
+            // Strip inline CSS styles and class attributes from section text
+            $section_text = yatco_strip_inline_styles_and_classes( $section_text );
+            
             // If SectionText already contains h2/h3 tags, use it as-is
             // Otherwise, wrap SectionName as h2 if it exists
             if ( ! empty( $section_name ) && stripos( $section_text, '<h2' ) === false && stripos( $section_text, '<h3' ) === false ) {
@@ -298,6 +347,11 @@ function yatco_import_single_vessel( $token, $vessel_id ) {
         } elseif ( ! empty( $vd['VesselDescriptionShortDescription'] ) ) {
             $desc = $vd['VesselDescriptionShortDescription'];
         }
+    }
+    
+    // Strip inline CSS styles and class attributes from the description
+    if ( ! empty( $desc ) ) {
+        $desc = yatco_strip_inline_styles_and_classes( $desc );
     }
 
     // Find existing post by MLSID (primary) or VesselID (fallback).
