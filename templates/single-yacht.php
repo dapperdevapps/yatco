@@ -352,9 +352,6 @@ if ( $price_on_application || empty( $asking_price ) ) {
                 loading="lazy"
                 data-src="<?php echo esc_url( $full_img_url ); ?>"
               >
-              <?php if ( ! empty( $img_caption ) ) : ?>
-                <div class="yacht-gallery-caption"><?php echo esc_html( $img_caption ); ?></div>
-              <?php endif; ?>
             </a>
           </div>
           <?php endforeach; ?>
@@ -881,23 +878,6 @@ if ( $price_on_application || empty( $asking_price ) ) {
   transform: scale(1.05);
 }
 
-.yacht-gallery-carousel .yacht-gallery-caption {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.7), transparent);
-  color: #fff;
-  padding: 15px 12px 8px;
-  font-size: 13px;
-  text-align: center;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-}
-
-.yacht-gallery-carousel .yacht-gallery-item:hover .yacht-gallery-caption {
-  opacity: 1;
-}
 
 /* Navigation buttons */
 .yacht-gallery-carousel .swiper-button-next,
@@ -1418,12 +1398,13 @@ dl:not(.yacht-spec-group dl) dd {
 }
 
 /* GLightbox Custom Styles */
-.glightbox-clean .gslide-description {
-  background: rgba(0, 0, 0, 0.8);
-  color: #fff;
-  padding: 15px 20px;
-  font-size: 14px;
-  line-height: 1.6;
+.glightbox-clean .gslide-description,
+.glightbox-clean .description-bottom {
+  display: none !important;
+}
+
+.yacht-gallery-caption {
+  display: none !important;
 }
 
 .glightbox-clean .gslide-title {
