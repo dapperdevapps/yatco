@@ -65,46 +65,6 @@ function yatco_settings_init() {
         'yatco_api',
         'yatco_api_section'
     );
-
-    // Add API-only mode section
-    add_settings_section(
-        'yatco_api_only_section',
-        'API-Only Mode (Experimental)',
-        'yatco_api_only_section_callback',
-        'yatco_api'
-    );
-
-    add_settings_field(
-        'yatco_api_only_mode',
-        'Enable API-Only Mode',
-        'yatco_api_only_mode_render',
-        'yatco_api',
-        'yatco_api_only_section'
-    );
-
-    add_settings_field(
-        'yatco_api_only_ids_cache',
-        'Vessel IDs Cache Duration (seconds)',
-        'yatco_api_only_ids_cache_render',
-        'yatco_api',
-        'yatco_api_only_section'
-    );
-
-    add_settings_field(
-        'yatco_api_only_data_cache',
-        'Vessel Data Cache Duration (seconds)',
-        'yatco_api_only_data_cache_render',
-        'yatco_api',
-        'yatco_api_only_section'
-    );
-
-    add_settings_field(
-        'yatco_api_only_json_cache',
-        'Enable JSON Cache Storage',
-        'yatco_api_only_json_cache_render',
-        'yatco_api',
-        'yatco_api_only_section'
-    );
 }
 
 function yatco_settings_section_callback() {
@@ -133,69 +93,6 @@ function yatco_auto_refresh_cache_render() {
     echo '<p class="description">Enable this to automatically pre-load the cache every 6 hours via WP-Cron.</p>';
 }
 
-function yatco_api_only_section_callback() {
-    echo '<p>API-Only Mode fetches data directly from YATCO API without saving to WordPress database. This reduces storage from ~10-20GB to ~50-100MB.</p>';
-    echo '<div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; margin: 15px 0;">';
-    echo '<p style="margin: 0; font-weight: bold;"><strong>⚠️ Experimental Feature:</strong> This is a test mode. You can easily revert by unchecking the option below.</p>';
-    echo '</div>';
-}
-
-function yatco_api_only_mode_render() {
-    $options = get_option( 'yatco_api_settings' );
-    $enabled = isset( $options['yatco_api_only_mode'] ) ? $options['yatco_api_only_mode'] : 'no';
-    echo '<input type="checkbox" name="yatco_api_settings[yatco_api_only_mode]" value="yes" id="yatco_api_only_mode" ' . checked( $enabled, 'yes', false ) . ' />';
-    echo '<label for="yatco_api_only_mode"><strong>Enable API-Only Mode</strong></label>';
-    echo '<p class="description">';
-    echo '<strong>When enabled:</strong> Data is fetched from API on-demand, no database storage, images use external URLs.<br />';
-    echo '<strong>When disabled:</strong> Uses CPT mode (saves to WordPress database).<br />';
-    echo '<strong>To revert:</strong> Simply uncheck this box and save. All CPT data remains intact.';
-    echo '</p>';
-}
-
-function yatco_api_only_ids_cache_render() {
-    $options = get_option( 'yatco_api_settings' );
-    $duration = isset( $options['yatco_api_only_ids_cache'] ) ? intval( $options['yatco_api_only_ids_cache'] ) : 21600; // 6 hours default
-    echo '<input type="number" step="1" min="60" name="yatco_api_settings[yatco_api_only_ids_cache]" value="' . esc_attr( $duration ) . '" />';
-    echo '<p class="description">How long to cache the vessel ID list (default: 21600 seconds = 6 hours). Detects new/removed vessels when cache expires.</p>';
-}
-
-function yatco_api_only_data_cache_render() {
-    $options = get_option( 'yatco_api_settings' );
-    $duration = isset( $options['yatco_api_only_data_cache'] ) ? intval( $options['yatco_api_only_data_cache'] ) : 3600; // 1 hour default
-    echo '<input type="number" step="1" min="60" name="yatco_api_settings[yatco_api_only_data_cache]" value="' . esc_attr( $duration ) . '" />';
-    echo '<p class="description">How long to cache individual vessel data (default: 3600 seconds = 1 hour). Detects price/status changes when cache expires.</p>';
-}
-
-function yatco_api_only_json_cache_render() {
-    $options = get_option( 'yatco_api_settings' );
-    $enabled = isset( $options['yatco_api_only_json_cache'] ) ? $options['yatco_api_only_json_cache'] : 'yes'; // Enabled by default
-    
-    // Get cache stats if available
-    $stats = array();
-    if ( function_exists( 'yatco_json_cache_get_stats' ) ) {
-        $stats = yatco_json_cache_get_stats();
-    }
-    
-    echo '<input type="checkbox" name="yatco_api_settings[yatco_api_only_json_cache]" value="yes" id="yatco_api_only_json_cache" ' . checked( $enabled, 'yes', false ) . ' />';
-    echo '<label for="yatco_api_only_json_cache"><strong>Enable JSON Cache Storage</strong></label>';
-    echo '<p class="description">';
-    echo '<strong>Recommended:</strong> Stores essential vessel metadata as JSON in WordPress options for fast queries.<br />';
-    echo '<strong>Storage:</strong> ~1-2MB for 7000 vessels (vs 10-20GB for full CPT).<br />';
-    echo '<strong>Performance:</strong> Fast queries without API calls. Full details still fetched from API when needed.<br />';
-    echo '<strong>Easy to manage:</strong> Single WordPress option, easy to clear/export.<br />';
-    echo '<strong>To sync data:</strong> Use the "Sync JSON Cache" button below after enabling.';
-    echo '</p>';
-    
-    if ( ! empty( $stats ) && $stats['total_vessels'] > 0 ) {
-        echo '<div style="background: #f0f6fc; border-left: 4px solid #2271b1; padding: 10px; margin-top: 10px;">';
-        echo '<strong>Cache Status:</strong><br />';
-        echo 'Vessels cached: ' . number_format( $stats['total_vessels'] ) . '<br />';
-        echo 'Cache size: ' . $stats['cache_size_mb'] . ' MB<br />';
-        echo 'Last updated: ' . $stats['last_updated_human'];
-        echo '</div>';
-    }
-}
-
 /**
  * Settings page output.
  */
@@ -206,98 +103,14 @@ function yatco_options_page() {
 
     $options = get_option( 'yatco_api_settings' );
     $token   = isset( $options['yatco_api_token'] ) ? $options['yatco_api_token'] : '';
-    $api_only_enabled = isset( $options['yatco_api_only_mode'] ) && $options['yatco_api_only_mode'] === 'yes';
 
     echo '<div class="wrap">';
     echo '<h1>YATCO API Settings</h1>';
-    
-    // Show API-only mode indicator if enabled
-    if ( $api_only_enabled ) {
-        echo '<div style="background: #e3f2fd; border-left: 4px solid #2196f3; padding: 15px; margin: 20px 0; border-radius: 4px;">';
-        echo '<h2 style="margin: 0 0 10px 0; color: #1976d2;">🔵 API-Only Mode is ACTIVE</h2>';
-        echo '<p style="margin: 5px 0;"><strong>Current Mode:</strong> API-Only (no database storage)</p>';
-        echo '<p style="margin: 5px 0;"><strong>To revert to CPT mode:</strong> Uncheck "Enable API-Only Mode" below and click "Save Changes"</p>';
-        echo '<p style="margin: 5px 0; font-size: 12px; color: #666;">All your existing CPT data remains intact and will be available when you switch back.</p>';
-        echo '</div>';
-    }
-    
     echo '<form method="post" action="options.php">';
     settings_fields( 'yatco_api' );
     do_settings_sections( 'yatco_api' );
     submit_button();
     echo '</form>';
-    
-    // Show JSON cache sync section if API-only mode is enabled
-    if ( $api_only_enabled && function_exists( 'yatco_json_cache_sync' ) ) {
-        echo '<hr />';
-        echo '<h2>JSON Cache Storage</h2>';
-        echo '<div style="background: #f0f6fc; border-left: 4px solid #2271b1; padding: 15px; margin: 15px 0;">';
-        echo '<p><strong>What this does:</strong> Syncs lightweight vessel metadata (name, price, year, LOA, builder, etc.) as JSON in WordPress options for fast queries.</p>';
-        echo '<p><strong>Storage impact:</strong> ~1-2MB for 7000 vessels (much smaller than full CPT).</p>';
-        echo '<p><strong>When to sync:</strong> Run this once to populate cache, then periodically (daily/weekly) to keep data fresh.</p>';
-        echo '<p><strong>Benefits:</strong> Fast queries, easy to manage, can export/backup easily.</p>';
-        echo '</div>';
-        
-        // Show cache stats
-        if ( function_exists( 'yatco_json_cache_get_stats' ) ) {
-            $stats = yatco_json_cache_get_stats();
-            if ( $stats['total_vessels'] > 0 ) {
-                echo '<div style="background: #fff; border: 1px solid #ddd; padding: 15px; margin: 15px 0;">';
-                echo '<h3>Cache Statistics</h3>';
-                echo '<table class="widefat">';
-                echo '<tr><th style="text-align: left; width: 200px;">Total Vessels Cached:</th><td>' . number_format( $stats['total_vessels'] ) . '</td></tr>';
-                echo '<tr><th style="text-align: left;">Cache Size:</th><td>' . $stats['cache_size_mb'] . ' MB (' . number_format( $stats['cache_size_bytes'] ) . ' bytes)</td></tr>';
-                echo '<tr><th style="text-align: left;">Last Updated:</th><td>' . $stats['last_updated_human'] . '</td></tr>';
-                echo '</table>';
-                echo '</div>';
-            }
-        }
-        
-        if ( isset( $_POST['yatco_sync_json_cache'] ) && check_admin_referer( 'yatco_sync_json_cache', 'yatco_sync_json_cache_nonce' ) ) {
-            if ( empty( $token ) ) {
-                echo '<div class="notice notice-error"><p>Missing API token. Please configure your API token first.</p></div>';
-            } else {
-                echo '<div class="notice notice-info"><p><strong>Syncing JSON cache...</strong> This may take a few minutes for 7000+ vessels. Processing in batches to prevent timeouts.</p></div>';
-                
-                $result = yatco_json_cache_sync( $token, 50 );
-                
-                if ( is_wp_error( $result ) ) {
-                    echo '<div class="notice notice-error"><p><strong>Error:</strong> ' . esc_html( $result->get_error_message() ) . '</p></div>';
-                } else {
-                    echo '<div class="notice notice-success">';
-                    echo '<p><strong>Sync completed!</strong></p>';
-                    echo '<ul>';
-                    echo '<li>Processed: ' . number_format( $result['processed'] ) . ' vessels</li>';
-                    echo '<li>Updated: ' . number_format( $result['updated'] ) . ' vessels</li>';
-                    echo '<li>Errors: ' . number_format( $result['errors'] ) . '</li>';
-                    echo '<li>Total active: ' . number_format( $result['total'] ) . ' vessels</li>';
-                    if ( $result['processed'] < $result['total'] ) {
-                        echo '<li><strong>Note:</strong> Processing stopped at ' . number_format( $result['processed'] ) . ' vessels to prevent timeout. Click "Sync JSON Cache" again to continue.</li>';
-                    }
-                    echo '</ul>';
-                    echo '</div>';
-                }
-            }
-        }
-        
-        echo '<form method="post" style="margin-top: 15px;">';
-        wp_nonce_field( 'yatco_sync_json_cache', 'yatco_sync_json_cache_nonce' );
-        submit_button( 'Sync JSON Cache', 'primary', 'yatco_sync_json_cache' );
-        echo '<p class="description">This will fetch and store lightweight metadata for all active vessels. Run this after enabling JSON cache storage.</p>';
-        echo '</form>';
-        
-        if ( function_exists( 'yatco_json_cache_clear' ) ) {
-            if ( isset( $_POST['yatco_clear_json_cache'] ) && check_admin_referer( 'yatco_clear_json_cache', 'yatco_clear_json_cache_nonce' ) ) {
-                yatco_json_cache_clear();
-                echo '<div class="notice notice-success"><p><strong>JSON cache cleared!</strong></p></div>';
-            }
-            echo '<form method="post" style="margin-top: 10px;">';
-            wp_nonce_field( 'yatco_clear_json_cache', 'yatco_clear_json_cache_nonce' );
-            submit_button( 'Clear JSON Cache', 'secondary', 'yatco_clear_json_cache' );
-            echo '<p class="description">This will delete all cached vessel data. You can re-sync anytime.</p>';
-            echo '</form>';
-        }
-    }
     
     echo '<hr />';
     echo '<h2>Test API Connection</h2>';
@@ -499,8 +312,98 @@ function yatco_options_page() {
                         echo '</div>';
                     }
                     
+                    // Check for price reduction fields
+                    echo '<h3 style="margin-top: 30px;">Price Reduction Check</h3>';
+                    echo '<div style="background: #f0f6fc; border-left: 4px solid #2271b1; padding: 15px; margin: 20px 0;">';
+                    echo '<p><strong>Checking for price reduction fields in API response...</strong></p>';
+                    
+                    $price_reduction_fields = array();
+                    $price_fields_found = array();
+                    
+                    // Search for price-related fields
+                    $search_terms = array( 'reduction', 'original', 'previous', 'old', 'was', 'before', 'discount', 'savings', 'decrease' );
+                    
+                    // Recursive function to search for fields
+                    $search_in_array = function( $array, $prefix = '' ) use ( &$search_in_array, &$price_fields_found, $search_terms ) {
+                        foreach ( $array as $key => $value ) {
+                            $full_key = $prefix ? $prefix . '.' . $key : $key;
+                            $key_lower = strtolower( $key );
+                            
+                            // Check if key contains price-related terms
+                            foreach ( $search_terms as $term ) {
+                                if ( strpos( $key_lower, $term ) !== false ) {
+                                    $price_fields_found[ $full_key ] = $value;
+                                }
+                            }
+                            
+                            // Also collect all price-related fields
+                            if ( strpos( $key_lower, 'price' ) !== false ) {
+                                $price_fields_found[ $full_key ] = $value;
+                            }
+                            
+                            // Recursively search nested arrays
+                            if ( is_array( $value ) ) {
+                                $search_in_array( $value, $full_key );
+                            }
+                        }
+                    };
+                    
+                    $search_in_array( $fullspecs );
+                    
+                    if ( ! empty( $price_fields_found ) ) {
+                        echo '<p style="color: #46b450; font-weight: bold;">✅ Found ' . count( $price_fields_found ) . ' price-related field(s):</p>';
+                        echo '<table class="widefat" style="margin-top: 10px;">';
+                        echo '<thead><tr><th style="width: 300px;">Field Name</th><th>Value</th></tr></thead>';
+                        echo '<tbody>';
+                        foreach ( $price_fields_found as $field => $value ) {
+                            $is_reduction = false;
+                            foreach ( $search_terms as $term ) {
+                                if ( stripos( $field, $term ) !== false ) {
+                                    $is_reduction = true;
+                                    break;
+                                }
+                            }
+                            $row_class = $is_reduction ? 'style="background: #fff3cd;"' : '';
+                            echo '<tr ' . $row_class . '>';
+                            echo '<td><code>' . esc_html( $field ) . '</code></td>';
+                            if ( is_array( $value ) ) {
+                                echo '<td><pre style="margin: 0; font-size: 11px;">' . esc_html( wp_json_encode( $value, JSON_PRETTY_PRINT ) ) . '</pre></td>';
+                            } else {
+                                echo '<td>' . esc_html( is_bool( $value ) ? ( $value ? 'true' : 'false' ) : $value ) . '</td>';
+                            }
+                            echo '</tr>';
+                        }
+                        echo '</tbody>';
+                        echo '</table>';
+                        
+                        // Highlight reduction-related fields
+                        $reduction_count = 0;
+                        foreach ( $price_fields_found as $field => $value ) {
+                            foreach ( $search_terms as $term ) {
+                                if ( stripos( $field, $term ) !== false ) {
+                                    $reduction_count++;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        if ( $reduction_count > 0 ) {
+                            echo '<div style="background: #d4edda; border-left: 4px solid #46b450; padding: 12px; margin-top: 15px;">';
+                            echo '<p style="margin: 0; font-weight: bold; color: #155724;">🎉 Found ' . $reduction_count . ' potential price reduction field(s)!</p>';
+                            echo '<p style="margin: 5px 0 0 0;">These fields (highlighted in yellow above) may contain price reduction information.</p>';
+                            echo '</div>';
+                        } else {
+                            echo '<div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; margin-top: 15px;">';
+                            echo '<p style="margin: 0;"><strong>Note:</strong> No obvious price reduction fields found, but all price-related fields are listed above.</p>';
+                            echo '</div>';
+                        }
+                    } else {
+                        echo '<p style="color: #dc3232;">❌ No price-related fields found in API response.</p>';
+                    }
+                    echo '</div>';
+                    
                     echo '<h3 style="margin-top: 30px;">Raw API Response Data Structure</h3>';
-                    echo '<p style="color: #666; font-size: 13px;">Below is the complete JSON response from the YATCO API for reference:</p>';
+                    echo '<p style="color: #666; font-size: 13px;">Below is the complete JSON response from the YATCO API for reference. You can search for "reduction", "original", "previous", or "price" to find relevant fields:</p>';
                     
                     echo '<div style="background: #fff; border: 1px solid #ccc; border-radius: 4px; padding: 15px; max-height: 400px; overflow: auto; font-family: monospace; font-size: 11px; line-height: 1.4;">';
                     echo '<pre style="margin: 0; white-space: pre-wrap; word-wrap: break-word;">';

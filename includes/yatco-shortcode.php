@@ -262,11 +262,6 @@ function yatco_vessels_shortcode( $atts ) {
         return '<p>YATCO API token is not configured.</p>';
     }
 
-    // Check if API-only mode is enabled
-    if ( function_exists( 'yatco_is_api_only_mode' ) && yatco_is_api_only_mode() ) {
-        return yatco_vessels_shortcode_api_only( $atts, $token );
-    }
-
     // NEW CPT-BASED APPROACH: Query vessels from Custom Post Type
     // Check if cache is enabled (CPT-based, not transients)
     if ( $atts['cache'] === 'yes' ) {
