@@ -262,6 +262,11 @@ function yatco_vessels_shortcode( $atts ) {
         return '<p>YATCO API token is not configured.</p>';
     }
 
+    // Check if API-only mode is enabled
+    if ( function_exists( 'yatco_is_api_only_mode' ) && yatco_is_api_only_mode() ) {
+        return yatco_vessels_shortcode_api_only( $atts, $token );
+    }
+
     // NEW CPT-BASED APPROACH: Query vessels from Custom Post Type
     // Check if cache is enabled (CPT-based, not transients)
     if ( $atts['cache'] === 'yes' ) {
@@ -677,4 +682,135 @@ function yatco_vessels_shortcode( $atts ) {
     }
 
     return $output;
+}
+
+/**
+ * API-Only Mode shortcode handler.
+ * Fetches vessels directly from API without using CPT.
+ * 
+ * @param array  $atts Shortcode attributes
+ * @param string $token API token
+ * @return string HTML output
+ */
+function yatco_vessels_shortcode_api_only( $atts, $token ) {
+    // Check if API-only functions are available
+    if ( ! function_exists( 'yatco_api_only_get_vessel_ids' ) || ! function_exists( 'yatco_api_only_get_vessel_data' ) ) {
+        return '<p>API-only mode functions are not available. Please ensure yatco-api-only.php is loaded.</p>';
+    }
+
+    // Get max vessels to display
+    $max_vessels = ! empty( $atts['max'] ) && $atts['max'] !== '0' ? intval( $atts['max'] ) : 50;
+    
+    // Get all active vessel IDs (cached)
+    $vessel_ids = yatco_api_only_get_vessel_ids( $token );
+    
+    if ( is_wp_error( $vessel_ids ) ) {
+        return '<p>Error loading vessels: ' . esc_html( $vessel_ids->get_error_message() ) . '</p>';
+    }
+    
+    if ( empty( $vessel_ids ) ) {
+        return '<p>No vessels available.</p>';
+    }
+    
+    // Parse filter criteria
+    $price_min = ! empty( $atts['price_min'] ) && $atts['price_min'] !== '0' ? floatval( $atts['price_min'] ) : '';
+    $price_max = ! empty( $atts['price_max'] ) && $atts['price_max'] !== '0' ? floatval( $atts['price_max'] ) : '';
+    $year_min  = ! empty( $atts['year_min'] ) && $atts['year_min'] !== '0' ? intval( $atts['year_min'] ) : '';
+    $year_max  = ! empty( $atts['year_max'] ) && $atts['year_max'] !== '0' ? intval( $atts['year_max'] ) : '';
+    $loa_min   = ! empty( $atts['loa_min'] ) && $atts['loa_min'] !== '0' ? floatval( $atts['loa_min'] ) : '';
+    $loa_max   = ! empty( $atts['loa_max'] ) && $atts['loa_max'] !== '0' ? floatval( $atts['loa_max'] ) : '';
+    
+    $vessels = array();
+    $processed = 0;
+    $error_count = 0;
+    
+    // Process vessels up to max limit
+    foreach ( $vessel_ids as $vessel_id ) {
+        // Stop if we've reached the max limit
+        if ( count( $vessels ) >= $max_vessels ) {
+            break;
+        }
+        
+        $processed++;
+        
+        // Get vessel data (cached)
+        $vessel_data = yatco_api_only_get_vessel_data( $token, $vessel_id );
+        
+        if ( is_wp_error( $vessel_data ) ) {
+            $error_count++;
+            continue;
+        }
+        
+        // Apply filters
+        if ( $price_min !== '' && ( empty( $vessel_data['price_usd'] ) || $vessel_data['price_usd'] < $price_min ) ) {
+            continue;
+        }
+        if ( $price_max !== '' && ( empty( $vessel_data['price_usd'] ) || $vessel_data['price_usd'] > $price_max ) ) {
+            continue;
+        }
+        if ( $year_min !== '' && ( empty( $vessel_data['year'] ) || intval( $vessel_data['year'] ) < $year_min ) ) {
+            continue;
+        }
+        if ( $year_max !== '' && ( empty( $vessel_data['year'] ) || intval( $vessel_data['year'] ) > $year_max ) ) {
+            continue;
+        }
+        if ( $loa_min !== '' && ( empty( $vessel_data['loa_feet'] ) || $vessel_data['loa_feet'] < $loa_min ) ) {
+            continue;
+        }
+        if ( $loa_max !== '' && ( empty( $vessel_data['loa_feet'] ) || $vessel_data['loa_feet'] > $loa_max ) ) {
+            continue;
+        }
+        
+        // Build vessel data array for display (compatible with existing HTML generator)
+        $vessel_display = array(
+            'id'          => $vessel_data['vessel_id'],
+            'post_id'     => 0, // No post ID in API-only mode
+            'name'        => $vessel_data['name'],
+            'price'       => $vessel_data['price_formatted'] ? $vessel_data['price_formatted'] : ( $vessel_data['price_usd'] ? '$' . number_format( $vessel_data['price_usd'] ) : '' ),
+            'price_usd'   => $vessel_data['price_usd'],
+            'price_eur'   => $vessel_data['price_eur'],
+            'year'        => $vessel_data['year'],
+            'loa'         => $vessel_data['loa_feet'] ? $vessel_data['loa_feet'] . ' ft' : '',
+            'loa_feet'    => $vessel_data['loa_feet'],
+            'loa_meters'  => $vessel_data['loa_meters'],
+            'builder'     => $vessel_data['builder'],
+            'category'    => $vessel_data['category'],
+            'type'        => $vessel_data['type'],
+            'condition'   => $vessel_data['condition'],
+            'state_rooms' => $vessel_data['state_rooms'],
+            'location'    => $vessel_data['location'],
+            'image'       => $vessel_data['image_url'],
+            'link'        => $vessel_data['yatco_listing_url'], // Use YATCO listing URL directly
+        );
+        
+        $vessels[] = $vessel_display;
+    }
+    
+    // Collect unique values for filter dropdowns
+    $builders = array();
+    $categories = array();
+    $types = array();
+    $conditions = array();
+    
+    foreach ( $vessels as $vessel ) {
+        if ( ! empty( $vessel['builder'] ) && ! in_array( $vessel['builder'], $builders ) ) {
+            $builders[] = $vessel['builder'];
+        }
+        if ( ! empty( $vessel['category'] ) && ! in_array( $vessel['category'], $categories ) ) {
+            $categories[] = $vessel['category'];
+        }
+        if ( ! empty( $vessel['type'] ) && ! in_array( $vessel['type'], $types ) ) {
+            $types[] = $vessel['type'];
+        }
+        if ( ! empty( $vessel['condition'] ) && ! in_array( $vessel['condition'], $conditions ) ) {
+            $conditions[] = $vessel['condition'];
+        }
+    }
+    sort( $builders );
+    sort( $categories );
+    sort( $types );
+    sort( $conditions );
+    
+    // Generate HTML output using existing function
+    return yatco_generate_vessels_html_from_data( $vessels, $builders, $categories, $types, $conditions, $atts );
 }

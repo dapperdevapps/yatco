@@ -28,6 +28,21 @@ require_once YATCO_PLUGIN_DIR . 'includes/yatco-admin.php';
 require_once YATCO_PLUGIN_DIR . 'includes/yatco-shortcode.php';
 require_once YATCO_PLUGIN_DIR . 'includes/yatco-cache.php';
 
+/**
+ * Check if API-only mode is enabled.
+ * 
+ * @return bool True if API-only mode is enabled, false otherwise
+ */
+function yatco_is_api_only_mode() {
+    $options = get_option( 'yatco_api_settings', array() );
+    return isset( $options['yatco_api_only_mode'] ) && $options['yatco_api_only_mode'] === 'yes';
+}
+
+// Conditionally include API-only module if enabled
+if ( yatco_is_api_only_mode() ) {
+    require_once YATCO_PLUGIN_DIR . 'includes/yatco-api-only.php';
+}
+
 // Register activation hook
 register_activation_hook( __FILE__, 'yatco_create_cpt' );
 

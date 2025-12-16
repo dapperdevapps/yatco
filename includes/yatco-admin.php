@@ -65,6 +65,38 @@ function yatco_settings_init() {
         'yatco_api',
         'yatco_api_section'
     );
+
+    // Add API-only mode section
+    add_settings_section(
+        'yatco_api_only_section',
+        'API-Only Mode (Experimental)',
+        'yatco_api_only_section_callback',
+        'yatco_api'
+    );
+
+    add_settings_field(
+        'yatco_api_only_mode',
+        'Enable API-Only Mode',
+        'yatco_api_only_mode_render',
+        'yatco_api',
+        'yatco_api_only_section'
+    );
+
+    add_settings_field(
+        'yatco_api_only_ids_cache',
+        'Vessel IDs Cache Duration (seconds)',
+        'yatco_api_only_ids_cache_render',
+        'yatco_api',
+        'yatco_api_only_section'
+    );
+
+    add_settings_field(
+        'yatco_api_only_data_cache',
+        'Vessel Data Cache Duration (seconds)',
+        'yatco_api_only_data_cache_render',
+        'yatco_api',
+        'yatco_api_only_section'
+    );
 }
 
 function yatco_settings_section_callback() {
@@ -93,6 +125,39 @@ function yatco_auto_refresh_cache_render() {
     echo '<p class="description">Enable this to automatically pre-load the cache every 6 hours via WP-Cron.</p>';
 }
 
+function yatco_api_only_section_callback() {
+    echo '<p>API-Only Mode fetches data directly from YATCO API without saving to WordPress database. This reduces storage from ~10-20GB to ~50-100MB.</p>';
+    echo '<div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; margin: 15px 0;">';
+    echo '<p style="margin: 0; font-weight: bold;"><strong>⚠️ Experimental Feature:</strong> This is a test mode. You can easily revert by unchecking the option below.</p>';
+    echo '</div>';
+}
+
+function yatco_api_only_mode_render() {
+    $options = get_option( 'yatco_api_settings' );
+    $enabled = isset( $options['yatco_api_only_mode'] ) ? $options['yatco_api_only_mode'] : 'no';
+    echo '<input type="checkbox" name="yatco_api_settings[yatco_api_only_mode]" value="yes" id="yatco_api_only_mode" ' . checked( $enabled, 'yes', false ) . ' />';
+    echo '<label for="yatco_api_only_mode"><strong>Enable API-Only Mode</strong></label>';
+    echo '<p class="description">';
+    echo '<strong>When enabled:</strong> Data is fetched from API on-demand, no database storage, images use external URLs.<br />';
+    echo '<strong>When disabled:</strong> Uses CPT mode (saves to WordPress database).<br />';
+    echo '<strong>To revert:</strong> Simply uncheck this box and save. All CPT data remains intact.';
+    echo '</p>';
+}
+
+function yatco_api_only_ids_cache_render() {
+    $options = get_option( 'yatco_api_settings' );
+    $duration = isset( $options['yatco_api_only_ids_cache'] ) ? intval( $options['yatco_api_only_ids_cache'] ) : 21600; // 6 hours default
+    echo '<input type="number" step="1" min="60" name="yatco_api_settings[yatco_api_only_ids_cache]" value="' . esc_attr( $duration ) . '" />';
+    echo '<p class="description">How long to cache the vessel ID list (default: 21600 seconds = 6 hours). Detects new/removed vessels when cache expires.</p>';
+}
+
+function yatco_api_only_data_cache_render() {
+    $options = get_option( 'yatco_api_settings' );
+    $duration = isset( $options['yatco_api_only_data_cache'] ) ? intval( $options['yatco_api_only_data_cache'] ) : 3600; // 1 hour default
+    echo '<input type="number" step="1" min="60" name="yatco_api_settings[yatco_api_only_data_cache]" value="' . esc_attr( $duration ) . '" />';
+    echo '<p class="description">How long to cache individual vessel data (default: 3600 seconds = 1 hour). Detects price/status changes when cache expires.</p>';
+}
+
 /**
  * Settings page output.
  */
@@ -103,9 +168,20 @@ function yatco_options_page() {
 
     $options = get_option( 'yatco_api_settings' );
     $token   = isset( $options['yatco_api_token'] ) ? $options['yatco_api_token'] : '';
+    $api_only_enabled = isset( $options['yatco_api_only_mode'] ) && $options['yatco_api_only_mode'] === 'yes';
 
     echo '<div class="wrap">';
     echo '<h1>YATCO API Settings</h1>';
+    
+    // Show API-only mode indicator if enabled
+    if ( $api_only_enabled ) {
+        echo '<div style="background: #e3f2fd; border-left: 4px solid #2196f3; padding: 15px; margin: 20px 0; border-radius: 4px;">';
+        echo '<h2 style="margin: 0 0 10px 0; color: #1976d2;">🔵 API-Only Mode is ACTIVE</h2>';
+        echo '<p style="margin: 5px 0;"><strong>Current Mode:</strong> API-Only (no database storage)</p>';
+        echo '<p style="margin: 5px 0;"><strong>To revert to CPT mode:</strong> Uncheck "Enable API-Only Mode" below and click "Save Changes"</p>';
+        echo '<p style="margin: 5px 0; font-size: 12px; color: #666;">All your existing CPT data remains intact and will be available when you switch back.</p>';
+        echo '</div>';
+    }
     echo '<form method="post" action="options.php">';
     settings_fields( 'yatco_api' );
     do_settings_sections( 'yatco_api' );
