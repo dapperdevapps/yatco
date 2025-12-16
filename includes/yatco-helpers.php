@@ -639,6 +639,28 @@ function yatco_import_single_vessel( $token, $vessel_id ) {
         $price_on_application = (bool) $basic['PriceOnApplication'];
     }
     
+    // Get MSRP (Manufacturer's Suggested Retail Price) - might indicate price reduction
+    $msrp_formatted = isset( $result['MSRPPriceFormatted'] ) ? $result['MSRPPriceFormatted'] : '';
+    $msrp_formatted_no_currency = isset( $result['MSRPPriceFormattedNoCurrency'] ) ? $result['MSRPPriceFormattedNoCurrency'] : '';
+    $is_starting_price = isset( $result['IsStartingPrice'] ) ? (bool) $result['IsStartingPrice'] : false;
+    
+    // Try to extract MSRP numeric value if available
+    $msrp_value = null;
+    if ( ! empty( $msrp_formatted_no_currency ) && $msrp_formatted_no_currency !== 'Price on Application' ) {
+        // Try to extract number from formatted string (e.g., "$150,000" -> 150000)
+        if ( preg_match( '/[\d,]+\.?\d*/', $msrp_formatted_no_currency, $matches ) ) {
+            $msrp_value = floatval( str_replace( ',', '', $matches[0] ) );
+        }
+    }
+    
+    // Calculate price reduction if MSRP is available and higher than asking price
+    $price_reduction = null;
+    $price_reduction_percent = null;
+    if ( $msrp_value && $msrp_value > 0 && ! empty( $price ) && $price > 0 && $msrp_value > $price ) {
+        $price_reduction = $msrp_value - $price;
+        $price_reduction_percent = round( ( $price_reduction / $msrp_value ) * 100, 1 );
+    }
+    
     // Format the main price field as a formatted string for display
     $price_formatted_display = $price_formatted;
     if ( $price_on_application ) {
@@ -700,6 +722,24 @@ function yatco_import_single_vessel( $token, $vessel_id ) {
     update_post_meta( $post_id, 'yacht_price_formatted', $price_formatted );
     update_post_meta( $post_id, 'yacht_currency', $currency );
     update_post_meta( $post_id, 'yacht_price_on_application', $price_on_application );
+    
+    // Store MSRP and price reduction info if available
+    if ( ! empty( $msrp_formatted ) ) {
+        update_post_meta( $post_id, 'yacht_msrp_formatted', $msrp_formatted );
+    }
+    if ( ! empty( $msrp_formatted_no_currency ) ) {
+        update_post_meta( $post_id, 'yacht_msrp_formatted_no_currency', $msrp_formatted_no_currency );
+    }
+    if ( $msrp_value !== null && $msrp_value > 0 ) {
+        update_post_meta( $post_id, 'yacht_msrp_value', $msrp_value );
+    }
+    if ( $is_starting_price ) {
+        update_post_meta( $post_id, 'yacht_is_starting_price', $is_starting_price );
+    }
+    if ( $price_reduction !== null && $price_reduction > 0 ) {
+        update_post_meta( $post_id, 'yacht_price_reduction', $price_reduction );
+        update_post_meta( $post_id, 'yacht_price_reduction_percent', $price_reduction_percent );
+    }
     update_post_meta( $post_id, 'yacht_boat_name', $name );
     update_post_meta( $post_id, 'yacht_year', $year );
     update_post_meta( $post_id, 'yacht_length', $loa );

@@ -162,6 +162,10 @@ $asking_price = yacht_meta( 'yacht_price', '' );
 $currency = yacht_meta( 'yacht_currency', 'USD' );
 $asking_price_formatted = yacht_meta( 'yacht_price_formatted', '' );
 $price_on_application = yacht_meta( 'yacht_price_on_application', false );
+$price_reduction = yacht_meta( 'yacht_price_reduction', '' );
+$price_reduction_percent = yacht_meta( 'yacht_price_reduction_percent', '' );
+$msrp_formatted = yacht_meta( 'yacht_msrp_formatted', '' );
+$has_price_reduction = ! empty( $price_reduction ) && floatval( $price_reduction ) > 0;
 $status_text = yacht_meta( 'yacht_status_text', '' );
 $agreement_type = yacht_meta( 'yacht_agreement_type', '' );
 $days_on_market = yacht_meta( 'yacht_days_on_market', '' );
@@ -373,8 +377,8 @@ if ( $price_on_application || empty( $asking_price ) ) {
       <?php echo yacht_output( $yacht_title ); ?>
     </h1>
 
-    <!-- 4-Column Info Row -->
-    <div class="yacht-info-columns">
+    <!-- Info Row (3 columns normally, 4 if price reduction) -->
+    <div class="yacht-info-columns <?php echo $has_price_reduction ? 'has-reduction' : ''; ?>">
       <div class="yacht-info-column">
         <div class="yacht-info-label">Category</div>
         <div class="yacht-info-value">
@@ -396,24 +400,40 @@ if ( $price_on_application || empty( $asking_price ) ) {
       </div>
       <div class="yacht-info-column">
         <div class="yacht-info-label">Price</div>
-        <div class="yacht-info-value"><?php echo yacht_output( $price_display ); ?></div>
+        <div class="yacht-info-value">
+          <?php echo yacht_output( $price_display ); ?>
+          <?php if ( $has_price_reduction ) : ?>
+            <span class="yacht-price-reduction">
+              <?php 
+              $reduction_formatted = '$' . number_format( floatval( $price_reduction ), 0 );
+              if ( ! empty( $price_reduction_percent ) ) {
+                echo yacht_output( $reduction_formatted . ' (' . $price_reduction_percent . '%)' );
+              } else {
+                echo yacht_output( $reduction_formatted );
+              }
+              ?>
+            </span>
+          <?php endif; ?>
+        </div>
       </div>
       <div class="yacht-info-column">
         <div class="yacht-info-label">Location</div>
         <div class="yacht-info-value"><?php echo yacht_output( $location_display ); ?></div>
       </div>
-      <div class="yacht-info-column">
-        <div class="yacht-info-label">Days on Market</div>
+      <?php if ( $has_price_reduction ) : ?>
+      <div class="yacht-info-column yacht-reduction-column">
+        <div class="yacht-info-label">Price Reduction</div>
         <div class="yacht-info-value">
           <?php 
-          if ( ! empty( $days_on_market ) && $days_on_market !== '0' ) {
-            echo yacht_output( $days_on_market );
-          } else {
-            echo '—';
+          $reduction_display = '$' . number_format( floatval( $price_reduction ), 0 );
+          if ( ! empty( $price_reduction_percent ) ) {
+            $reduction_display .= ' (' . $price_reduction_percent . '%)';
           }
+          echo yacht_output( $reduction_display );
           ?>
         </div>
       </div>
+      <?php endif; ?>
     </div>
 
     <!-- Status / badges -->
@@ -973,12 +993,16 @@ if ( $price_on_application || empty( $asking_price ) ) {
 
 .yacht-info-columns {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 30px;
   margin: 30px 0;
   padding: 30px 0;
   border-top: 1px solid #e0e0e0;
   border-bottom: 1px solid #e0e0e0;
+}
+
+.yacht-info-columns.has-reduction {
+  grid-template-columns: repeat(4, 1fr);
 }
 
 .yacht-info-column {
@@ -999,6 +1023,19 @@ if ( $price_on_application || empty( $asking_price ) ) {
   font-weight: 500;
   color: #333;
   line-height: 1.4;
+}
+
+.yacht-price-reduction {
+  display: block;
+  font-size: 0.875rem;
+  color: #d32f2f;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.yacht-reduction-column .yacht-info-value {
+  color: #d32f2f;
+  font-weight: 600;
 }
 
 .yacht-hero-badges {
