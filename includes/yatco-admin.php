@@ -97,6 +97,14 @@ function yatco_settings_init() {
         'yatco_api',
         'yatco_api_only_section'
     );
+
+    add_settings_field(
+        'yatco_api_only_json_cache',
+        'Enable JSON Cache Storage',
+        'yatco_api_only_json_cache_render',
+        'yatco_api',
+        'yatco_api_only_section'
+    );
 }
 
 function yatco_settings_section_callback() {
@@ -158,6 +166,36 @@ function yatco_api_only_data_cache_render() {
     echo '<p class="description">How long to cache individual vessel data (default: 3600 seconds = 1 hour). Detects price/status changes when cache expires.</p>';
 }
 
+function yatco_api_only_json_cache_render() {
+    $options = get_option( 'yatco_api_settings' );
+    $enabled = isset( $options['yatco_api_only_json_cache'] ) ? $options['yatco_api_only_json_cache'] : 'yes'; // Enabled by default
+    
+    // Get cache stats if available
+    $stats = array();
+    if ( function_exists( 'yatco_json_cache_get_stats' ) ) {
+        $stats = yatco_json_cache_get_stats();
+    }
+    
+    echo '<input type="checkbox" name="yatco_api_settings[yatco_api_only_json_cache]" value="yes" id="yatco_api_only_json_cache" ' . checked( $enabled, 'yes', false ) . ' />';
+    echo '<label for="yatco_api_only_json_cache"><strong>Enable JSON Cache Storage</strong></label>';
+    echo '<p class="description">';
+    echo '<strong>Recommended:</strong> Stores essential vessel metadata as JSON in WordPress options for fast queries.<br />';
+    echo '<strong>Storage:</strong> ~1-2MB for 7000 vessels (vs 10-20GB for full CPT).<br />';
+    echo '<strong>Performance:</strong> Fast queries without API calls. Full details still fetched from API when needed.<br />';
+    echo '<strong>Easy to manage:</strong> Single WordPress option, easy to clear/export.<br />';
+    echo '<strong>To sync data:</strong> Use the "Sync JSON Cache" button below after enabling.';
+    echo '</p>';
+    
+    if ( ! empty( $stats ) && $stats['total_vessels'] > 0 ) {
+        echo '<div style="background: #f0f6fc; border-left: 4px solid #2271b1; padding: 10px; margin-top: 10px;">';
+        echo '<strong>Cache Status:</strong><br />';
+        echo 'Vessels cached: ' . number_format( $stats['total_vessels'] ) . '<br />';
+        echo 'Cache size: ' . $stats['cache_size_mb'] . ' MB<br />';
+        echo 'Last updated: ' . $stats['last_updated_human'];
+        echo '</div>';
+    }
+}
+
 /**
  * Settings page output.
  */
@@ -188,7 +226,79 @@ function yatco_options_page() {
     do_settings_sections( 'yatco_api' );
     submit_button();
     echo '</form>';
-
+    
+    // Show JSON cache sync section if API-only mode is enabled
+    if ( $api_only_enabled && function_exists( 'yatco_json_cache_sync' ) ) {
+        echo '<hr />';
+        echo '<h2>JSON Cache Storage</h2>';
+        echo '<div style="background: #f0f6fc; border-left: 4px solid #2271b1; padding: 15px; margin: 15px 0;">';
+        echo '<p><strong>What this does:</strong> Syncs lightweight vessel metadata (name, price, year, LOA, builder, etc.) as JSON in WordPress options for fast queries.</p>';
+        echo '<p><strong>Storage impact:</strong> ~1-2MB for 7000 vessels (much smaller than full CPT).</p>';
+        echo '<p><strong>When to sync:</strong> Run this once to populate cache, then periodically (daily/weekly) to keep data fresh.</p>';
+        echo '<p><strong>Benefits:</strong> Fast queries, easy to manage, can export/backup easily.</p>';
+        echo '</div>';
+        
+        // Show cache stats
+        if ( function_exists( 'yatco_json_cache_get_stats' ) ) {
+            $stats = yatco_json_cache_get_stats();
+            if ( $stats['total_vessels'] > 0 ) {
+                echo '<div style="background: #fff; border: 1px solid #ddd; padding: 15px; margin: 15px 0;">';
+                echo '<h3>Cache Statistics</h3>';
+                echo '<table class="widefat">';
+                echo '<tr><th style="text-align: left; width: 200px;">Total Vessels Cached:</th><td>' . number_format( $stats['total_vessels'] ) . '</td></tr>';
+                echo '<tr><th style="text-align: left;">Cache Size:</th><td>' . $stats['cache_size_mb'] . ' MB (' . number_format( $stats['cache_size_bytes'] ) . ' bytes)</td></tr>';
+                echo '<tr><th style="text-align: left;">Last Updated:</th><td>' . $stats['last_updated_human'] . '</td></tr>';
+                echo '</table>';
+                echo '</div>';
+            }
+        }
+        
+        if ( isset( $_POST['yatco_sync_json_cache'] ) && check_admin_referer( 'yatco_sync_json_cache', 'yatco_sync_json_cache_nonce' ) ) {
+            if ( empty( $token ) ) {
+                echo '<div class="notice notice-error"><p>Missing API token. Please configure your API token first.</p></div>';
+            } else {
+                echo '<div class="notice notice-info"><p><strong>Syncing JSON cache...</strong> This may take a few minutes for 7000+ vessels. Processing in batches to prevent timeouts.</p></div>';
+                
+                $result = yatco_json_cache_sync( $token, 50 );
+                
+                if ( is_wp_error( $result ) ) {
+                    echo '<div class="notice notice-error"><p><strong>Error:</strong> ' . esc_html( $result->get_error_message() ) . '</p></div>';
+                } else {
+                    echo '<div class="notice notice-success">';
+                    echo '<p><strong>Sync completed!</strong></p>';
+                    echo '<ul>';
+                    echo '<li>Processed: ' . number_format( $result['processed'] ) . ' vessels</li>';
+                    echo '<li>Updated: ' . number_format( $result['updated'] ) . ' vessels</li>';
+                    echo '<li>Errors: ' . number_format( $result['errors'] ) . '</li>';
+                    echo '<li>Total active: ' . number_format( $result['total'] ) . ' vessels</li>';
+                    if ( $result['processed'] < $result['total'] ) {
+                        echo '<li><strong>Note:</strong> Processing stopped at ' . number_format( $result['processed'] ) . ' vessels to prevent timeout. Click "Sync JSON Cache" again to continue.</li>';
+                    }
+                    echo '</ul>';
+                    echo '</div>';
+                }
+            }
+        }
+        
+        echo '<form method="post" style="margin-top: 15px;">';
+        wp_nonce_field( 'yatco_sync_json_cache', 'yatco_sync_json_cache_nonce' );
+        submit_button( 'Sync JSON Cache', 'primary', 'yatco_sync_json_cache' );
+        echo '<p class="description">This will fetch and store lightweight metadata for all active vessels. Run this after enabling JSON cache storage.</p>';
+        echo '</form>';
+        
+        if ( function_exists( 'yatco_json_cache_clear' ) ) {
+            if ( isset( $_POST['yatco_clear_json_cache'] ) && check_admin_referer( 'yatco_clear_json_cache', 'yatco_clear_json_cache_nonce' ) ) {
+                yatco_json_cache_clear();
+                echo '<div class="notice notice-success"><p><strong>JSON cache cleared!</strong></p></div>';
+            }
+            echo '<form method="post" style="margin-top: 10px;">';
+            wp_nonce_field( 'yatco_clear_json_cache', 'yatco_clear_json_cache_nonce' );
+            submit_button( 'Clear JSON Cache', 'secondary', 'yatco_clear_json_cache' );
+            echo '<p class="description">This will delete all cached vessel data. You can re-sync anytime.</p>';
+            echo '</form>';
+        }
+    }
+    
     echo '<hr />';
     echo '<h2>Test API Connection</h2>';
     echo '<p>This test calls the <code>/ForSale/vessel/activevesselmlsid</code> endpoint using your Basic token.</p>';

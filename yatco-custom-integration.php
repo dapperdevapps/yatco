@@ -41,6 +41,7 @@ function yatco_is_api_only_mode() {
 // Conditionally include API-only module if enabled
 if ( yatco_is_api_only_mode() ) {
     require_once YATCO_PLUGIN_DIR . 'includes/yatco-api-only.php';
+    require_once YATCO_PLUGIN_DIR . 'includes/yatco-api-only-json-cache.php';
 }
 
 // Register activation hook

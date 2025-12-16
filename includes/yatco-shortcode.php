@@ -701,6 +701,54 @@ function yatco_vessels_shortcode_api_only( $atts, $token ) {
     // Get max vessels to display
     $max_vessels = ! empty( $atts['max'] ) && $atts['max'] !== '0' ? intval( $atts['max'] ) : 50;
     
+    // Parse filter criteria
+    $price_min = ! empty( $atts['price_min'] ) && $atts['price_min'] !== '0' ? floatval( $atts['price_min'] ) : '';
+    $price_max = ! empty( $atts['price_max'] ) && $atts['price_max'] !== '0' ? floatval( $atts['price_max'] ) : '';
+    $year_min  = ! empty( $atts['year_min'] ) && $atts['year_min'] !== '0' ? intval( $atts['year_min'] ) : '';
+    $year_max  = ! empty( $atts['year_max'] ) && $atts['year_max'] !== '0' ? intval( $atts['year_max'] ) : '';
+    $loa_min   = ! empty( $atts['loa_min'] ) && $atts['loa_min'] !== '0' ? floatval( $atts['loa_min'] ) : '';
+    $loa_max   = ! empty( $atts['loa_max'] ) && $atts['loa_max'] !== '0' ? floatval( $atts['loa_max'] ) : '';
+    
+    // Check if JSON cache is enabled and available
+    $options = get_option( 'yatco_api_settings', array() );
+    $json_cache_enabled = isset( $options['yatco_api_only_json_cache'] ) ? $options['yatco_api_only_json_cache'] : 'yes'; // Default to enabled
+    $use_json_cache = ( $json_cache_enabled === 'yes' ) && function_exists( 'yatco_json_cache_get_vessels' );
+    
+    if ( $use_json_cache ) {
+        // Try to get vessels from JSON cache first (fast!)
+        $filters = array(
+            'price_min' => $price_min,
+            'price_max' => $price_max,
+            'year_min' => $year_min,
+            'year_max' => $year_max,
+            'loa_min' => $loa_min,
+            'loa_max' => $loa_max,
+        );
+        
+        $vessels = yatco_json_cache_get_vessels( $filters, $max_vessels );
+        $filter_values = yatco_json_cache_get_filter_values();
+        
+        // If we got results from JSON cache, use them
+        if ( ! empty( $vessels ) ) {
+            return yatco_generate_vessels_html_from_data( 
+                $vessels, 
+                $filter_values['builders'], 
+                $filter_values['categories'], 
+                $filter_values['types'], 
+                $filter_values['conditions'], 
+                $atts 
+            );
+        }
+        
+        // If JSON cache is empty, fall through to API fetching
+        // (This will also populate JSON cache for next time)
+    }
+    
+    // Fallback: Fetch from API (slower, but works if lightweight storage is empty)
+    // Set execution limits to prevent timeouts
+    @ini_set( 'max_execution_time', 60 ); // 1 minute max
+    @set_time_limit( 60 );
+    
     // Get all active vessel IDs (cached)
     $vessel_ids = yatco_api_only_get_vessel_ids( $token );
     
@@ -712,26 +760,36 @@ function yatco_vessels_shortcode_api_only( $atts, $token ) {
         return '<p>No vessels available.</p>';
     }
     
-    // Parse filter criteria
-    $price_min = ! empty( $atts['price_min'] ) && $atts['price_min'] !== '0' ? floatval( $atts['price_min'] ) : '';
-    $price_max = ! empty( $atts['price_max'] ) && $atts['price_max'] !== '0' ? floatval( $atts['price_max'] ) : '';
-    $year_min  = ! empty( $atts['year_min'] ) && $atts['year_min'] !== '0' ? intval( $atts['year_min'] ) : '';
-    $year_max  = ! empty( $atts['year_max'] ) && $atts['year_max'] !== '0' ? intval( $atts['year_max'] ) : '';
-    $loa_min   = ! empty( $atts['loa_min'] ) && $atts['loa_min'] !== '0' ? floatval( $atts['loa_min'] ) : '';
-    $loa_max   = ! empty( $atts['loa_max'] ) && $atts['loa_max'] !== '0' ? floatval( $atts['loa_max'] ) : '';
+    // CRITICAL: Limit how many vessel IDs we process to prevent timeouts
+    // Process up to 3x the max_vessels, but cap at 200 to prevent timeouts
+    // This means if user wants 50 vessels, we'll check up to 150 IDs (or 200 max)
+    $ids_to_check = min( $max_vessels * 3, 200 );
+    $vessel_ids = array_slice( $vessel_ids, 0, $ids_to_check );
     
     $vessels = array();
     $processed = 0;
     $error_count = 0;
+    $start_time = time();
+    $max_processing_time = 50; // Stop after 50 seconds to prevent timeout
     
     // Process vessels up to max limit
     foreach ( $vessel_ids as $vessel_id ) {
+        // Check timeout
+        if ( ( time() - $start_time ) > $max_processing_time ) {
+            break;
+        }
+        
         // Stop if we've reached the max limit
         if ( count( $vessels ) >= $max_vessels ) {
             break;
         }
         
         $processed++;
+        
+        // Reset execution time periodically
+        if ( $processed % 10 === 0 ) {
+            @set_time_limit( 60 );
+        }
         
         // Get vessel data (cached)
         $vessel_data = yatco_api_only_get_vessel_data( $token, $vessel_id );
@@ -784,6 +842,11 @@ function yatco_vessels_shortcode_api_only( $atts, $token ) {
         );
         
         $vessels[] = $vessel_display;
+        
+        // Store in JSON cache if available (for next time)
+        if ( $use_json_cache && function_exists( 'yatco_json_cache_store_vessel' ) ) {
+            yatco_json_cache_store_vessel( $vessel_data );
+        }
     }
     
     // Collect unique values for filter dropdowns
@@ -811,6 +874,22 @@ function yatco_vessels_shortcode_api_only( $atts, $token ) {
     sort( $types );
     sort( $conditions );
     
+    // Show warning if we hit processing limits
+    $warning_message = '';
+    if ( count( $vessels ) < $max_vessels && $processed >= $ids_to_check ) {
+        $warning_message = '<div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; margin: 15px 0;">';
+        $warning_message .= '<p style="margin: 0;"><strong>Note:</strong> API-only mode processed ' . number_format( $processed ) . ' vessels to find ' . count( $vessels ) . ' matching results. ';
+        $warning_message .= 'To see more results, consider using CPT mode or adjusting your filters.</p>';
+        $warning_message .= '</div>';
+    } elseif ( ( time() - $start_time ) > $max_processing_time && count( $vessels ) < $max_vessels ) {
+        $warning_message = '<div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; margin: 15px 0;">';
+        $warning_message .= '<p style="margin: 0;"><strong>Note:</strong> Processing stopped after ' . $max_processing_time . ' seconds to prevent timeout. ';
+        $warning_message .= 'Found ' . count( $vessels ) . ' matching vessels. Consider using CPT mode for better performance with large datasets.</p>';
+        $warning_message .= '</div>';
+    }
+    
     // Generate HTML output using existing function
-    return yatco_generate_vessels_html_from_data( $vessels, $builders, $categories, $types, $conditions, $atts );
+    $output = yatco_generate_vessels_html_from_data( $vessels, $builders, $categories, $types, $conditions, $atts );
+    
+    return $warning_message . $output;
 }
