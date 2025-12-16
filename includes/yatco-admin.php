@@ -182,6 +182,7 @@ function yatco_options_page() {
         echo '<p style="margin: 5px 0; font-size: 12px; color: #666;">All your existing CPT data remains intact and will be available when you switch back.</p>';
         echo '</div>';
     }
+    
     echo '<form method="post" action="options.php">';
     settings_fields( 'yatco_api' );
     do_settings_sections( 'yatco_api' );
