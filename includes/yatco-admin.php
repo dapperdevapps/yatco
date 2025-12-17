@@ -1217,35 +1217,9 @@ function yatco_options_page() {
         padding-top: 0;
     }
     </style>';
-}
     
     echo '</div>'; // End tab content
     echo '</div>'; // End wrap
-    
-    // Add some basic CSS for tabs
-    echo '<style>
-    .yatco-tab-content {
-        background: #fff;
-        padding: 20px;
-        border: 1px solid #ccd0d4;
-        border-top: none;
-    }
-    .yatco-settings-section,
-    .yatco-import-section,
-    .yatco-testing-section,
-    .yatco-status-section,
-    .yatco-troubleshooting-section {
-        max-width: 1200px;
-    }
-    .yatco-settings-section h2,
-    .yatco-import-section h2,
-    .yatco-testing-section h2,
-    .yatco-status-section h2,
-    .yatco-troubleshooting-section h2 {
-        margin-top: 0;
-        padding-top: 0;
-    }
-    </style>';
 }
 
 /**
