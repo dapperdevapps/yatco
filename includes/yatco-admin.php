@@ -321,11 +321,11 @@ function yatco_options_page() {
                     }
                 }
             }
-                } else {
+        } else {
             echo '<p style="margin: 0; color: #666;">No active import. Start a staged import above to see progress.</p>';
         }
         
-                        echo '</div>';
+        echo '</div>';
         
         // Auto-refresh script
         echo '<script>
@@ -369,8 +369,8 @@ function yatco_options_page() {
         if ( $pre_cache_status !== false ) {
             echo '<div class="notice notice-info" style="margin: 20px 0;">';
             echo '<p><strong>Status:</strong> ' . esc_html( $pre_cache_status ) . '</p>';
-                    echo '</div>';
-                }
+            echo '</div>';
+        }
         
         echo '</div>'; // Close yatco-import-section
     }
@@ -384,10 +384,10 @@ function yatco_options_page() {
         if ( $pre_cache_status !== false ) {
             echo '<div class="notice notice-info" style="margin: 20px 0;">';
             echo '<p><strong>Status:</strong> ' . esc_html( $pre_cache_status ) . '</p>';
-                echo '</div>';
+            echo '</div>';
         } else {
             echo '<p>No active import status.</p>';
-            }
+        }
         
         echo '</div>'; // Close status tab section
     }
