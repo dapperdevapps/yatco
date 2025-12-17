@@ -970,18 +970,19 @@ if ( $price_on_application || empty( $asking_price ) ) {
 /* Title and Info Section Styles */
 .yacht-title-info {
   text-align: center;
-  padding: 40px 20px;
-  max-width: 1200px;
+  padding: 20px 15px;
+  max-width: 1240px;
   margin: 0 auto;
+  box-sizing: border-box;
 }
 
 .yacht-title-centered {
-  font-size: 2.5rem;
+  font-size: 28px;
   font-weight: 700;
-  margin: 0 0 30px 0;
+  margin: 0 0 15px 0;
   text-align: center;
   line-height: 1.2;
-  color: #333;
+  color: #243657;
 }
 
 .yacht-info-columns {
@@ -1335,11 +1336,12 @@ if ( $price_on_application || empty( $asking_price ) ) {
 }
 
 .yacht-spec-group h3 {
-  font-size: 1.125rem;
+  font-size: 17px;
   font-weight: 600;
   color: #0073aa;
   margin-top: 0;
   margin-bottom: 0px;
+  padding-bottom: 5px;
 }
 
 dl {
@@ -1350,15 +1352,15 @@ dl {
 
 .yacht-spec-group dl {
   border: 0px double rgba(167, 167, 167, .3);
-  padding: 20px;
-  margin: 0 0 20px;
+  padding: 0px;
+  margin: 0px;
 }
 
 .yacht-spec-group dl > div {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  padding: 8px 0;
+  padding: 5px 0;
   border-bottom: 1px solid rgba(167, 167, 167, .2);
 }
 
