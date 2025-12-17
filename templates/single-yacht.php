@@ -1309,6 +1309,15 @@ if ( $price_on_application || empty( $asking_price ) ) {
 }
 
 /* Specifications Sidebar Styles */
+.yacht-content-sidebar .quform {
+  background: #fcfbf7;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 20px;
+  margin: 0;
+  margin-bottom: 30px;
+}
+
 .yacht-content-sidebar .yacht-specs {
   background: #fcfbf7;
   border: 1px solid #ddd;
