@@ -987,11 +987,13 @@ if ( $price_on_application || empty( $asking_price ) ) {
 .yacht-info-columns {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 30px;
-  margin: 30px 0;
+  gap: 15px;
+  margin: 15px 0;
   padding: 30px 0;
   border-top: 1px solid #e0e0e0;
   border-bottom: 1px solid #e0e0e0;
+  background: #243657;
+  border-radius: 10px;
 }
 
 .yacht-info-columns.has-reduction {
@@ -1003,19 +1005,19 @@ if ( $price_on_application || empty( $asking_price ) ) {
 }
 
 .yacht-info-label {
-  font-size: 0.875rem;
+  font-size: 16px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: #666;
-  margin-bottom: 8px;
+  color: #f3ebdd;
+  margin-bottom: 0px;
 }
 
 .yacht-info-value {
-  font-size: 1.125rem;
+  font-size: 18px;
   font-weight: 500;
-  color: #333;
-  line-height: 1.4;
+  color: #ffffff;
+  line-height: 1.33;
 }
 
 .yacht-price-reduction {
@@ -1110,6 +1112,7 @@ if ( $price_on_application || empty( $asking_price ) ) {
   width: 30%;
   position: sticky;
   top: 20px;
+  margin-bottom: 30px;
 }
 
 /* Responsive: Stack on mobile */
@@ -1298,19 +1301,19 @@ if ( $price_on_application || empty( $asking_price ) ) {
 
 /* Specifications Sidebar Styles */
 .yacht-content-sidebar .yacht-specs {
-  background: #f9f9f9;
+  background: #fcfbf7;
   border: 1px solid #ddd;
   border-radius: 8px;
-  padding: 25px;
+  padding: 20px;
   margin: 0;
 }
 
 .yacht-content-sidebar .yacht-specs h2 {
   margin-top: 0;
-  margin-bottom: 20px;
-  font-size: 1.5rem;
+  margin-bottom: 10px;
+  font-size: 20px;
   color: #333;
-  border-bottom: 2px solid #0073aa;
+  border-bottom: 1px solid #0073aa;
   padding-bottom: 10px;
 }
 
@@ -1323,6 +1326,7 @@ if ( $price_on_application || empty( $asking_price ) ) {
 .yacht-spec-group {
   border-bottom: 1px solid #e0e0e0;
   padding-bottom: 0px;
+  margin-bottom: -5px;
 }
 
 .yacht-spec-group:last-child {
@@ -1368,7 +1372,7 @@ dl {
   margin: 0;
   padding-right: 15px;
   flex: 0 0 45%;
-  font-size: 0.95rem;
+  font-size: 15px;
 }
 
 /* Generic dd styles - only apply outside yacht-spec-group */
@@ -1383,9 +1387,9 @@ dl:not(.yacht-spec-group dl) dd {
   padding: 0px;
   border-bottom: none !important;
   flex: 1;
-  text-align: right;
+  text-align: left;
   color: #333;
-  font-size: 0.95rem;
+  font-size: 15px;
 }
 
 .yacht-spec-group dd a {
