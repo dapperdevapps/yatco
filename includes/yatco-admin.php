@@ -1220,255 +1220,266 @@ function yatco_options_page() {
     if ( $current_tab === 'status' ) {
         echo '<div class="yatco-status-section">';
         echo '<h2>Cache Status & Progress</h2>';
-    echo '<div style="background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; padding: 20px; margin: 20px 0;">';
-    
-    $cron_disabled = defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON;
-    echo '<h3>WP-Cron Status</h3>';
-    echo '<table class="widefat" style="margin-bottom: 20px;">';
-    echo '<tr><th style="text-align: left; width: 250px;">Check</th><th style="text-align: left;">Status</th></tr>';
-    
-    echo '<tr><td><strong>WP-Cron Enabled:</strong></td><td>';
-    if ( $cron_disabled ) {
-        echo '<span style="color: #dc3232;">❌ DISABLED</span>';
-    } else {
-        echo '<span style="color: #46b450;">✔ ENABLED</span>';
-    }
-    echo '</td></tr>';
-    
-    echo '<tr><td><strong>spawn_cron() Available:</strong></td><td>';
-    if ( function_exists( 'spawn_cron' ) ) {
-        echo '<span style="color: #46b450;">✔ Available</span>';
-    } else {
-        echo '<span style="color: #dc3232;">❌ Not Available</span>';
-    }
-    echo '</td></tr>';
-    
-    echo '<tr><td><strong>Cache Warming Function:</strong></td><td>';
-    if ( function_exists( 'yatco_warm_cache_function' ) ) {
-        echo '<span style="color: #46b450;">✔ Available</span>';
-    } else {
-        echo '<span style="color: #dc3232;">❌ Not Available</span>';
-    }
-    echo '</td></tr>';
-    
-    echo '<tr><td><strong>Hook Registered:</strong></td><td>';
-    if ( isset( $wp_filter['yatco_warm_cache_hook'] ) ) {
-        echo '<span style="color: #46b450;">✔ Registered</span>';
-    } else {
-        echo '<span style="color: #dc3232;">❌ Not Registered</span>';
-    }
-    echo '</td></tr>';
-    
-    $scheduled = wp_next_scheduled( 'yatco_warm_cache_hook' );
-    echo '<tr><td><strong>Scheduled Events:</strong></td><td>';
-    if ( $scheduled ) {
-        echo '<span style="color: #ff9800;">⚠ Scheduled for ' . date( 'Y-m-d H:i:s', $scheduled ) . '</span>';
-    } else {
-        echo 'None scheduled';
-    }
-    echo '</td></tr>';
-    
-    echo '<tr><td><strong>Last Status:</strong></td><td>';
-    if ( $cache_status !== false ) {
-        echo esc_html( $cache_status );
-    } else {
-        echo 'No status recorded';
-    }
-    echo '</td></tr>';
-    
-    echo '<tr><td><strong>Last Progress:</strong></td><td>';
-    if ( $cache_progress !== false && is_array( $cache_progress ) ) {
-        $last_processed = isset( $cache_progress['last_processed'] ) ? intval( $cache_progress['last_processed'] ) : 0;
-        $total = isset( $cache_progress['total'] ) ? intval( $cache_progress['total'] ) : 0;
-        echo number_format( $last_processed ) . ' / ' . number_format( $total );
-    } else {
-        echo 'No progress recorded';
-    }
-    echo '</td></tr>';
-    
-    echo '</table>';
-    
-    echo '<h3>Manual Testing</h3>';
-    echo '<p>Use these buttons to test if the system is working:</p>';
-    
-    echo '<form method="post" style="margin-bottom: 15px;">';
-    wp_nonce_field( 'yatco_test_function', 'yatco_test_function_nonce' );
-    submit_button( 'Test Function & API Connection', 'secondary', 'yatco_test_function' );
-    echo '</form>';
-    
-    if ( isset( $_POST['yatco_test_function'] ) && check_admin_referer( 'yatco_test_function', 'yatco_test_function_nonce' ) ) {
-        if ( empty( $token ) ) {
-            echo '<div class="notice notice-error"><p>Missing token.</p></div>';
+        echo '<div style="background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; padding: 20px; margin: 20px 0;">';
+        
+        $cron_disabled = defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON;
+        echo '<h3>WP-Cron Status</h3>';
+        echo '<table class="widefat" style="margin-bottom: 20px;">';
+        echo '<tr><th style="text-align: left; width: 250px;">Check</th><th style="text-align: left;">Status</th></tr>';
+        
+        echo '<tr><td><strong>WP-Cron Enabled:</strong></td><td>';
+        if ( $cron_disabled ) {
+            echo '<span style="color: #dc3232;">❌ DISABLED</span>';
         } else {
-            if ( function_exists( 'yatco_warm_cache_function' ) ) {
-                echo '<div class="notice notice-success"><p>✅ Cache warming function is available.</p></div>';
+            echo '<span style="color: #46b450;">✔ ENABLED</span>';
+        }
+        echo '</td></tr>';
+        
+        echo '<tr><td><strong>spawn_cron() Available:</strong></td><td>';
+        if ( function_exists( 'spawn_cron' ) ) {
+            echo '<span style="color: #46b450;">✔ Available</span>';
+        } else {
+            echo '<span style="color: #dc3232;">❌ Not Available</span>';
+        }
+        echo '</td></tr>';
+        
+        echo '<tr><td><strong>Cache Warming Function:</strong></td><td>';
+        if ( function_exists( 'yatco_warm_cache_function' ) ) {
+            echo '<span style="color: #46b450;">✔ Available</span>';
+        } else {
+            echo '<span style="color: #dc3232;">❌ Not Available</span>';
+        }
+        echo '</td></tr>';
+        
+        echo '<tr><td><strong>Hook Registered:</strong></td><td>';
+        if ( isset( $wp_filter['yatco_warm_cache_hook'] ) ) {
+            echo '<span style="color: #46b450;">✔ Registered</span>';
+        } else {
+            echo '<span style="color: #dc3232;">❌ Not Registered</span>';
+        }
+        echo '</td></tr>';
+        
+        $scheduled = wp_next_scheduled( 'yatco_warm_cache_hook' );
+        echo '<tr><td><strong>Scheduled Events:</strong></td><td>';
+        if ( $scheduled ) {
+            echo '<span style="color: #ff9800;">⚠ Scheduled for ' . date( 'Y-m-d H:i:s', $scheduled ) . '</span>';
+        } else {
+            echo 'None scheduled';
+        }
+        echo '</td></tr>';
+        
+        $cache_status = get_transient( 'yatco_cache_warming_status' );
+        echo '<tr><td><strong>Last Status:</strong></td><td>';
+        if ( $cache_status !== false ) {
+            echo esc_html( $cache_status );
+        } else {
+            echo 'No status recorded';
+        }
+        echo '</td></tr>';
+        
+        $cache_progress = get_transient( 'yatco_cache_warming_progress' );
+        echo '<tr><td><strong>Last Progress:</strong></td><td>';
+        if ( $cache_progress !== false && is_array( $cache_progress ) ) {
+            $last_processed = isset( $cache_progress['last_processed'] ) ? intval( $cache_progress['last_processed'] ) : 0;
+            $total = isset( $cache_progress['total'] ) ? intval( $cache_progress['total'] ) : 0;
+            echo number_format( $last_processed ) . ' / ' . number_format( $total );
+        } else {
+            echo 'No progress recorded';
+        }
+        echo '</td></tr>';
+        
+        echo '</table>';
+        
+        echo '<h3>Manual Testing</h3>';
+        echo '<p>Use these buttons to test if the system is working:</p>';
+        
+        echo '<form method="post" style="margin-bottom: 15px;">';
+        wp_nonce_field( 'yatco_test_function', 'yatco_test_function_nonce' );
+        submit_button( 'Test Function & API Connection', 'secondary', 'yatco_test_function' );
+        echo '</form>';
+        
+        if ( isset( $_POST['yatco_test_function'] ) && check_admin_referer( 'yatco_test_function', 'yatco_test_function_nonce' ) ) {
+            if ( empty( $token ) ) {
+                echo '<div class="notice notice-error"><p>Missing token.</p></div>';
             } else {
-                echo '<div class="notice notice-error"><p>❌ Cache warming function is NOT available. Check if yatco-cache.php is loaded.</p></div>';
-            }
-            
-            if ( isset( $wp_filter['yatco_warm_cache_hook'] ) ) {
-                echo '<div class="notice notice-success"><p>✅ Hook is registered.</p></div>';
-            } else {
-                echo '<div class="notice notice-error"><p>❌ Hook is NOT registered.</p></div>';
-            }
-            
-            $scheduled = wp_next_scheduled( 'yatco_warm_cache_hook' );
-            if ( $scheduled ) {
-                echo '<div class="notice notice-info"><p>⚠️ A scheduled event exists for ' . date( 'Y-m-d H:i:s', $scheduled ) . '</p></div>';
-            } else {
-                echo '<div class="notice notice-info"><p>ℹ️ No scheduled events found.</p></div>';
-            }
-            
-            if ( function_exists( 'yatco_get_active_vessel_ids' ) ) {
-                $test_token = $token;
-                $test_ids = yatco_get_active_vessel_ids( $test_token, 5 );
-                if ( is_wp_error( $test_ids ) ) {
-                    echo '<div class="notice notice-error"><p>❌ Error fetching vessel IDs: ' . esc_html( $test_ids->get_error_message() ) . '</p></div>';
-                } elseif ( empty( $test_ids ) ) {
-                    echo '<div class="notice notice-warning"><p>⚠️ No vessel IDs returned.</p></div>';
+                if ( function_exists( 'yatco_warm_cache_function' ) ) {
+                    echo '<div class="notice notice-success"><p>✅ Cache warming function is available.</p></div>';
                 } else {
-                    echo '<div class="notice notice-success"><p>✅ Successfully fetched ' . count( $test_ids ) . ' vessel ID(s).</p></div>';
+                    echo '<div class="notice notice-error"><p>❌ Cache warming function is NOT available. Check if yatco-cache.php is loaded.</p></div>';
+                }
+                
+                if ( isset( $wp_filter['yatco_warm_cache_hook'] ) ) {
+                    echo '<div class="notice notice-success"><p>✅ Hook is registered.</p></div>';
+                } else {
+                    echo '<div class="notice notice-error"><p>❌ Hook is NOT registered.</p></div>';
+                }
+                
+                $scheduled = wp_next_scheduled( 'yatco_warm_cache_hook' );
+                if ( $scheduled ) {
+                    echo '<div class="notice notice-info"><p>⚠️ A scheduled event exists for ' . date( 'Y-m-d H:i:s', $scheduled ) . '</p></div>';
+                } else {
+                    echo '<div class="notice notice-info"><p>ℹ️ No scheduled events found.</p></div>';
+                }
+                
+                if ( function_exists( 'yatco_get_active_vessel_ids' ) ) {
+                    $test_token = $token;
+                    $test_ids = yatco_get_active_vessel_ids( $test_token, 5 );
+                    if ( is_wp_error( $test_ids ) ) {
+                        echo '<div class="notice notice-error"><p>❌ Error fetching vessel IDs: ' . esc_html( $test_ids->get_error_message() ) . '</p></div>';
+                    } elseif ( empty( $test_ids ) ) {
+                        echo '<div class="notice notice-warning"><p>⚠️ No vessel IDs returned.</p></div>';
+                    } else {
+                        echo '<div class="notice notice-success"><p>✅ Successfully fetched ' . count( $test_ids ) . ' vessel ID(s).</p></div>';
+                    }
                 }
             }
         }
-    }
-    
-    echo '<form method="post" style="margin-bottom: 15px;">';
-    wp_nonce_field( 'yatco_test_cron', 'yatco_test_cron_nonce' );
-    submit_button( 'Test WP-Cron', 'secondary', 'yatco_test_cron' );
-    echo '</form>';
-    
-    if ( isset( $_POST['yatco_test_cron'] ) && check_admin_referer( 'yatco_test_cron', 'yatco_test_cron_nonce' ) ) {
-        $test_key = 'yatco_test_cron_' . time();
-        set_transient( $test_key, 'not_run', 60 );
         
-        wp_schedule_single_event( time(), 'yatco_test_cron_hook' );
+        echo '<form method="post" style="margin-bottom: 15px;">';
+        wp_nonce_field( 'yatco_test_cron', 'yatco_test_cron_nonce' );
+        submit_button( 'Test WP-Cron', 'secondary', 'yatco_test_cron' );
+        echo '</form>';
         
-        add_action( 'yatco_test_cron_hook', function() use ( $test_key ) {
-            set_transient( $test_key, 'ran_successfully', 60 );
-        } );
-        
-        echo '<p>Testing WP-Cron...</p>';
-        echo '<div style="background: #fff; border: 1px solid #ddd; padding: 10px; font-family: monospace; font-size: 12px;">';
-        
-        if ( function_exists( 'spawn_cron' ) ) {
-            echo '✅ spawn_cron() Available<br />';
-            spawn_cron();
-            echo '✅ spawn_cron() called<br />';
-        } else {
-            echo '❌ spawn_cron() NOT Available<br />';
-        }
-        
-        echo '🔄 Attempting to trigger wp-cron.php directly...<br />';
-        
-        $response = wp_remote_post(
-            site_url( 'wp-cron.php?doing_wp_cron' ),
-            array(
-                'timeout'   => 0.01,
-                'blocking'  => false,
-                'sslverify' => false,
-            )
-        );
-        
-        if ( is_wp_error( $response ) ) {
-            echo '⚠️ wp-cron.php request failed: ' . esc_html( $response->get_error_message() ) . '<br />';
-        } else {
-            echo '✅ wp-cron.php request sent (non-blocking)<br />';
-        }
-        
-        echo '<br />⏳ Checking if cron ran (waiting up to 8 seconds)...<br />';
-        $test_result = false;
-        for ( $i = 0; $i < 8; $i++ ) {
-            sleep( 1 );
-            $check = get_transient( $test_key );
-            if ( $check === 'ran_successfully' ) {
-                $test_result = true;
-                echo '✓ Checked at ' . ( $i + 1 ) . ' seconds: <span style="color: #46b450;">CRON RAN!</span><br />';
-                break;
-            } elseif ( $check !== 'not_run' ) {
-                echo '⚠️ Checked at ' . ( $i + 1 ) . ' seconds: Transient changed but value unexpected: ' . esc_html( $check ) . '<br />';
-                break;
+        if ( isset( $_POST['yatco_test_cron'] ) && check_admin_referer( 'yatco_test_cron', 'yatco_test_cron_nonce' ) ) {
+            $test_key = 'yatco_test_cron_' . time();
+            set_transient( $test_key, 'not_run', 60 );
+            
+            wp_schedule_single_event( time(), 'yatco_test_cron_hook' );
+            
+            add_action( 'yatco_test_cron_hook', function() use ( $test_key ) {
+                set_transient( $test_key, 'ran_successfully', 60 );
+            } );
+            
+            echo '<p>Testing WP-Cron...</p>';
+            echo '<div style="background: #fff; border: 1px solid #ddd; padding: 10px; font-family: monospace; font-size: 12px;">';
+            
+            if ( function_exists( 'spawn_cron' ) ) {
+                echo '✅ spawn_cron() Available<br />';
+                spawn_cron();
+                echo '✅ spawn_cron() called<br />';
             } else {
-                echo '• Checked at ' . ( $i + 1 ) . ' seconds: Still waiting...<br />';
+                echo '❌ spawn_cron() NOT Available<br />';
+            }
+            
+            echo '🔄 Attempting to trigger wp-cron.php directly...<br />';
+            
+            $response = wp_remote_post(
+                site_url( 'wp-cron.php?doing_wp_cron' ),
+                array(
+                    'timeout'   => 0.01,
+                    'blocking'  => false,
+                    'sslverify' => false,
+                )
+            );
+            
+            if ( is_wp_error( $response ) ) {
+                echo '⚠️ wp-cron.php request failed: ' . esc_html( $response->get_error_message() ) . '<br />';
+            } else {
+                echo '✅ wp-cron.php request sent (non-blocking)<br />';
+            }
+            
+            echo '<br />⏳ Checking if cron ran (waiting up to 8 seconds)...<br />';
+            $test_result = false;
+            for ( $i = 0; $i < 8; $i++ ) {
+                sleep( 1 );
+                $check = get_transient( $test_key );
+                if ( $check === 'ran_successfully' ) {
+                    $test_result = true;
+                    echo '✓ Checked at ' . ( $i + 1 ) . ' seconds: <span style="color: #46b450;">CRON RAN!</span><br />';
+                    break;
+                } elseif ( $check !== 'not_run' ) {
+                    echo '⚠️ Checked at ' . ( $i + 1 ) . ' seconds: Transient changed but value unexpected: ' . esc_html( $check ) . '<br />';
+                    break;
+                } else {
+                    echo '• Checked at ' . ( $i + 1 ) . ' seconds: Still waiting...<br />';
+                }
+            }
+            
+            echo '<br />';
+            if ( $test_result === true ) {
+                echo '<span style="color: #46b450; font-weight: bold; font-size: 14px;">✅ SUCCESS! WP-Cron is working! The test hook ran successfully.</span><br />';
+                echo '<p style="margin: 5px 0; color: #666; font-size: 12px;">Your WP-Cron is functioning correctly. The cache warming should work with the "Warm Cache" button.</p>';
+            } elseif ( $test_result === false ) {
+                echo '<span style="color: #dc3232; font-weight: bold; font-size: 14px;">❌ FAILED! WP-Cron did not run. The test hook did not execute.</span><br />';
+                echo '<p style="margin: 5px 0; color: #666; font-size: 12px;">This means WP-Cron is likely disabled or not working on your server. You should use the "Run Directly" button or "Run Cache Warming Function NOW (Direct)" instead.</p>';
+                echo '<p style="margin: 5px 0; color: #666; font-size: 12px;"><strong>Solution:</strong> Set up a real cron job on your server to call <code>wp-cron.php</code> every 5-15 minutes, or use the "Run Directly" button for manual imports.</p>';
+            }
+            
+            echo '</div>';
+            
+            delete_transient( $test_key );
+        }
+        
+        echo '<h3>Manual Cache Warming (Direct)</h3>';
+        echo '<p>If WP-Cron is not working, you can run the cache warming function directly. This will block until complete.</p>';
+        
+        echo '<form method="post" style="margin-bottom: 15px;">';
+        wp_nonce_field( 'yatco_manual_trigger', 'yatco_manual_trigger_nonce' );
+        submit_button( 'Run Cache Warming Function NOW (Direct)', 'primary large', 'yatco_manual_trigger', false, array( 'style' => 'font-size: 14px; padding: 8px 16px; height: auto;' ) );
+        echo '</form>';
+        
+        if ( isset( $_POST['yatco_manual_trigger'] ) && check_admin_referer( 'yatco_manual_trigger', 'yatco_manual_trigger_nonce' ) ) {
+            if ( empty( $token ) ) {
+                echo '<div class="notice notice-error"><p>Missing token.</p></div>';
+            } else {
+                if ( ! function_exists( 'yatco_warm_cache_function' ) ) {
+                    require_once YATCO_PLUGIN_DIR . 'includes/yatco-cache.php';
+                }
+                
+                set_transient( 'yatco_cache_warming_status', 'Starting direct cache warm-up...', 600 );
+                set_transient( 'yatco_cache_warming_progress', array( 'last_processed' => 0, 'total' => 0, 'timestamp' => time() ), 600 );
+                
+                echo '<div class="notice notice-info">';
+                echo '<p><strong>Starting direct cache warming...</strong></p>';
+                echo '<p>This will run synchronously (blocking) and may take several minutes. <strong>Do not close this page.</strong></p>';
+                echo '</div>';
+                
+                ob_flush();
+                flush();
+                
+                $is_running = true;
+                
+                echo '<form method="post" style="margin: 10px 0;">';
+                wp_nonce_field( 'yatco_stop_import', 'yatco_stop_import_nonce' );
+                echo '<button type="submit" name="yatco_stop_import" class="button button-secondary" style="background: #dc3232; border-color: #dc3232; color: #fff; font-weight: bold; padding: 8px 16px;">🛑 Stop Import Now</button>';
+                echo '</form>';
+                
+                yatco_warm_cache_function();
+                
+                $final_status = get_transient( 'yatco_cache_warming_status' );
+                $final_progress = get_transient( 'yatco_cache_warming_progress' );
+                
+                echo '<div class="notice notice-success">';
+                echo '<p><strong>Direct cache warming completed!</strong></p>';
+                if ( $final_progress !== false && is_array( $final_progress ) ) {
+                    $processed = isset( $final_progress['processed'] ) ? intval( $final_progress['processed'] ) : 0;
+                    echo '<p>Total vessels processed: <strong>' . number_format( $processed ) . '</strong></p>';
+                }
+                echo '</div>';
+                
+                $is_running = false;
             }
         }
         
-        echo '<br />';
-        if ( $test_result === true ) {
-            echo '<span style="color: #46b450; font-weight: bold; font-size: 14px;">✅ SUCCESS! WP-Cron is working! The test hook ran successfully.</span><br />';
-            echo '<p style="margin: 5px 0; color: #666; font-size: 12px;">Your WP-Cron is functioning correctly. The cache warming should work with the "Warm Cache" button.</p>';
-        } elseif ( $test_result === false ) {
-            echo '<span style="color: #dc3232; font-weight: bold; font-size: 14px;">❌ FAILED! WP-Cron did not run. The test hook did not execute.</span><br />';
-            echo '<p style="margin: 5px 0; color: #666; font-size: 12px;">This means WP-Cron is likely disabled or not working on your server. You should use the "Run Directly" button or "Run Cache Warming Function NOW (Direct)" instead.</p>';
-            echo '<p style="margin: 5px 0; color: #666; font-size: 12px;"><strong>Solution:</strong> Set up a real cron job on your server to call <code>wp-cron.php</code> every 5-15 minutes, or use the "Run Directly" button for manual imports.</p>';
-        }
-        
+        echo '<h3>Real Cron Setup (If WP-Cron Disabled)</h3>';
+        echo '<div style="background: #fff; border: 1px solid #ddd; padding: 15px; margin: 10px 0;">';
+        echo '<p>If WP-Cron is disabled on your server, you can set up a real cron job to trigger the cache warming automatically.</p>';
+        echo '<p><strong>Option 1: Using curl</strong></p>';
+        echo '<pre style="background: #f5f5f5; padding: 10px; border: 1px solid #ddd; overflow-x: auto;">*/15 * * * * curl -s ' . esc_url( site_url( 'wp-cron.php?doing_wp_cron' ) ) . ' > /dev/null 2>&1</pre>';
+        echo '<p><strong>Option 2: Using wget</strong></p>';
+        echo '<pre style="background: #f5f5f5; padding: 10px; border: 1px solid #ddd; overflow-x: auto;">*/15 * * * * wget -q -O - ' . esc_url( site_url( 'wp-cron.php?doing_wp_cron' ) ) . ' > /dev/null 2>&1</pre>';
+        echo '<p><strong>Option 3: Using wp-cli (if available)</strong></p>';
+        echo '<pre style="background: #f5f5f5; padding: 10px; border: 1px solid #ddd; overflow-x: auto;">*/15 * * * * cd ' . esc_html( ABSPATH ) . ' && wp cron event run --due-now</pre>';
+        echo '<p style="font-size: 12px; color: #666; margin-top: 10px;">Note: Replace <code>*/15</code> with your desired frequency (e.g., <code>*/5</code> for every 5 minutes). Add this to your server\'s crontab using <code>crontab -e</code>.</p>';
         echo '</div>';
-        
-        delete_transient( $test_key );
+        echo '</div>';
     }
     
-    echo '<h3>Manual Cache Warming (Direct)</h3>';
-    echo '<p>If WP-Cron is not working, you can run the cache warming function directly. This will block until complete.</p>';
-    
-    echo '<form method="post" style="margin-bottom: 15px;">';
-    wp_nonce_field( 'yatco_manual_trigger', 'yatco_manual_trigger_nonce' );
-    submit_button( 'Run Cache Warming Function NOW (Direct)', 'primary large', 'yatco_manual_trigger', false, array( 'style' => 'font-size: 14px; padding: 8px 16px; height: auto;' ) );
-    echo '</form>';
-    
-    if ( isset( $_POST['yatco_manual_trigger'] ) && check_admin_referer( 'yatco_manual_trigger', 'yatco_manual_trigger_nonce' ) ) {
-        if ( empty( $token ) ) {
-            echo '<div class="notice notice-error"><p>Missing token.</p></div>';
-        } else {
-            if ( ! function_exists( 'yatco_warm_cache_function' ) ) {
-                require_once YATCO_PLUGIN_DIR . 'includes/yatco-cache.php';
-            }
-            
-            set_transient( 'yatco_cache_warming_status', 'Starting direct cache warm-up...', 600 );
-            set_transient( 'yatco_cache_warming_progress', array( 'last_processed' => 0, 'total' => 0, 'timestamp' => time() ), 600 );
-            
-            echo '<div class="notice notice-info">';
-            echo '<p><strong>Starting direct cache warming...</strong></p>';
-            echo '<p>This will run synchronously (blocking) and may take several minutes. <strong>Do not close this page.</strong></p>';
-            echo '</div>';
-            
-            ob_flush();
-            flush();
-            
-            $is_running = true;
-            
-            echo '<form method="post" style="margin: 10px 0;">';
-            wp_nonce_field( 'yatco_stop_import', 'yatco_stop_import_nonce' );
-            echo '<button type="submit" name="yatco_stop_import" class="button button-secondary" style="background: #dc3232; border-color: #dc3232; color: #fff; font-weight: bold; padding: 8px 16px;">🛑 Stop Import Now</button>';
-            echo '</form>';
-            
-            yatco_warm_cache_function();
-            
-            $final_status = get_transient( 'yatco_cache_warming_status' );
-            $final_progress = get_transient( 'yatco_cache_warming_progress' );
-            
-            echo '<div class="notice notice-success">';
-            echo '<p><strong>Direct cache warming completed!</strong></p>';
-            if ( $final_progress !== false && is_array( $final_progress ) ) {
-                $processed = isset( $final_progress['processed'] ) ? intval( $final_progress['processed'] ) : 0;
-                echo '<p>Total vessels processed: <strong>' . number_format( $processed ) . '</strong></p>';
-            }
-            echo '</div>';
-            
-            $is_running = false;
-        }
-    }
-    
-    echo '<h3>Real Cron Setup (If WP-Cron Disabled)</h3>';
-    echo '<div style="background: #fff; border: 1px solid #ddd; padding: 15px; margin: 10px 0;">';
-    echo '<p>If WP-Cron is disabled on your server, you can set up a real cron job to trigger the cache warming automatically.</p>';
-    echo '<p><strong>Option 1: Using curl</strong></p>';
-    echo '<pre style="background: #f5f5f5; padding: 10px; border: 1px solid #ddd; overflow-x: auto;">*/15 * * * * curl -s ' . esc_url( site_url( 'wp-cron.php?doing_wp_cron' ) ) . ' > /dev/null 2>&1</pre>';
-    echo '<p><strong>Option 2: Using wget</strong></p>';
-    echo '<pre style="background: #f5f5f5; padding: 10px; border: 1px solid #ddd; overflow-x: auto;">*/15 * * * * wget -q -O - ' . esc_url( site_url( 'wp-cron.php?doing_wp_cron' ) ) . ' > /dev/null 2>&1</pre>';
-    echo '<p><strong>Option 3: Using wp-cli (if available)</strong></p>';
-    echo '<pre style="background: #f5f5f5; padding: 10px; border: 1px solid #ddd; overflow-x: auto;">*/15 * * * * cd ' . esc_html( ABSPATH ) . ' && wp cron event run --due-now</pre>';
-    echo '<p style="font-size: 12px; color: #666; margin-top: 10px;">Note: Replace <code>*/15</code> with your desired frequency (e.g., <code>*/5</code> for every 5 minutes). Add this to your server\'s crontab using <code>crontab -e</code>.</p>';
+    // Troubleshooting Tab
+    if ( $current_tab === 'troubleshooting' ) {
+        echo '<div class="yatco-troubleshooting-section">';
+        echo '<h2>Troubleshooting</h2>';
+        echo '<p>This section contains diagnostic tools and information to help troubleshoot issues.</p>';
         echo '</div>';
     }
     
