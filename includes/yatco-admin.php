@@ -1167,38 +1167,37 @@ function yatco_options_page() {
             if ( empty( $token ) ) {
                 echo '<div class="notice notice-error"><p>Missing token. Please configure your API token first.</p></div>';
             } else {
-            delete_transient( 'yatco_cache_warming_progress' );
-            delete_transient( 'yatco_cache_warming_status' );
-            
-            if ( function_exists( 'set_transient' ) ) {
-                set_transient( 'yatco_cache_warming_status', 'Starting cache warm-up...', 600 );
-            }
-            
-            wp_schedule_single_event( time(), 'yatco_warm_cache_hook' );
-            
-            spawn_cron();
-            
-            wp_remote_post(
-                admin_url( 'admin-ajax.php' ),
-                array(
-                    'timeout'   => 0.01,
-                    'blocking'  => false,
-                    'sslverify' => false,
-                    'body'      => array(
-                        'action' => 'yatco_trigger_cache_warming',
-                        'nonce'  => wp_create_nonce( 'yatco_trigger_warming' ),
-                    ),
-                )
-            );
-            
-            $cpt_count = wp_count_posts( 'yacht' );
-            $published_count = isset( $cpt_count->publish ) ? intval( $cpt_count->publish ) : 0;
-            
-            echo '<div class="notice notice-info"><p><strong>CPT import started!</strong> This will run in the background and may take several minutes for 7000+ vessels.</p>';
-            echo '<p>Current yacht posts in CPT: <strong>' . number_format( $published_count ) . '</strong></p>';
-            echo '<p>The system processes vessels in batches of 20 to prevent timeouts. Progress is saved automatically, so if interrupted, it will resume from where it left off.</p>';
-            echo '<p><em>Note: If progress doesn\'t appear within 30 seconds, try clicking "Import All Vessels to CPT" again or check if WP-Cron is enabled on your server.</em></p></div>';
-        }
+                delete_transient( 'yatco_cache_warming_progress' );
+                delete_transient( 'yatco_cache_warming_status' );
+                
+                if ( function_exists( 'set_transient' ) ) {
+                    set_transient( 'yatco_cache_warming_status', 'Starting cache warm-up...', 600 );
+                }
+                
+                wp_schedule_single_event( time(), 'yatco_warm_cache_hook' );
+                
+                spawn_cron();
+                
+                wp_remote_post(
+                    admin_url( 'admin-ajax.php' ),
+                    array(
+                        'timeout'   => 0.01,
+                        'blocking'  => false,
+                        'sslverify' => false,
+                        'body'      => array(
+                            'action' => 'yatco_trigger_cache_warming',
+                            'nonce'  => wp_create_nonce( 'yatco_trigger_warming' ),
+                        ),
+                    )
+                );
+                
+                $cpt_count = wp_count_posts( 'yacht' );
+                $published_count = isset( $cpt_count->publish ) ? intval( $cpt_count->publish ) : 0;
+                
+                echo '<div class="notice notice-info"><p><strong>CPT import started!</strong> This will run in the background and may take several minutes for 7000+ vessels.</p>';
+                echo '<p>Current yacht posts in CPT: <strong>' . number_format( $published_count ) . '</strong></p>';
+                echo '<p>The system processes vessels in batches of 20 to prevent timeouts. Progress is saved automatically, so if interrupted, it will resume from where it left off.</p>';
+                echo '<p><em>Note: If progress doesn\'t appear within 30 seconds, try clicking "Import All Vessels to CPT" again or check if WP-Cron is enabled on your server.</em></p></div>';
             }
         }
         
