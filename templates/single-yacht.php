@@ -813,49 +813,80 @@ if ( $price_on_application || empty( $asking_price ) ) {
       <div class="yacht-similar-grid">
         <?php while ( $similar_query->have_posts() ) : $similar_query->the_post(); 
           $similar_post_id = get_the_ID();
-          $similar_price = get_post_meta( $similar_post_id, 'yacht_price', '' );
-          $similar_price_usd = get_post_meta( $similar_post_id, 'yacht_price_usd', '' );
-          $similar_year = get_post_meta( $similar_post_id, 'yacht_year', '' );
-          $similar_loa = get_post_meta( $similar_post_id, 'yacht_length', '' );
-          $similar_loa_feet = get_post_meta( $similar_post_id, 'yacht_length_feet', '' );
-          $similar_builder = get_post_meta( $similar_post_id, 'yacht_make', '' );
-          $similar_model = get_post_meta( $similar_post_id, 'yacht_model', '' );
-          $similar_image = get_post_meta( $similar_post_id, 'yacht_image_url', '' );
+          $similar_price = get_post_meta( $similar_post_id, 'yacht_price', true );
+          $similar_price_usd = get_post_meta( $similar_post_id, 'yacht_price_usd', true );
+          $similar_year = get_post_meta( $similar_post_id, 'yacht_year', true );
+          $similar_loa = get_post_meta( $similar_post_id, 'yacht_length', true );
+          $similar_loa_feet = get_post_meta( $similar_post_id, 'yacht_length_feet', true );
+          $similar_builder = get_post_meta( $similar_post_id, 'yacht_make', true );
+          $similar_model = get_post_meta( $similar_post_id, 'yacht_model', true );
+          $similar_image = get_post_meta( $similar_post_id, 'yacht_image_url', true );
+          
+          // Ensure we have a string, not an array
+          if ( is_array( $similar_price ) ) {
+            $similar_price = ! empty( $similar_price[0] ) ? $similar_price[0] : '';
+          }
+          if ( is_array( $similar_year ) ) {
+            $similar_year = ! empty( $similar_year[0] ) ? $similar_year[0] : '';
+          }
+          if ( is_array( $similar_loa ) ) {
+            $similar_loa = ! empty( $similar_loa[0] ) ? $similar_loa[0] : '';
+          }
+          if ( is_array( $similar_loa_feet ) ) {
+            $similar_loa_feet = ! empty( $similar_loa_feet[0] ) ? $similar_loa_feet[0] : '';
+          }
+          if ( is_array( $similar_builder ) ) {
+            $similar_builder = ! empty( $similar_builder[0] ) ? $similar_builder[0] : '';
+          }
+          if ( is_array( $similar_model ) ) {
+            $similar_model = ! empty( $similar_model[0] ) ? $similar_model[0] : '';
+          }
+          if ( is_array( $similar_image ) ) {
+            $similar_image = ! empty( $similar_image[0] ) ? $similar_image[0] : '';
+          }
           
           // Get featured image if available
           if ( empty( $similar_image ) && has_post_thumbnail( $similar_post_id ) ) {
             $similar_image = get_the_post_thumbnail_url( $similar_post_id, 'large' );
           }
           
+          // Ensure image is a string
+          if ( ! is_string( $similar_image ) ) {
+            $similar_image = '';
+          }
+          
           $similar_title = get_the_title();
-          if ( $similar_year && $similar_builder ) {
+          if ( ! empty( $similar_year ) && ! empty( $similar_builder ) ) {
             $similar_title = $similar_year . ' ' . $similar_builder;
-            if ( $similar_model ) {
+            if ( ! empty( $similar_model ) ) {
               $similar_title .= ' ' . $similar_model;
             }
           }
           
           $similar_link = get_permalink( $similar_post_id );
+          if ( ! is_string( $similar_link ) ) {
+            $similar_link = '';
+          }
         ?>
         <div class="yacht-similar-item">
           <a href="<?php echo esc_url( $similar_link ); ?>" class="yacht-similar-link">
-            <?php if ( $similar_image ) : ?>
+            <?php if ( ! empty( $similar_image ) && is_string( $similar_image ) ) : ?>
             <div class="yacht-similar-image">
               <img src="<?php echo esc_url( $similar_image ); ?>" alt="<?php echo esc_attr( $similar_title ); ?>" loading="lazy" />
             </div>
             <?php endif; ?>
             <div class="yacht-similar-content">
               <h3 class="yacht-similar-title"><?php echo yacht_output( $similar_title ); ?></h3>
-              <?php if ( $similar_price ) : ?>
+              <?php if ( ! empty( $similar_price ) ) : ?>
               <div class="yacht-similar-price"><?php echo yacht_output( $similar_price ); ?></div>
               <?php endif; ?>
               <div class="yacht-similar-specs">
-                <?php if ( $similar_year ) : ?>
+                <?php if ( ! empty( $similar_year ) ) : ?>
                 <span class="yacht-similar-spec"><?php echo yacht_output( $similar_year ); ?></span>
                 <?php endif; ?>
-                <?php if ( $similar_loa ) : ?>
+                <?php if ( ! empty( $similar_loa ) ) : ?>
                 <span class="yacht-similar-spec"><?php echo yacht_output( $similar_loa ); ?></span>
-                <?php elseif ( $similar_loa_feet ) : ?>
+                <?php elseif ( ! empty( $similar_loa_feet ) ) : ?>
                 <span class="yacht-similar-spec"><?php echo yacht_output( $similar_loa_feet ); ?></span>
                 <?php endif; ?>
               </div>
