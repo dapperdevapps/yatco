@@ -507,6 +507,7 @@ if ( $price_on_application || empty( $asking_price ) ) {
     <!-- Right Column: Specifications (30%) -->
     <?php if ( $has_specs_content ) : ?>
     <div class="yacht-content-sidebar">
+      <?php echo do_shortcode( '[quform id="1" name="Popup"]' ); ?>
       <section class="yacht-specs">
     <h2>Specifications</h2>
     <div class="yacht-specs-grid">
@@ -927,7 +928,7 @@ if ( $price_on_application || empty( $asking_price ) ) {
 .yacht-gallery-carousel .swiper-pagination-bullet {
   width: 10px;
   height: 10px;
-  background: #0073aa;
+  background: #92b7cf;
   opacity: 0.3;
   transition: all 0.3s ease;
 }
@@ -970,7 +971,7 @@ if ( $price_on_application || empty( $asking_price ) ) {
 /* Title and Info Section Styles */
 .yacht-title-info {
   text-align: center;
-  padding: 20px 15px;
+  padding: 15px 15px;
   max-width: 1240px;
   margin: 0 auto;
   box-sizing: border-box;
@@ -1098,7 +1099,7 @@ if ( $price_on_application || empty( $asking_price ) ) {
   margin: 0 auto;
   padding: 0px 15px;
   display: flex;
-  gap: 40px;
+  gap: 0px;
   align-items: flex-start;
   box-sizing: border-box;
 }
@@ -1106,6 +1107,8 @@ if ( $price_on_application || empty( $asking_price ) ) {
 .yacht-content-main {
   flex: 0 0 70%;
   width: 70%;
+  padding-right: 15px;
+  margin-left: -15px;
 }
 
 .yacht-content-sidebar {
@@ -1114,6 +1117,7 @@ if ( $price_on_application || empty( $asking_price ) ) {
   position: sticky;
   top: 20px;
   margin-bottom: 30px;
+  padding-left: 15px;
 }
 
 /* Responsive: Stack on mobile */
@@ -1143,11 +1147,15 @@ if ( $price_on_application || empty( $asking_price ) ) {
 .yacht-description-content {
   font-size: 1.125rem;
   line-height: 1.8;
-  color: #555;
+  color: #444;
+}
+
+.yacht-description-content strong {
+  color: #243657;
 }
 
 .yacht-description-content p {
-  margin-bottom: 1.5em;
+  margin-bottom: 15px;
 }
 
 .yacht-description-content p:last-child {
