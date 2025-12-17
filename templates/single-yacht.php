@@ -380,25 +380,6 @@ if ( $price_on_application || empty( $asking_price ) ) {
     <!-- Info Row (3 columns normally, 4 if price reduction) -->
     <div class="yacht-info-columns <?php echo $has_price_reduction ? 'has-reduction' : ''; ?>">
       <div class="yacht-info-column">
-        <div class="yacht-info-label">Category</div>
-        <div class="yacht-info-value">
-          <?php
-          // Display category with links if multiple, or single link
-          if ( $main_category && $sub_category ) {
-            $main_link = yacht_get_term_link( 'yacht_category', $main_category, $post_id );
-            $sub_link = yacht_get_term_link( 'yacht_category', $sub_category, $post_id );
-            echo $main_link . ' / ' . $sub_link;
-          } elseif ( $main_category ) {
-            echo yacht_get_term_link( 'yacht_category', $main_category, $post_id );
-          } elseif ( $sub_category ) {
-            echo yacht_get_term_link( 'yacht_category', $sub_category, $post_id );
-          } else {
-            echo yacht_output( $category_display );
-          }
-          ?>
-        </div>
-      </div>
-      <div class="yacht-info-column">
         <div class="yacht-info-label">Price</div>
         <div class="yacht-info-value">
           <?php echo yacht_output( $price_display ); ?>
@@ -419,6 +400,18 @@ if ( $price_on_application || empty( $asking_price ) ) {
       <div class="yacht-info-column">
         <div class="yacht-info-label">Location</div>
         <div class="yacht-info-value"><?php echo yacht_output( $location_display ); ?></div>
+      </div>
+      <div class="yacht-info-column">
+        <div class="yacht-info-label">Days on Market</div>
+        <div class="yacht-info-value">
+          <?php 
+          if ( ! empty( $days_on_market ) && $days_on_market !== '0' ) {
+            echo yacht_output( $days_on_market );
+          } else {
+            echo '—';
+          }
+          ?>
+        </div>
       </div>
       <?php if ( $has_price_reduction ) : ?>
       <div class="yacht-info-column yacht-reduction-column">
