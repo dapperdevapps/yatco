@@ -723,6 +723,154 @@ if ( $price_on_application || empty( $asking_price ) ) {
   </section>
   <?php endif; ?>
 
+  <!-- SIMILAR LISTINGS SECTION -->
+  <?php
+  // Query for similar listings (same category or closest in price)
+  $current_price_usd = yacht_meta( 'yacht_price_usd', '' );
+  $current_category = yacht_meta( 'yacht_category', '' );
+  
+  // First try to find yachts in the same category
+  $similar_args = array(
+    'post_type'      => 'yacht',
+    'post_status'    => 'publish',
+    'posts_per_page' => 3,
+    'post__not_in'   => array( $post_id ), // Exclude current yacht
+    'meta_query'     => array(),
+  );
+  
+  if ( ! empty( $current_category ) ) {
+    $similar_args['meta_query'][] = array(
+      'key'     => 'yacht_category',
+      'value'   => $current_category,
+      'compare' => '=',
+    );
+  }
+  
+  // Order by price proximity if price is available
+  if ( ! empty( $current_price_usd ) && $current_price_usd > 0 ) {
+    $similar_args['meta_query'][] = array(
+      'key'     => 'yacht_price_usd',
+      'value'   => 0,
+      'compare' => '>',
+      'type'    => 'NUMERIC',
+    );
+    $similar_args['orderby'] = 'meta_value_num';
+    $similar_args['meta_key'] = 'yacht_price_usd';
+    $similar_args['order'] = 'ASC';
+  } else {
+    $similar_args['orderby'] = 'rand';
+  }
+  
+  $similar_query = new WP_Query( $similar_args );
+  
+  // If we don't have enough results from category, also try price-based
+  if ( $similar_query->found_posts < 3 && ! empty( $current_price_usd ) && $current_price_usd > 0 ) {
+    $price_range = floatval( $current_price_usd ) * 0.3; // 30% range
+    $price_min = max( 0, floatval( $current_price_usd ) - $price_range );
+    $price_max = floatval( $current_price_usd ) + $price_range;
+    
+    $price_args = array(
+      'post_type'      => 'yacht',
+      'post_status'    => 'publish',
+      'posts_per_page' => 3,
+      'post__not_in'   => array( $post_id ),
+      'meta_query'     => array(
+        array(
+          'key'     => 'yacht_price_usd',
+          'value'   => array( $price_min, $price_max ),
+          'compare' => 'BETWEEN',
+          'type'    => 'NUMERIC',
+        ),
+      ),
+      'orderby'        => 'meta_value_num',
+      'meta_key'       => 'yacht_price_usd',
+      'order'          => 'ASC',
+    );
+    
+    // If we had category results, exclude those IDs too
+    if ( $similar_query->found_posts > 0 ) {
+      $existing_ids = wp_list_pluck( $similar_query->posts, 'ID' );
+      $price_args['post__not_in'] = array_merge( array( $post_id ), $existing_ids );
+    }
+    
+    $price_query = new WP_Query( $price_args );
+    
+    // Merge results if we have price-based matches
+    if ( $price_query->have_posts() ) {
+      $similar_query->posts = array_merge( $similar_query->posts, $price_query->posts );
+      $similar_query->post_count = count( $similar_query->posts );
+      // Limit to 3 total
+      $similar_query->posts = array_slice( $similar_query->posts, 0, 3 );
+      $similar_query->post_count = min( 3, $similar_query->post_count );
+    }
+  }
+  
+  if ( $similar_query->have_posts() ) :
+  ?>
+  <section class="yacht-similar-listings">
+    <div class="yacht-similar-listings-container">
+      <h2>Similar Listings</h2>
+      <div class="yacht-similar-grid">
+        <?php while ( $similar_query->have_posts() ) : $similar_query->the_post(); 
+          $similar_post_id = get_the_ID();
+          $similar_price = get_post_meta( $similar_post_id, 'yacht_price', '' );
+          $similar_price_usd = get_post_meta( $similar_post_id, 'yacht_price_usd', '' );
+          $similar_year = get_post_meta( $similar_post_id, 'yacht_year', '' );
+          $similar_loa = get_post_meta( $similar_post_id, 'yacht_length', '' );
+          $similar_loa_feet = get_post_meta( $similar_post_id, 'yacht_length_feet', '' );
+          $similar_builder = get_post_meta( $similar_post_id, 'yacht_make', '' );
+          $similar_model = get_post_meta( $similar_post_id, 'yacht_model', '' );
+          $similar_image = get_post_meta( $similar_post_id, 'yacht_image_url', '' );
+          
+          // Get featured image if available
+          if ( empty( $similar_image ) && has_post_thumbnail( $similar_post_id ) ) {
+            $similar_image = get_the_post_thumbnail_url( $similar_post_id, 'large' );
+          }
+          
+          $similar_title = get_the_title();
+          if ( $similar_year && $similar_builder ) {
+            $similar_title = $similar_year . ' ' . $similar_builder;
+            if ( $similar_model ) {
+              $similar_title .= ' ' . $similar_model;
+            }
+          }
+          
+          $similar_link = get_permalink( $similar_post_id );
+        ?>
+        <div class="yacht-similar-item">
+          <a href="<?php echo esc_url( $similar_link ); ?>" class="yacht-similar-link">
+            <?php if ( $similar_image ) : ?>
+            <div class="yacht-similar-image">
+              <img src="<?php echo esc_url( $similar_image ); ?>" alt="<?php echo esc_attr( $similar_title ); ?>" loading="lazy" />
+            </div>
+            <?php endif; ?>
+            <div class="yacht-similar-content">
+              <h3 class="yacht-similar-title"><?php echo yacht_output( $similar_title ); ?></h3>
+              <?php if ( $similar_price ) : ?>
+              <div class="yacht-similar-price"><?php echo yacht_output( $similar_price ); ?></div>
+              <?php endif; ?>
+              <div class="yacht-similar-specs">
+                <?php if ( $similar_year ) : ?>
+                <span class="yacht-similar-spec"><?php echo yacht_output( $similar_year ); ?></span>
+                <?php endif; ?>
+                <?php if ( $similar_loa ) : ?>
+                <span class="yacht-similar-spec"><?php echo yacht_output( $similar_loa ); ?></span>
+                <?php elseif ( $similar_loa_feet ) : ?>
+                <span class="yacht-similar-spec"><?php echo yacht_output( $similar_loa_feet ); ?></span>
+                <?php endif; ?>
+              </div>
+            </div>
+          </a>
+        </div>
+        <?php endwhile; ?>
+      </div>
+    </div>
+  </section>
+  <?php 
+  wp_reset_postdata();
+  endif; 
+  ?>
+
   <!-- MEDIA SECTION - VIDEO -->
   <section class="yacht-media-video" id="yacht-media">
     <!-- Optional video block -->
@@ -1318,6 +1466,11 @@ if ( $price_on_application || empty( $asking_price ) ) {
   margin-bottom: 30px;
 }
 
+.quform-element-submit {
+  vertical-align: bottom;
+  margin: 0px 0;
+}
+
 .yacht-content-sidebar .yacht-specs {
   background: #fcfbf7;
   border: 1px solid #ddd;
@@ -1387,7 +1540,7 @@ dl {
 
 .yacht-spec-group dt {
   font-weight: 600;
-  color: #555;
+  color: #444;
   margin: 0;
   padding-right: 15px;
   flex: 0 0 45%;
@@ -1407,7 +1560,7 @@ dl:not(.yacht-spec-group dl) dd {
   border-bottom: none !important;
   flex: 1;
   text-align: left;
-  color: #333;
+  color: #444;
   font-size: 15px;
 }
 
@@ -1510,6 +1663,102 @@ dl:not(.yacht-spec-group dl) dd {
   background: transparent;
 }
 
+/* Similar Listings Styles */
+.yacht-similar-listings {
+  max-width: 1200px;
+  margin: 60px auto;
+  padding: 0 15px;
+  box-sizing: border-box;
+}
+
+.yacht-similar-listings-container h2 {
+  font-size: 28px;
+  font-weight: 700;
+  color: #243657;
+  margin-bottom: 30px;
+  text-align: center;
+}
+
+.yacht-similar-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 30px;
+}
+
+.yacht-similar-item {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  overflow: hidden;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.yacht-similar-item:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.yacht-similar-link {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+}
+
+.yacht-similar-image {
+  width: 100%;
+  height: 200px;
+  overflow: hidden;
+  background: #f5f5f5;
+}
+
+.yacht-similar-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+.yacht-similar-item:hover .yacht-similar-image img {
+  transform: scale(1.05);
+}
+
+.yacht-similar-content {
+  padding: 20px;
+}
+
+.yacht-similar-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #243657;
+  margin: 0 0 10px 0;
+  line-height: 1.3;
+}
+
+.yacht-similar-price {
+  font-size: 20px;
+  font-weight: 600;
+  color: #0073aa;
+  margin-bottom: 10px;
+}
+
+.yacht-similar-specs {
+  display: flex;
+  gap: 15px;
+  font-size: 14px;
+  color: #666;
+}
+
+.yacht-similar-spec {
+  display: inline-block;
+}
+
+@media (max-width: 1024px) {
+  .yacht-similar-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+  }
+}
+
 @media (max-width: 768px) {
   .glightbox-clean .gprev,
   .glightbox-clean .gnext {
@@ -1522,6 +1771,20 @@ dl:not(.yacht-spec-group dl) dd {
     height: 35px;
     top: 15px;
     right: 15px;
+  }
+  
+  .yacht-similar-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  
+  .yacht-similar-listings {
+    margin: 40px auto;
+  }
+  
+  .yacht-similar-listings-container h2 {
+    font-size: 24px;
+    margin-bottom: 20px;
   }
 }
 </style>
