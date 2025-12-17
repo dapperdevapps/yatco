@@ -52,8 +52,9 @@ function yatco_stage1_import_ids_and_names( $token ) {
     }
     
     $processed = 0;
-    $batch_size = 50; // Process 50 at a time
-    $delay_seconds = 2; // 2 second delay between batches
+    $batch_size = 25; // Reduced to 25 to prevent server overload
+    $delay_seconds = 3; // Increased to 3 seconds between batches for safety
+    $delay_between_items = 0.1; // 100ms delay between individual items
     
     foreach ( array_chunk( $vessel_ids, $batch_size ) as $batch ) {
         // Check stop flag
@@ -71,6 +72,11 @@ function yatco_stage1_import_ids_and_names( $token ) {
                 delete_transient( 'yatco_cache_warming_stop' );
                 set_transient( 'yatco_cache_warming_status', 'Stage 1 stopped by user.', 60 );
                 return;
+            }
+            
+            // Small delay between items to prevent server overload
+            if ( $delay_between_items > 0 ) {
+                usleep( $delay_between_items * 1000000 ); // Convert to microseconds
             }
             
             // Fetch lightweight data (just Result section for name)
@@ -114,15 +120,19 @@ function yatco_stage1_import_ids_and_names( $token ) {
             }
         }
         
-        // Save progress
+        // Save progress with percentage
+        $current_total = $start_from + $processed;
+        $percent = $total > 0 ? round( ( $current_total / $total ) * 100, 1 ) : 0;
         $progress_data = array(
-            'last_processed' => $start_from + $processed,
+            'last_processed' => $current_total,
             'total'         => $total,
             'processed_ids' => array_slice( $processed_ids, -1000 ), // Keep last 1000
             'timestamp'     => time(),
+            'percent'       => $percent,
+            'stage'         => 1,
         );
         set_transient( 'yatco_stage1_progress', $progress_data, 3600 );
-        set_transient( 'yatco_cache_warming_status', "Stage 1: Processed {$processed} of {$total} vessels...", 600 );
+        set_transient( 'yatco_cache_warming_status', "Stage 1: Processed {$current_total} of {$total} vessels ({$percent}%)...", 600 );
         
         // Delay between batches
         if ( $processed < $total ) {
@@ -174,8 +184,9 @@ function yatco_stage2_import_images( $token ) {
     }
     
     $processed = 0;
-    $batch_size = 20; // Smaller batches for images
-    $delay_seconds = 3; // 3 second delay between batches
+    $batch_size = 15; // Smaller batches for images to prevent overload
+    $delay_seconds = 4; // 4 second delay between batches
+    $delay_between_items = 0.2; // 200ms delay between individual items
     
     foreach ( array_chunk( $vessel_ids, $batch_size ) as $batch ) {
         // Check stop flag
@@ -193,6 +204,11 @@ function yatco_stage2_import_images( $token ) {
                 delete_transient( 'yatco_cache_warming_stop' );
                 set_transient( 'yatco_cache_warming_status', 'Stage 2 stopped by user.', 60 );
                 return;
+            }
+            
+            // Small delay between items to prevent server overload
+            if ( $delay_between_items > 0 ) {
+                usleep( $delay_between_items * 1000000 ); // Convert to microseconds
             }
             
             // Find post
@@ -238,14 +254,18 @@ function yatco_stage2_import_images( $token ) {
             $processed++;
         }
         
-        // Save progress
+        // Save progress with percentage
+        $current_total = $start_from + $processed;
+        $percent = $total > 0 ? round( ( $current_total / $total ) * 100, 1 ) : 0;
         $progress_data = array(
-            'last_processed' => $start_from + $processed,
+            'last_processed' => $current_total,
             'total'         => $total,
             'timestamp'     => time(),
+            'percent'       => $percent,
+            'stage'         => 2,
         );
         set_transient( 'yatco_stage2_progress', $progress_data, 3600 );
-        set_transient( 'yatco_cache_warming_status', "Stage 2: Processed images for {$processed} of {$total} vessels...", 600 );
+        set_transient( 'yatco_cache_warming_status', "Stage 2: Processed images for {$current_total} of {$total} vessels ({$percent}%)...", 600 );
         
         // Delay between batches
         if ( $processed < $total ) {
@@ -294,8 +314,9 @@ function yatco_stage3_import_full_data( $token ) {
     }
     
     $processed = 0;
-    $batch_size = 10; // Smaller batches for full data
-    $delay_seconds = 5; // 5 second delay between batches
+    $batch_size = 5; // Very small batches for full data to prevent overload
+    $delay_seconds = 6; // 6 second delay between batches
+    $delay_between_items = 0.5; // 500ms delay between individual items
     
     foreach ( array_chunk( $vessel_ids, $batch_size ) as $batch ) {
         // Check stop flag
@@ -315,6 +336,11 @@ function yatco_stage3_import_full_data( $token ) {
                 return;
             }
             
+            // Small delay between items to prevent server overload
+            if ( $delay_between_items > 0 ) {
+                usleep( $delay_between_items * 1000000 ); // Convert to microseconds
+            }
+            
             // Use existing import function for full data
             $import_result = yatco_import_single_vessel( $token, $vessel_id );
             
@@ -325,14 +351,18 @@ function yatco_stage3_import_full_data( $token ) {
             }
         }
         
-        // Save progress
+        // Save progress with percentage
+        $current_total = $start_from + $processed;
+        $percent = $total > 0 ? round( ( $current_total / $total ) * 100, 1 ) : 0;
         $progress_data = array(
-            'last_processed' => $start_from + $processed,
+            'last_processed' => $current_total,
             'total'         => $total,
             'timestamp'     => time(),
+            'percent'       => $percent,
+            'stage'         => 3,
         );
         set_transient( 'yatco_stage3_progress', $progress_data, 3600 );
-        set_transient( 'yatco_cache_warming_status', "Stage 3: Processed full data for {$processed} of {$total} vessels...", 600 );
+        set_transient( 'yatco_cache_warming_status', "Stage 3: Processed full data for {$current_total} of {$total} vessels ({$percent}%)...", 600 );
         
         // Delay between batches
         if ( $processed < $total ) {

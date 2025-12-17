@@ -59,6 +59,82 @@ add_action( 'yatco_stage3_import_hook', function() {
     }
 } );
 
+// AJAX handler for import status
+add_action( 'wp_ajax_yatco_get_import_status', 'yatco_ajax_get_import_status' );
+function yatco_ajax_get_import_status() {
+    // Get all progress data
+    $stage1_progress = get_transient( 'yatco_stage1_progress' );
+    $stage2_progress = get_transient( 'yatco_stage2_progress' );
+    $stage3_progress = get_transient( 'yatco_stage3_progress' );
+    $cache_status = get_transient( 'yatco_cache_warming_status' );
+    $cache_progress = get_transient( 'yatco_cache_warming_progress' );
+    
+    // Determine which stage is active
+    $active_stage = 0;
+    $active_progress = null;
+    if ( $stage3_progress !== false && is_array( $stage3_progress ) ) {
+        $active_stage = 3;
+        $active_progress = $stage3_progress;
+    } elseif ( $stage2_progress !== false && is_array( $stage2_progress ) ) {
+        $active_stage = 2;
+        $active_progress = $stage2_progress;
+    } elseif ( $stage1_progress !== false && is_array( $stage1_progress ) ) {
+        $active_stage = 1;
+        $active_progress = $stage1_progress;
+    } elseif ( $cache_progress !== false && is_array( $cache_progress ) ) {
+        $active_stage = 'full';
+        $active_progress = $cache_progress;
+    }
+    
+    ob_start();
+    echo '<div id="yatco-import-status" style="background: #fff; border: 2px solid #2271b1; border-radius: 4px; padding: 20px; margin: 20px 0;">';
+    
+    if ( $active_stage > 0 || $active_stage === 'full' ) {
+        $current = isset( $active_progress['last_processed'] ) ? intval( $active_progress['last_processed'] ) : 0;
+        $total = isset( $active_progress['total'] ) ? intval( $active_progress['total'] ) : 0;
+        $percent = isset( $active_progress['percent'] ) ? floatval( $active_progress['percent'] ) : ( $total > 0 ? round( ( $current / $total ) * 100, 1 ) : 0 );
+        $stage_name = $active_stage === 'full' ? 'Full Import' : "Stage {$active_stage}";
+        
+        echo '<h3 style="margin-top: 0; color: #2271b1;">📊 ' . esc_html( $stage_name ) . ' Progress</h3>';
+        
+        if ( $cache_status !== false ) {
+            echo '<p style="margin: 10px 0; font-size: 14px; color: #666;"><strong>Status:</strong> ' . esc_html( $cache_status ) . '</p>';
+        }
+        
+        echo '<div style="background: #f0f0f0; border-radius: 10px; height: 30px; margin: 15px 0; position: relative; overflow: hidden;">';
+        echo '<div id="yatco-progress-bar" style="background: linear-gradient(90deg, #2271b1 0%, #46b450 100%); height: 100%; width: ' . esc_attr( $percent ) . '%; transition: width 0.3s ease; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: bold; font-size: 12px;">';
+        echo esc_html( $percent ) . '%';
+        echo '</div>';
+        echo '</div>';
+        
+        echo '<div style="display: flex; justify-content: space-between; margin-top: 10px; font-size: 13px; color: #666;">';
+        echo '<span><strong>Processed:</strong> ' . number_format( $current ) . ' / ' . number_format( $total ) . '</span>';
+        echo '<span><strong>Remaining:</strong> ' . number_format( $total - $current ) . '</span>';
+        echo '</div>';
+        
+        // Estimated time remaining
+        if ( isset( $active_progress['timestamp'] ) && $current > 0 ) {
+            $time_elapsed = time() - intval( $active_progress['timestamp'] );
+            if ( $time_elapsed > 0 && $current > 0 ) {
+                $rate = $current / $time_elapsed; // items per second
+                $remaining = $total - $current;
+                if ( $rate > 0 ) {
+                    $eta_seconds = $remaining / $rate;
+                    $eta_minutes = round( $eta_seconds / 60, 1 );
+                    echo '<p style="margin: 10px 0 0 0; font-size: 12px; color: #666;"><strong>Estimated time remaining:</strong> ' . esc_html( $eta_minutes ) . ' minutes</p>';
+                }
+            }
+        }
+    } else {
+        echo '<p style="margin: 0; color: #666;">No active import. Start a staged import above to see progress.</p>';
+    }
+    
+    echo '</div>';
+    $html = ob_get_clean();
+    
+    wp_send_json( array( 'html' => $html ) );
+}
+
 // Schedule periodic cache refresh if enabled
 add_action( 'admin_init', 'yatco_maybe_schedule_cache_refresh' );
 
