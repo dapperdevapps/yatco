@@ -476,8 +476,7 @@ if ( $price_on_application || empty( $asking_price ) ) {
   $has_specs_content = $boat_name || $loa || $loa_feet || $loa_meters || $builder || $model || $year_built || $vessel_type || $hull_material || $beam || $gross_tonnage || $state_rooms || $heads || $sleeps || $berths || $engine_count || $engine_manufacturer || $engine_model || $engine_type || $engine_fuel_type || $engine_horsepower || $cruise_speed || $max_speed || $fuel_capacity || $water_capacity || $holding_tank;
   ?>
 
-  <!-- Two-column layout wrapper -->
-  <?php if ( $has_description || $has_detailed_specs || $has_specs_content ) : ?>
+  <!-- Two-column layout wrapper - Always show sidebar for shortcode -->
   <section class="yacht-content-layout">
     <!-- Left Column: Description (70%) -->
     <div class="yacht-content-main">
@@ -505,9 +504,9 @@ if ( $price_on_application || empty( $asking_price ) ) {
     </div>
 
     <!-- Right Column: Specifications (30%) -->
-    <?php if ( $has_specs_content ) : ?>
     <div class="yacht-content-sidebar">
       <?php echo do_shortcode( '[quform id="1" name="Popup"]' ); ?>
+      <?php if ( $has_specs_content ) : ?>
       <section class="yacht-specs">
     <h2>Specifications</h2>
     <div class="yacht-specs-grid">
@@ -716,12 +715,11 @@ if ( $price_on_application || empty( $asking_price ) ) {
       <?php endif; ?>
 
 
-      </div>
+        </div>
       </section>
+      <?php endif; ?>
     </div>
-    <?php endif; ?>
   </section>
-  <?php endif; ?>
 
   <!-- SIMILAR LISTINGS SECTION -->
   <?php
