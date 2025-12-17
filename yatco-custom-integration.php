@@ -27,6 +27,7 @@ require_once YATCO_PLUGIN_DIR . 'includes/yatco-helpers.php';
 require_once YATCO_PLUGIN_DIR . 'includes/yatco-admin.php';
 require_once YATCO_PLUGIN_DIR . 'includes/yatco-shortcode.php';
 require_once YATCO_PLUGIN_DIR . 'includes/yatco-cache.php';
+require_once YATCO_PLUGIN_DIR . 'includes/yatco-staged-import.php';
 
 
 // Register activation hook
@@ -37,6 +38,26 @@ add_action( 'init', 'yatco_register_shortcode' );
 
 // Register cache warming hook
 add_action( 'yatco_warm_cache_hook', 'yatco_warm_cache_function' );
+
+// Register staged import hooks
+add_action( 'yatco_stage1_import_hook', function() {
+    $token = yatco_get_token();
+    if ( ! empty( $token ) ) {
+        yatco_stage1_import_ids_and_names( $token );
+    }
+} );
+add_action( 'yatco_stage2_import_hook', function() {
+    $token = yatco_get_token();
+    if ( ! empty( $token ) ) {
+        yatco_stage2_import_images( $token );
+    }
+} );
+add_action( 'yatco_stage3_import_hook', function() {
+    $token = yatco_get_token();
+    if ( ! empty( $token ) ) {
+        yatco_stage3_import_full_data( $token );
+    }
+} );
 
 // Schedule periodic cache refresh if enabled
 add_action( 'admin_init', 'yatco_maybe_schedule_cache_refresh' );
