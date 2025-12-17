@@ -103,34 +103,47 @@ function yatco_options_page() {
 
     $options = get_option( 'yatco_api_settings' );
     $token   = isset( $options['yatco_api_token'] ) ? $options['yatco_api_token'] : '';
+    
+    // Get current tab
+    $current_tab = isset( $_GET['tab'] ) ? sanitize_text_field( $_GET['tab'] ) : 'settings';
+    $tabs = array(
+        'settings' => 'Settings',
+        'import' => 'Import',
+        'testing' => 'Testing',
+        'status' => 'Status',
+        'troubleshooting' => 'Troubleshooting',
+    );
 
     echo '<div class="wrap">';
     echo '<h1>YATCO API Settings</h1>';
-    echo '<form method="post" action="options.php">';
-    settings_fields( 'yatco_api' );
-    do_settings_sections( 'yatco_api' );
-    submit_button();
-    echo '</form>';
     
-    echo '<hr />';
-    echo '<h2>Test API Connection</h2>';
-    echo '<p>This test calls the <code>/ForSale/vessel/activevesselmlsid</code> endpoint using your Basic token.</p>';
-    echo '<form method="post">';
-    wp_nonce_field( 'yatco_test_connection', 'yatco_test_connection_nonce' );
-    submit_button( 'Test Connection', 'secondary', 'yatco_test_connection' );
-    echo '</form>';
-
-    if ( isset( $_POST['yatco_test_connection'] ) && check_admin_referer( 'yatco_test_connection', 'yatco_test_connection_nonce' ) ) {
-        if ( empty( $token ) ) {
-            echo '<div class="notice notice-error"><p>Missing token.</p></div>';
-        } else {
-            $result = yatco_test_connection( $token );
-            echo $result;
-        }
+    // Tab navigation
+    echo '<nav class="nav-tab-wrapper" style="margin: 20px 0 0 0;">';
+    foreach ( $tabs as $tab_key => $tab_label ) {
+        $active = ( $current_tab === $tab_key ) ? ' nav-tab-active' : '';
+        $url = admin_url( 'options-general.php?page=yatco_api&tab=' . $tab_key );
+        echo '<a href="' . esc_url( $url ) . '" class="nav-tab' . $active . '">' . esc_html( $tab_label ) . '</a>';
     }
-
-    echo '<hr />';
-    echo '<h2>Test Single Vessel & Create Post</h2>';
+    echo '</nav>';
+    
+    echo '<div class="yatco-tab-content" style="margin-top: 20px;">';
+    
+    // Settings Tab
+    if ( $current_tab === 'settings' ) {
+        echo '<div class="yatco-settings-section">';
+        echo '<h2>API Configuration</h2>';
+        echo '<form method="post" action="options.php">';
+        settings_fields( 'yatco_api' );
+        do_settings_sections( 'yatco_api' );
+        submit_button();
+        echo '</form>';
+        echo '</div>';
+    }
+    
+    // Import Tab
+    if ( $current_tab === 'import' ) {
+        echo '<div class="yatco-import-section">';
+        echo '<h2>Import Vessels to CPT</h2>';
     echo '<div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; margin: 15px 0;">';
     echo '<p style="margin: 0; font-weight: bold; color: #856404;"><strong>📝 Test & Import:</strong> This button fetches the first active vessel from the YATCO API, displays its data structure, <strong>and creates a CPT post</strong> so you can preview how the template looks.</p>';
     echo '</div>';
@@ -756,8 +769,30 @@ function yatco_options_page() {
         echo '</form>';
     }
     
-    echo '<hr />';
-    echo '<h2>Cache Status & Progress</h2>';
+        echo '</div>';
+    }
+    
+    // Testing Tab
+    if ( $current_tab === 'testing' ) {
+        echo '<div class="yatco-testing-section">';
+        echo '<h2>Test API Connection</h2>';
+        echo '<p>This test calls the <code>/ForSale/vessel/activevesselmlsid</code> endpoint using your Basic token.</p>';
+        echo '<form method="post">';
+        wp_nonce_field( 'yatco_test_connection', 'yatco_test_connection_nonce' );
+        submit_button( 'Test Connection', 'secondary', 'yatco_test_connection' );
+        echo '</form>';
+
+        if ( isset( $_POST['yatco_test_connection'] ) && check_admin_referer( 'yatco_test_connection', 'yatco_test_connection_nonce' ) ) {
+            if ( empty( $token ) ) {
+                echo '<div class="notice notice-error"><p>Missing token.</p></div>';
+            } else {
+                $result = yatco_test_connection( $token );
+                echo $result;
+            }
+        }
+
+        echo '<hr style="margin: 30px 0;" />';
+        echo '<h2>Test Single Vessel & Create Post</h2>';
     
     if ( $cache_status !== false ) {
         echo '<div class="notice notice-info">';
@@ -843,13 +878,13 @@ function yatco_options_page() {
         echo '<p>No progress recorded.</p>';
     }
     
-    echo '<hr />';
-    echo '<h2>Cache Management</h2>';
-    
-    if ( isset( $_POST['yatco_warm_cache'] ) && check_admin_referer( 'yatco_warm_cache', 'yatco_warm_cache_nonce' ) ) {
-        if ( empty( $token ) ) {
-            echo '<div class="notice notice-error"><p>Missing token. Please configure your API token first.</p></div>';
-        } else {
+        echo '<hr style="margin: 30px 0;" />';
+        echo '<h2>Cache Management</h2>';
+        
+        if ( isset( $_POST['yatco_warm_cache'] ) && check_admin_referer( 'yatco_warm_cache', 'yatco_warm_cache_nonce' ) ) {
+            if ( empty( $token ) ) {
+                echo '<div class="notice notice-error"><p>Missing token. Please configure your API token first.</p></div>';
+            } else {
             delete_transient( 'yatco_cache_warming_progress' );
             delete_transient( 'yatco_cache_warming_status' );
             
@@ -882,22 +917,27 @@ function yatco_options_page() {
             echo '<p>The system processes vessels in batches of 20 to prevent timeouts. Progress is saved automatically, so if interrupted, it will resume from where it left off.</p>';
             echo '<p><em>Note: If progress doesn\'t appear within 30 seconds, try clicking "Import All Vessels to CPT" again or check if WP-Cron is enabled on your server.</em></p></div>';
         }
+            }
+        }
+        
+        echo '<form method="post" style="margin-top: 10px;">';
+        wp_nonce_field( 'yatco_clear_cache', 'yatco_clear_cache_nonce' );
+        submit_button( 'Clear Transient Cache Only', 'secondary', 'yatco_clear_cache' );
+        echo '<p style="font-size: 12px; color: #666; margin: 5px 0;">This clears only transient caches. CPT posts remain unchanged.</p>';
+        echo '</form>';
+        
+        if ( isset( $_POST['yatco_clear_cache'] ) && check_admin_referer( 'yatco_clear_cache', 'yatco_clear_cache_nonce' ) ) {
+            delete_transient( 'yatco_cache_warming_progress' );
+            delete_transient( 'yatco_cache_warming_status' );
+            echo '<div class="notice notice-success"><p><strong>Cache cleared!</strong> Transient caches have been cleared. CPT posts remain unchanged.</p></div>';
+        }
+        echo '</div>';
     }
     
-    echo '<form method="post" style="margin-top: 10px;">';
-    wp_nonce_field( 'yatco_clear_cache', 'yatco_clear_cache_nonce' );
-    submit_button( 'Clear Transient Cache Only', 'secondary', 'yatco_clear_cache' );
-    echo '<p style="font-size: 12px; color: #666; margin: 5px 0;">This clears only transient caches. CPT posts remain unchanged.</p>';
-    echo '</form>';
-    
-    if ( isset( $_POST['yatco_clear_cache'] ) && check_admin_referer( 'yatco_clear_cache', 'yatco_clear_cache_nonce' ) ) {
-        delete_transient( 'yatco_cache_warming_progress' );
-        delete_transient( 'yatco_cache_warming_status' );
-        echo '<div class="notice notice-success"><p><strong>Cache cleared!</strong> Transient caches have been cleared. CPT posts remain unchanged.</p></div>';
-    }
-    
-    echo '<hr />';
-    echo '<h2>🔧 Troubleshooting & Diagnostics</h2>';
+    // Status Tab
+    if ( $current_tab === 'status' ) {
+        echo '<div class="yatco-status-section">';
+        echo '<h2>Cache Status & Progress</h2>';
     echo '<div style="background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; padding: 20px; margin: 20px 0;">';
     
     $cron_disabled = defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON;
@@ -1147,11 +1187,65 @@ function yatco_options_page() {
     echo '<p><strong>Option 3: Using wp-cli (if available)</strong></p>';
     echo '<pre style="background: #f5f5f5; padding: 10px; border: 1px solid #ddd; overflow-x: auto;">*/15 * * * * cd ' . esc_html( ABSPATH ) . ' && wp cron event run --due-now</pre>';
     echo '<p style="font-size: 12px; color: #666; margin-top: 10px;">Note: Replace <code>*/15</code> with your desired frequency (e.g., <code>*/5</code> for every 5 minutes). Add this to your server\'s crontab using <code>crontab -e</code>.</p>';
-    echo '</div>';
+        echo '</div>';
+    }
     
-    echo '</div>';
+    echo '</div>'; // End tab content
+    echo '</div>'; // End wrap
     
-    echo '</div>';
+    // Add some basic CSS for tabs
+    echo '<style>
+    .yatco-tab-content {
+        background: #fff;
+        padding: 20px;
+        border: 1px solid #ccd0d4;
+        border-top: none;
+    }
+    .yatco-settings-section,
+    .yatco-import-section,
+    .yatco-testing-section,
+    .yatco-status-section,
+    .yatco-troubleshooting-section {
+        max-width: 1200px;
+    }
+    .yatco-settings-section h2,
+    .yatco-import-section h2,
+    .yatco-testing-section h2,
+    .yatco-status-section h2,
+    .yatco-troubleshooting-section h2 {
+        margin-top: 0;
+        padding-top: 0;
+    }
+    </style>';
+}
+    
+    echo '</div>'; // End tab content
+    echo '</div>'; // End wrap
+    
+    // Add some basic CSS for tabs
+    echo '<style>
+    .yatco-tab-content {
+        background: #fff;
+        padding: 20px;
+        border: 1px solid #ccd0d4;
+        border-top: none;
+    }
+    .yatco-settings-section,
+    .yatco-import-section,
+    .yatco-testing-section,
+    .yatco-status-section,
+    .yatco-troubleshooting-section {
+        max-width: 1200px;
+    }
+    .yatco-settings-section h2,
+    .yatco-import-section h2,
+    .yatco-testing-section h2,
+    .yatco-status-section h2,
+    .yatco-troubleshooting-section h2 {
+        margin-top: 0;
+        padding-top: 0;
+    }
+    </style>';
 }
 
 /**
