@@ -62,6 +62,11 @@ add_action( 'yatco_stage3_import_hook', function() {
 // AJAX handler for import status
 add_action( 'wp_ajax_yatco_get_import_status', 'yatco_ajax_get_import_status' );
 function yatco_ajax_get_import_status() {
+    if ( ! current_user_can( 'manage_options' ) ) {
+        wp_send_json_error( array( 'message' => 'Unauthorized' ) );
+        return;
+    }
+    
     // Get all progress data
     $stage1_progress = get_transient( 'yatco_stage1_progress' );
     $stage2_progress = get_transient( 'yatco_stage2_progress' );

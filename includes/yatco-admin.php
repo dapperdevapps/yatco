@@ -171,13 +171,33 @@ function yatco_options_page() {
     echo '</form>';
 
         if ( isset( $_POST['yatco_stage1_import'] ) && check_admin_referer( 'yatco_stage1_import', 'yatco_stage1_import_nonce' ) ) {
-        if ( empty( $token ) ) {
+            if ( empty( $token ) ) {
                 echo '<div class="notice notice-error"><p>Missing token. Please configure your API token first.</p></div>';
-        } else {
-                // Schedule or run Stage 1
+            } else {
+                // Clear any existing progress
+                delete_transient( 'yatco_stage1_progress' );
+                delete_transient( 'yatco_cache_warming_stop' );
+                
+                // Schedule and trigger immediately
                 wp_schedule_single_event( time(), 'yatco_stage1_import_hook' );
+                
+                // Force WP-Cron to run immediately
                 spawn_cron();
-                echo '<div class="notice notice-info"><p><strong>Stage 1 started!</strong> This will run in the background. Check status below.</p></div>';
+                
+                // Also trigger directly in background (non-blocking)
+                wp_remote_post( 
+                    admin_url( 'admin-ajax.php' ),
+                    array(
+                        'blocking'  => false,
+                        'timeout'   => 0.01,
+                        'sslverify' => false,
+                        'body'      => array(
+                            'action' => 'yatco_trigger_stage1_direct'
+                        )
+                    )
+                );
+                
+                echo '<div class="notice notice-info"><p><strong>Stage 1 started!</strong> This will run in the background. Check the Status tab below for progress.</p></div>';
             }
         }
     echo '</div>';
@@ -333,7 +353,7 @@ function yatco_options_page() {
             function updateStatus() {
                 if (document.getElementById("yatco-import-status")) {
                     var xhr = new XMLHttpRequest();
-                    xhr.open("GET", "' . admin_url( 'admin-ajax.php' ) . '?action=yatco_get_import_status", true);
+                    xhr.open("GET", "' . admin_url( 'admin-ajax.php' ) . '?action=yatco_get_import_status&_ajax_nonce=' . wp_create_nonce( 'yatco_get_import_status_nonce' ) . '", true);
                     xhr.onload = function() {
                         if (xhr.status === 200) {
                             try {
@@ -649,7 +669,7 @@ function yatco_options_page() {
                                     echo '<td><code>' . esc_html( $field ) . '</code></td>';
                                     if ( is_array( $value ) ) {
                                         echo '<td><pre style="margin: 0; font-size: 11px;">' . esc_html( wp_json_encode( $value, JSON_PRETTY_PRINT ) ) . '</pre></td>';
-                                    } else {
+    } else {
                                         echo '<td>' . esc_html( is_bool( $value ) ? ( $value ? 'true' : 'false' ) : $value ) . '</td>';
                                     }
                                     echo '</tr>';
@@ -663,7 +683,7 @@ function yatco_options_page() {
                                     foreach ( $search_terms as $term ) {
                                         if ( stripos( $field, $term ) !== false ) {
                                             $reduction_count++;
-                                            break;
+                        break;
                                         }
                                     }
                                 }
@@ -672,16 +692,16 @@ function yatco_options_page() {
                                     echo '<div style="background: #d4edda; border-left: 4px solid #46b450; padding: 12px; margin-top: 15px;">';
                                     echo '<p style="margin: 0; font-weight: bold; color: #155724;">🎉 Found ' . $reduction_count . ' potential price reduction field(s)!</p>';
                                     echo '<p style="margin: 5px 0 0 0;">These fields (highlighted in yellow above) may contain price reduction information.</p>';
-                                    echo '</div>';
-                                } else {
+        echo '</div>';
+        } else {
                                     echo '<div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; margin-top: 15px;">';
                                     echo '<p style="margin: 0;"><strong>Note:</strong> No obvious price reduction fields found, but all price-related fields are listed above.</p>';
-                                    echo '</div>';
+            echo '</div>';
                                 }
-                            } else {
+    } else {
                                 echo '<p style="color: #dc3232;">❌ No price-related fields found in API response.</p>';
                             }
-                            echo '</div>';
+                echo '</div>';
                     
                     echo '<h3 style="margin-top: 30px;">Raw API Response Data Structure</h3>';
                             echo '<p style="color: #666; font-size: 13px;">Below is the complete JSON response from the YATCO API for reference. You can search for "reduction", "original", "previous", or "price" to find relevant fields:</p>';
@@ -690,9 +710,9 @@ function yatco_options_page() {
                     echo '<pre style="margin: 0; white-space: pre-wrap; word-wrap: break-word;">';
                     echo esc_html( wp_json_encode( $fullspecs, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) );
                     echo '</pre>';
-                    echo '</div>';
+            echo '</div>';
                 }
-                echo '</div>';
+            echo '</div>';
                     }
                 }
             }
