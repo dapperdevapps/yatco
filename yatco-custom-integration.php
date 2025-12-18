@@ -41,9 +41,13 @@ add_action( 'yatco_warm_cache_hook', 'yatco_warm_cache_function' );
 
 // Register staged import hooks
 add_action( 'yatco_stage1_import_hook', function() {
+    yatco_log( 'Stage 1: Hook triggered via WP-Cron', 'info' );
     $token = yatco_get_token();
     if ( ! empty( $token ) ) {
+        yatco_log( 'Stage 1: Token found, calling import function', 'info' );
         yatco_stage1_import_ids_and_names( $token );
+    } else {
+        yatco_log( 'Stage 1: Hook triggered but no token found', 'error' );
     }
 } );
 add_action( 'yatco_stage2_import_hook', function() {
@@ -65,20 +69,27 @@ function yatco_ajax_run_stage1_direct() {
     check_ajax_referer( 'yatco_run_stage1', 'nonce' );
     
     if ( ! current_user_can( 'manage_options' ) ) {
+        yatco_log( 'Stage 1 Direct: Unauthorized access attempt', 'error' );
         wp_send_json_error( array( 'message' => 'Unauthorized' ) );
         return;
     }
     
+    yatco_log( 'Stage 1 Direct: AJAX handler called', 'info' );
+    
     // Increase execution time
     @set_time_limit( 300 );
     @ini_set( 'max_execution_time', 300 );
+    yatco_log( 'Stage 1 Direct: Execution time limit set to 300 seconds', 'info' );
     
     $token = yatco_get_token();
     if ( ! empty( $token ) ) {
+        yatco_log( 'Stage 1 Direct: Token found, starting import', 'info' );
         // Run Stage 1
         yatco_stage1_import_ids_and_names( $token );
+        yatco_log( 'Stage 1 Direct: Import function completed', 'info' );
         wp_send_json_success( array( 'message' => 'Stage 1 completed' ) );
     } else {
+        yatco_log( 'Stage 1 Direct: No API token found', 'error' );
         wp_send_json_error( array( 'message' => 'No API token' ) );
     }
 }

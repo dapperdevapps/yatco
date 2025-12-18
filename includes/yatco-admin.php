@@ -178,8 +178,11 @@ function yatco_options_page() {
 
         if ( isset( $_POST['yatco_stage1_import'] ) && check_admin_referer( 'yatco_stage1_import', 'yatco_stage1_import_nonce' ) ) {
             if ( empty( $token ) ) {
+                yatco_log( 'Stage 1: Import attempt failed - missing token', 'error' );
                 echo '<div class="notice notice-error"><p>Missing token. Please configure your API token first.</p></div>';
             } else {
+                yatco_log( 'Stage 1: Import triggered via WP-Cron button', 'info' );
+                
                 // Clear any existing progress
                 delete_transient( 'yatco_stage1_progress' );
                 delete_transient( 'yatco_cache_warming_stop' );
@@ -195,13 +198,16 @@ function yatco_options_page() {
                 ), 3600 );
                 
                 // Schedule and trigger immediately
-                wp_schedule_single_event( time(), 'yatco_stage1_import_hook' );
+                $scheduled = wp_schedule_single_event( time(), 'yatco_stage1_import_hook' );
+                yatco_log( 'Stage 1: Scheduled WP-Cron event. Result: ' . ( $scheduled === false ? 'Failed' : 'Success' ), 'info' );
                 
                 // Force WP-Cron to run immediately
+                yatco_log( 'Stage 1: Calling spawn_cron()', 'info' );
                 spawn_cron();
                 
                 // Also trigger wp-cron.php directly (non-blocking)
-                wp_remote_post( 
+                yatco_log( 'Stage 1: Triggering wp-cron.php directly', 'info' );
+                $cron_response = wp_remote_post( 
                     site_url( 'wp-cron.php?doing_wp_cron' ),
                     array(
                         'blocking'  => false,
@@ -209,8 +215,55 @@ function yatco_options_page() {
                         'sslverify' => false,
                     )
                 );
+                if ( is_wp_error( $cron_response ) ) {
+                    yatco_log( 'Stage 1: wp-cron.php request failed: ' . $cron_response->get_error_message(), 'error' );
+                } else {
+                    yatco_log( 'Stage 1: wp-cron.php request sent (non-blocking)', 'info' );
+                }
                 
                 echo '<div class="notice notice-info"><p><strong>Stage 1 started!</strong> This will run in the background. Check the Status tab to see progress.</p></div>';
+            }
+        }
+        
+        // Direct run handler
+        if ( isset( $_POST['yatco_stage1_direct'] ) && check_admin_referer( 'yatco_stage1_direct', 'yatco_stage1_direct_nonce' ) ) {
+            if ( empty( $token ) ) {
+                yatco_log( 'Stage 1 Direct: Import attempt failed - missing token', 'error' );
+                echo '<div class="notice notice-error"><p>Missing token. Please configure your API token first.</p></div>';
+            } else {
+                yatco_log( 'Stage 1 Direct: Import triggered via Direct button', 'info' );
+                
+                // Clear any existing progress
+                delete_transient( 'yatco_stage1_progress' );
+                delete_transient( 'yatco_cache_warming_stop' );
+                
+                // Initialize progress immediately
+                set_transient( 'yatco_cache_warming_status', 'Stage 1: Starting direct import...', 600 );
+                set_transient( 'yatco_stage1_progress', array(
+                    'last_processed' => 0,
+                    'total' => 0,
+                    'timestamp' => time(),
+                    'percent' => 0,
+                    'stage' => 1,
+                ), 3600 );
+                
+                echo '<div class="notice notice-info"><p><strong>Stage 1 running directly...</strong> This will run synchronously and may take several minutes. <strong>Do not close this page.</strong> Check the Status tab for progress.</p></div>';
+                
+                // Flush output so user sees the message
+                if ( ob_get_level() > 0 ) {
+                    ob_flush();
+                }
+                flush();
+                
+                // Run directly
+                @set_time_limit( 600 );
+                @ini_set( 'max_execution_time', 600 );
+                yatco_log( 'Stage 1 Direct: Execution time limit set to 600 seconds', 'info' );
+                yatco_log( 'Stage 1 Direct: Calling yatco_stage1_import_ids_and_names()', 'info' );
+                yatco_stage1_import_ids_and_names( $token );
+                yatco_log( 'Stage 1 Direct: Import function completed', 'info' );
+                
+                echo '<div class="notice notice-success"><p><strong>Stage 1 completed!</strong> Check the Status tab for details.</p></div>';
             }
         }
     echo '</div>';
@@ -492,16 +545,20 @@ function yatco_options_page() {
         echo '    function updateImportStatus() {';
         echo '        $.ajax({';
         echo '            url: ajaxurl,';
+        echo '            type: "POST",';
         echo '            data: {';
         echo '                action: "yatco_get_import_status",';
         echo '                _ajax_nonce: "' . wp_create_nonce( 'yatco_get_import_status_nonce' ) . '"';
         echo '            },';
         echo '            success: function(response) {';
-        echo '                if (response.success) {';
+        echo '                if (response && response.success && response.data && response.data.html) {';
         echo '                    $("#yatco-import-status-display").html(response.data.html);';
-        echo '                } else {';
-        echo '                    $("#yatco-import-status-display").html("<p>Error fetching status: " + response.data + "</p>");';
+        echo '                } else if (response && response.data) {';
+        echo '                    $("#yatco-import-status-display").html("<p>Error: " + (response.data.message || response.data) + "</p>");';
         echo '                }';
+        echo '            },';
+        echo '            error: function(xhr, status, error) {';
+        echo '                console.error("AJAX error:", error);';
         echo '            }';
         echo '        });';
         echo '    }';

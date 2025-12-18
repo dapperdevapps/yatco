@@ -14,30 +14,67 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
+ * Logging function for import debugging.
+ */
+function yatco_log( $message, $level = 'info' ) {
+    $log_entry = array(
+        'timestamp' => current_time( 'mysql' ),
+        'level' => $level,
+        'message' => $message,
+    );
+    
+    // Get existing logs
+    $logs = get_option( 'yatco_import_logs', array() );
+    
+    // Add new log entry
+    $logs[] = $log_entry;
+    
+    // Keep only last 100 log entries to prevent database bloat
+    if ( count( $logs ) > 100 ) {
+        $logs = array_slice( $logs, -100 );
+    }
+    
+    // Save logs
+    update_option( 'yatco_import_logs', $logs, false );
+    
+    // Also log to PHP error log if WP_DEBUG is enabled
+    if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+        error_log( '[YATCO Import] [' . strtoupper( $level ) . '] ' . $message );
+    }
+}
+
+/**
  * Stage 1: Fetch all active vessel IDs and names only (lightweight).
  * Creates minimal CPT posts with just ID and name.
  */
 function yatco_stage1_import_ids_and_names( $token ) {
+    yatco_log( 'Stage 1: Function started', 'info' );
+    
     // Check stop flag
     $stop_flag = get_transient( 'yatco_cache_warming_stop' );
     if ( $stop_flag !== false ) {
+        yatco_log( 'Stage 1: Stop flag detected, cancelling', 'warning' );
         delete_transient( 'yatco_cache_warming_stop' );
         delete_transient( 'yatco_stage1_progress' );
         set_transient( 'yatco_cache_warming_status', 'Stage 1 cancelled.', 60 );
         return;
     }
     
+    yatco_log( 'Stage 1: Setting status to "Fetching vessel IDs..."', 'info' );
     set_transient( 'yatco_cache_warming_status', 'Stage 1: Fetching vessel IDs and names...', 600 );
     
     // Fetch all active vessel IDs
+    yatco_log( 'Stage 1: Calling yatco_get_active_vessel_ids()', 'info' );
     $vessel_ids = yatco_get_active_vessel_ids( $token, 0 );
     
     if ( is_wp_error( $vessel_ids ) ) {
+        yatco_log( 'Stage 1: Error getting vessel IDs: ' . $vessel_ids->get_error_message(), 'error' );
         set_transient( 'yatco_cache_warming_status', 'Stage 1 Error: ' . $vessel_ids->get_error_message(), 60 );
         return;
     }
     
     $total = count( $vessel_ids );
+    yatco_log( "Stage 1: Found {$total} vessel IDs", 'info' );
     set_transient( 'yatco_cache_warming_status', "Stage 1: Processing {$total} vessel IDs...", 600 );
     
     // Get progress
@@ -49,6 +86,9 @@ function yatco_stage1_import_ids_and_names( $token ) {
         $start_from = isset( $progress['last_processed'] ) ? intval( $progress['last_processed'] ) : 0;
         $processed_ids = isset( $progress['processed_ids'] ) ? $progress['processed_ids'] : array();
         $vessel_ids = array_slice( $vessel_ids, $start_from );
+        yatco_log( "Stage 1: Resuming from position {$start_from}", 'info' );
+    } else {
+        yatco_log( 'Stage 1: Starting fresh import', 'info' );
     }
     
     $processed = 0;
@@ -56,10 +96,17 @@ function yatco_stage1_import_ids_and_names( $token ) {
     $delay_seconds = 3; // Increased to 3 seconds between batches for safety
     $delay_between_items = 0.1; // 100ms delay between individual items
     
+    yatco_log( "Stage 1: Batch size: {$batch_size}, Delay between batches: {$delay_seconds}s, Delay between items: {$delay_between_items}s", 'info' );
+    
+    $batch_num = 0;
     foreach ( array_chunk( $vessel_ids, $batch_size ) as $batch ) {
+        $batch_num++;
+        yatco_log( "Stage 1: Processing batch {$batch_num} with " . count( $batch ) . " vessels", 'info' );
+        
         // Check stop flag
         $stop_flag = get_transient( 'yatco_cache_warming_stop' );
         if ( $stop_flag !== false ) {
+            yatco_log( 'Stage 1: Stop flag detected in batch, cancelling', 'warning' );
             delete_transient( 'yatco_cache_warming_stop' );
             set_transient( 'yatco_cache_warming_status', 'Stage 1 stopped by user.', 60 );
             return;
@@ -81,6 +128,7 @@ function yatco_stage1_import_ids_and_names( $token ) {
             
             // Fetch lightweight data (just Result section for name)
             $endpoint = 'https://api.yatcoboss.com/api/v1/ForSale/Vessel/' . intval( $vessel_id ) . '/Details/FullSpecsAll';
+            yatco_log( "Stage 1: Fetching vessel {$vessel_id} from API", 'debug' );
             $response = wp_remote_get(
                 $endpoint,
                 array(
@@ -92,12 +140,20 @@ function yatco_stage1_import_ids_and_names( $token ) {
                 )
             );
             
-            if ( is_wp_error( $response ) || wp_remote_retrieve_response_code( $response ) !== 200 ) {
+            if ( is_wp_error( $response ) ) {
+                yatco_log( "Stage 1: WP_Error for vessel {$vessel_id}: " . $response->get_error_message(), 'error' );
+                continue; // Skip on error
+            }
+            
+            $response_code = wp_remote_retrieve_response_code( $response );
+            if ( $response_code !== 200 ) {
+                yatco_log( "Stage 1: HTTP {$response_code} for vessel {$vessel_id}", 'error' );
                 continue; // Skip on error
             }
             
             $data = json_decode( wp_remote_retrieve_body( $response ), true );
             if ( empty( $data ) || ! isset( $data['Result'] ) ) {
+                yatco_log( "Stage 1: No data or missing Result for vessel {$vessel_id}", 'warning' );
                 continue; // Skip if no data
             }
             
@@ -117,6 +173,9 @@ function yatco_stage1_import_ids_and_names( $token ) {
                 
                 $processed_ids[] = $vessel_id;
                 $processed++;
+                yatco_log( "Stage 1: Processed vessel {$vessel_id} (Post ID: {$post_id})", 'debug' );
+            } else {
+                yatco_log( "Stage 1: Failed to create/find post for vessel {$vessel_id}", 'error' );
             }
         }
         
@@ -131,21 +190,25 @@ function yatco_stage1_import_ids_and_names( $token ) {
             'percent'       => $percent,
             'stage'         => 1,
         );
+        yatco_log( "Stage 1: Saving progress - {$current_total}/{$total} ({$percent}%)", 'info' );
         set_transient( 'yatco_stage1_progress', $progress_data, 3600 );
         set_transient( 'yatco_cache_warming_status', "Stage 1: Processed {$current_total} of {$total} vessels ({$percent}%)...", 600 );
         
         // Delay between batches
         if ( $processed < $total ) {
+            yatco_log( "Stage 1: Waiting {$delay_seconds} seconds before next batch", 'debug' );
             sleep( $delay_seconds );
         }
     }
     
     // Store all vessel IDs for later stages
     update_option( 'yatco_stage1_vessel_ids', $processed_ids, false );
+    yatco_log( "Stage 1: Stored " . count( $processed_ids ) . " vessel IDs for later stages", 'info' );
     
     // Clear progress
     delete_transient( 'yatco_stage1_progress' );
     set_transient( 'yatco_cache_warming_status', "Stage 1 Complete: Processed {$processed} vessels. Ready for Stage 2.", 300 );
+    yatco_log( "Stage 1: Complete! Processed {$processed} vessels total", 'info' );
 }
 
 /**
