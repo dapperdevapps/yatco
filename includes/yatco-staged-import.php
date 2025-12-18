@@ -161,7 +161,7 @@ function yatco_stage1_import_ids_and_names( $token ) {
             $name = isset( $result['VesselName'] ) ? $result['VesselName'] : 'Vessel ' . $vessel_id;
             $mlsid = isset( $result['MLSID'] ) ? $result['MLSID'] : $vessel_id;
             
-            // Find or create post
+            // Find or create post - use vessel name exactly as provided by API
             $post_id = yatco_find_or_create_vessel_post( $vessel_id, $mlsid, $name );
             
             if ( $post_id ) {
