@@ -302,6 +302,7 @@ function yatco_options_page() {
         
         // Get all progress data
         $import_progress = get_transient( 'yatco_import_progress' );
+        $daily_sync_progress = get_transient( 'yatco_daily_sync_progress' );
         $cache_status = get_transient( 'yatco_cache_warming_status' );
         
         // Determine if import is active
@@ -310,16 +311,28 @@ function yatco_options_page() {
         if ( $import_progress !== false && is_array( $import_progress ) ) {
             $active_stage = 'full';
             $active_progress = $import_progress;
+        } elseif ( $daily_sync_progress !== false && is_array( $daily_sync_progress ) ) {
+            $active_stage = 'daily_sync';
+            $active_progress = $daily_sync_progress;
         }
         
         // Display status bar
         echo '<div id="yatco-import-status" style="background: #fff; border: 2px solid #2271b1; border-radius: 4px; padding: 20px; margin: 20px 0;">';
         
-        if ( $active_stage > 0 || $active_stage === 'full' ) {
-            $current = isset( $active_progress['last_processed'] ) ? intval( $active_progress['last_processed'] ) : 0;
-            $total = isset( $active_progress['total'] ) ? intval( $active_progress['total'] ) : 0;
-            $percent = isset( $active_progress['percent'] ) ? floatval( $active_progress['percent'] ) : ( $total > 0 ? round( ( $current / $total ) * 100, 1 ) : 0 );
-            $stage_name = 'Full Import';
+        if ( $active_stage > 0 || $active_stage === 'full' || $active_stage === 'daily_sync' ) {
+            if ( $active_stage === 'daily_sync' ) {
+                // Daily sync progress display
+                $current = isset( $active_progress['processed'] ) ? intval( $active_progress['processed'] ) : 0;
+                $total = isset( $active_progress['total'] ) ? intval( $active_progress['total'] ) : 0;
+                $percent = $total > 0 ? round( ( $current / $total ) * 100, 1 ) : 0;
+                $stage_name = 'Daily Sync';
+            } else {
+                // Full import progress display
+                $current = isset( $active_progress['last_processed'] ) ? intval( $active_progress['last_processed'] ) : 0;
+                $total = isset( $active_progress['total'] ) ? intval( $active_progress['total'] ) : 0;
+                $percent = isset( $active_progress['percent'] ) ? floatval( $active_progress['percent'] ) : ( $total > 0 ? round( ( $current / $total ) * 100, 1 ) : 0 );
+                $stage_name = 'Full Import';
+            }
             
             echo '<h3 style="margin-top: 0; color: #2271b1;">📊 ' . esc_html( $stage_name ) . ' Progress</h3>';
             
@@ -425,11 +438,20 @@ function yatco_options_page() {
         // Display status bar
         echo '<div id="yatco-import-status-display" style="background: #fff; border: 2px solid #2271b1; border-radius: 4px; padding: 20px; margin: 20px 0;">';
         
-        if ( $active_stage > 0 || $active_stage === 'full' ) {
-            $current = isset( $active_progress['last_processed'] ) ? intval( $active_progress['last_processed'] ) : 0;
-            $total = isset( $active_progress['total'] ) ? intval( $active_progress['total'] ) : 0;
-            $percent = isset( $active_progress['percent'] ) ? floatval( $active_progress['percent'] ) : ( $total > 0 ? round( ( $current / $total ) * 100, 1 ) : 0 );
-            $stage_name = 'Full Import';
+        if ( $active_stage > 0 || $active_stage === 'full' || $active_stage === 'daily_sync' ) {
+            if ( $active_stage === 'daily_sync' ) {
+                // Daily sync progress display
+                $current = isset( $active_progress['processed'] ) ? intval( $active_progress['processed'] ) : 0;
+                $total = isset( $active_progress['total'] ) ? intval( $active_progress['total'] ) : 0;
+                $percent = $total > 0 ? round( ( $current / $total ) * 100, 1 ) : 0;
+                $stage_name = 'Daily Sync';
+            } else {
+                // Full import progress display
+                $current = isset( $active_progress['last_processed'] ) ? intval( $active_progress['last_processed'] ) : 0;
+                $total = isset( $active_progress['total'] ) ? intval( $active_progress['total'] ) : 0;
+                $percent = isset( $active_progress['percent'] ) ? floatval( $active_progress['percent'] ) : ( $total > 0 ? round( ( $current / $total ) * 100, 1 ) : 0 );
+                $stage_name = 'Full Import';
+            }
             
             echo '<h3 style="margin-top: 0; color: #2271b1;">📊 ' . esc_html( $stage_name ) . ' Progress</h3>';
             
@@ -447,6 +469,20 @@ function yatco_options_page() {
             echo '<span><strong>Processed:</strong> ' . number_format( $current ) . ' / ' . number_format( $total ) . '</span>';
             echo '<span><strong>Remaining:</strong> ' . number_format( $total - $current ) . '</span>';
             echo '</div>';
+            
+            // Show daily sync details
+            if ( $active_stage === 'daily_sync' ) {
+                $removed = isset( $active_progress['removed'] ) ? intval( $active_progress['removed'] ) : 0;
+                $new = isset( $active_progress['new'] ) ? intval( $active_progress['new'] ) : 0;
+                $price_updates = isset( $active_progress['price_updates'] ) ? intval( $active_progress['price_updates'] ) : 0;
+                $days_updates = isset( $active_progress['days_on_market_updates'] ) ? intval( $active_progress['days_on_market_updates'] ) : 0;
+                echo '<div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e0e0e0; font-size: 13px; color: #666;">';
+                echo '<p style="margin: 5px 0;"><strong>Removed:</strong> ' . number_format( $removed ) . '</p>';
+                echo '<p style="margin: 5px 0;"><strong>New:</strong> ' . number_format( $new ) . '</p>';
+                echo '<p style="margin: 5px 0;"><strong>Price Updates:</strong> ' . number_format( $price_updates ) . '</p>';
+                echo '<p style="margin: 5px 0;"><strong>Days on Market Updates:</strong> ' . number_format( $days_updates ) . '</p>';
+                echo '</div>';
+            }
             
             // Estimated time remaining
             if ( isset( $active_progress['timestamp'] ) && $current > 0 ) {
@@ -475,7 +511,7 @@ function yatco_options_page() {
             echo '<p><strong>Status:</strong> ' . esc_html( $cache_status ) . '</p>';
             echo '</div>';
         } else {
-            echo '<p style="margin: 0; color: #666;">No active import. Start a full import in the Import tab to see progress.</p>';
+            echo '<p style="margin: 0; color: #666;">No active import. Start a full import or daily sync in the Import tab to see progress.</p>';
         }
         
         echo '</div>';

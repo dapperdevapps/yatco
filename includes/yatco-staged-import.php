@@ -712,11 +712,23 @@ function yatco_daily_sync_check( $token ) {
     yatco_log( 'Daily Sync: Starting', 'info' );
     set_transient( 'yatco_cache_warming_status', 'Daily Sync: Checking for changes...', 600 );
     
+    // Initialize progress tracking
+    $sync_progress = array(
+        'stage' => 'daily_sync',
+        'step' => 'fetching_ids',
+        'processed' => 0,
+        'total' => 0,
+        'timestamp' => time(),
+    );
+    set_transient( 'yatco_daily_sync_progress', $sync_progress, 3600 );
+    
     // Get current active vessel IDs from API
+    set_transient( 'yatco_cache_warming_status', 'Daily Sync: Fetching active vessel IDs...', 600 );
     $current_ids = yatco_get_active_vessel_ids( $token, 0 );
     
     if ( is_wp_error( $current_ids ) ) {
         set_transient( 'yatco_cache_warming_status', 'Daily Sync Error: ' . $current_ids->get_error_message(), 60 );
+        delete_transient( 'yatco_daily_sync_progress' );
         yatco_log( 'Daily Sync Error: ' . $current_ids->get_error_message(), 'error' );
         return;
     }
@@ -736,8 +748,15 @@ function yatco_daily_sync_check( $token ) {
     // Update stored IDs
     update_option( 'yatco_vessel_ids', $current_ids, false );
     
+    $total_steps = count( $removed_ids ) + count( $new_ids ) + count( $existing_ids );
+    $sync_progress['total'] = $total_steps;
+    $sync_progress['step'] = 'processing';
+    set_transient( 'yatco_daily_sync_progress', $sync_progress, 3600 );
+    set_transient( 'yatco_cache_warming_status', "Daily Sync: Processing {$total_steps} vessels...", 600 );
+    
     // Mark removed vessels as draft
     $removed_count = 0;
+    $processed = 0;
     foreach ( $removed_ids as $vessel_id ) {
         $post_id = yatco_find_vessel_post_by_id( $vessel_id );
         if ( $post_id ) {
@@ -749,17 +768,28 @@ function yatco_daily_sync_check( $token ) {
             update_post_meta( $post_id, 'yacht_removed_date', time() );
             $removed_count++;
         }
+        $processed++;
+        $sync_progress['processed'] = $processed;
+        $sync_progress['removed'] = $removed_count;
+        set_transient( 'yatco_daily_sync_progress', $sync_progress, 3600 );
+        set_transient( 'yatco_cache_warming_status', "Daily Sync: Processing removed vessels ({$processed}/{$total_steps})...", 600 );
     }
     
     // Import new vessels
     $new_count = 0;
     if ( ! empty( $new_ids ) ) {
         yatco_log( "Daily Sync: Found " . count( $new_ids ) . " new vessels to import", 'info' );
+        set_transient( 'yatco_cache_warming_status', "Daily Sync: Importing " . count( $new_ids ) . " new vessels...", 600 );
         foreach ( $new_ids as $vessel_id ) {
             $import_result = yatco_import_single_vessel( $token, $vessel_id );
             if ( ! is_wp_error( $import_result ) ) {
                 $new_count++;
             }
+            $processed++;
+            $sync_progress['processed'] = $processed;
+            $sync_progress['new'] = $new_count;
+            set_transient( 'yatco_daily_sync_progress', $sync_progress, 3600 );
+            set_transient( 'yatco_cache_warming_status', "Daily Sync: Importing new vessels ({$processed}/{$total_steps})...", 600 );
             // Small delay between imports
             usleep( 500000 ); // 500ms
         }
@@ -774,6 +804,9 @@ function yatco_daily_sync_check( $token ) {
     if ( ! empty( $existing_ids ) ) {
         yatco_log( "Daily Sync: Checking prices and days on market for " . count( $existing_ids ) . " existing vessels", 'info' );
         set_transient( 'yatco_cache_warming_status', 'Daily Sync: Updating prices and days on market...', 600 );
+        
+        $existing_total = count( $existing_ids );
+        $existing_processed = 0;
         
         foreach ( array_chunk( $existing_ids, $batch_size ) as $batch ) {
             // Check stop flag
@@ -860,6 +893,15 @@ function yatco_daily_sync_check( $token ) {
                     }
                 }
                 
+                $existing_processed++;
+                $processed++;
+                $sync_progress['processed'] = $processed;
+                $sync_progress['price_updates'] = $price_updates;
+                $sync_progress['days_on_market_updates'] = $days_on_market_updates;
+                $percent = $total_steps > 0 ? round( ( $processed / $total_steps ) * 100, 1 ) : 0;
+                set_transient( 'yatco_daily_sync_progress', $sync_progress, 3600 );
+                set_transient( 'yatco_cache_warming_status', "Daily Sync: Checking existing vessels ({$existing_processed}/{$existing_total}) - {$percent}% complete...", 600 );
+                
                 // Small delay between items
                 usleep( 200000 ); // 200ms
             }
@@ -889,6 +931,9 @@ function yatco_daily_sync_check( $token ) {
         $price_updates,
         $days_on_market_updates
     );
+    
+    // Clear progress and set final status
+    delete_transient( 'yatco_daily_sync_progress' );
     set_transient( 'yatco_cache_warming_status', $status_message, 300 );
     yatco_log( $status_message, 'info' );
 }
