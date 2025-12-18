@@ -1063,17 +1063,6 @@ function yatco_options_page() {
         }
     }
     
-    if ( $is_running ) {
-        echo '<form method="post" style="margin-bottom: 15px;">';
-        wp_nonce_field( 'yatco_stop_import', 'yatco_stop_import_nonce' );
-        submit_button( '🛑 Stop Import', 'secondary', 'yatco_stop_import', false, array( 'style' => 'background: #dc3232; border-color: #dc3232; color: #fff;' ) );
-        echo '<p style="font-size: 12px; color: #666; margin: 5px 0;">This will cancel the scheduled import and clear all progress. Vessels already imported to CPT will remain.</p>';
-        echo '</form>';
-    }
-    
-        echo '</div>';
-    }
-    
     // Testing Tab
     if ( $current_tab === 'testing' ) {
         echo '<div class="yatco-testing-section">';
