@@ -147,66 +147,60 @@ function yatco_options_page() {
         echo '<p>Import all vessels into the Yacht Custom Post Type (CPT) for faster queries, better SEO, and individual vessel pages. This may take several minutes for 7000+ vessels.</p>';
         echo '<p><strong>Benefits of CPT import:</strong> Better performance with WP_Query, individual pages per vessel, improved SEO, easier management via WordPress admin.</p>';
         
-        // Staged Import Section
+        // Full Import Section
         echo '<hr style="margin: 30px 0;" />';
-        echo '<h2>Staged Import (Recommended for Large Imports)</h2>';
+        echo '<h2>Full Import</h2>';
         echo '<div style="background: #e8f5e9; border-left: 4px solid #4caf50; padding: 15px; margin: 20px 0;">';
-        echo '<p><strong>💡 Staged Import Process:</strong></p>';
-        echo '<ol style="margin-left: 20px;">';
-        echo '<li><strong>Stage 1:</strong> Fetch all active vessel IDs and names only (lightweight, fast)</li>';
-        echo '<li><strong>Stage 2:</strong> Fetch images for all vessels from Stage 1</li>';
-        echo '<li><strong>Stage 3:</strong> Fetch full data (descriptions, specs, etc.) for all vessels</li>';
-        echo '<li><strong>Daily Sync:</strong> Check for removed vessels and price changes (runs automatically or manually)</li>';
-        echo '</ol>';
-        echo '<p style="margin-top: 10px;"><strong>Benefits:</strong> Reduces server load, allows resuming at any stage, faster initial import.</p>';
+        echo '<p><strong>💡 Full Import Process:</strong></p>';
+        echo '<p>Imports all active vessels with complete data (names, images, descriptions, specs, etc.) in one process.</p>';
+        echo '<p style="margin-top: 10px;"><strong>Note:</strong> This may take a while depending on the number of vessels. Progress can be tracked in the Status tab. You can stop the import at any time using the stop button.</p>';
         echo '</div>';
         
-        // Stage 1 Button
+        // Full Import Button
         echo '<div style="background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 20px; margin: 20px 0;">';
-        echo '<h3>Stage 1: Import IDs & Names</h3>';
-        echo '<p>Fetches all active vessel IDs and names only. Creates minimal CPT posts. This is the fastest stage.</p>';
+        echo '<h3>Full Import: Import All Vessels</h3>';
+        echo '<p>Fetches all active vessels with complete data (names, images, descriptions, specs, etc.).</p>';
         echo '<div style="display: flex; gap: 10px; margin-top: 15px;">';
         echo '<form method="post" style="margin: 0;">';
-        wp_nonce_field( 'yatco_stage1_import', 'yatco_stage1_import_nonce' );
-        submit_button( 'Run Stage 1 (WP-Cron)', 'primary', 'yatco_stage1_import', false );
+        wp_nonce_field( 'yatco_full_import', 'yatco_full_import_nonce' );
+        submit_button( 'Run Full Import (WP-Cron)', 'primary', 'yatco_full_import', false );
         echo '</form>';
         echo '<form method="post" style="margin: 0;">';
-        wp_nonce_field( 'yatco_stage1_direct', 'yatco_stage1_direct_nonce' );
-        submit_button( 'Run Stage 1 Directly (If WP-Cron Not Working)', 'secondary', 'yatco_stage1_direct', false );
+        wp_nonce_field( 'yatco_full_import_direct', 'yatco_full_import_direct_nonce' );
+        submit_button( 'Run Full Import Directly (If WP-Cron Not Working)', 'secondary', 'yatco_full_import_direct', false );
         echo '</form>';
         echo '</div>';
 
-        if ( isset( $_POST['yatco_stage1_import'] ) && check_admin_referer( 'yatco_stage1_import', 'yatco_stage1_import_nonce' ) ) {
+        if ( isset( $_POST['yatco_full_import'] ) && check_admin_referer( 'yatco_full_import', 'yatco_full_import_nonce' ) ) {
             if ( empty( $token ) ) {
-                yatco_log( 'Stage 1: Import attempt failed - missing token', 'error' );
+                yatco_log( 'Full Import: Import attempt failed - missing token', 'error' );
                 echo '<div class="notice notice-error"><p>Missing token. Please configure your API token first.</p></div>';
             } else {
-                yatco_log( 'Stage 1: Import triggered via WP-Cron button', 'info' );
+                yatco_log( 'Full Import: Import triggered via WP-Cron button', 'info' );
                 
                 // Clear any existing progress
-                delete_transient( 'yatco_stage1_progress' );
+                delete_transient( 'yatco_import_progress' );
                 delete_transient( 'yatco_cache_warming_stop' );
                 
                 // Initialize progress immediately so status bar appears
-                set_transient( 'yatco_cache_warming_status', 'Stage 1: Starting import...', 600 );
-                set_transient( 'yatco_stage1_progress', array(
+                set_transient( 'yatco_cache_warming_status', 'Full Import: Starting import...', 600 );
+                set_transient( 'yatco_import_progress', array(
                     'last_processed' => 0,
                     'total' => 0,
                     'timestamp' => time(),
                     'percent' => 0,
-                    'stage' => 1,
                 ), 3600 );
                 
                 // Schedule and trigger immediately
-                $scheduled = wp_schedule_single_event( time(), 'yatco_stage1_import_hook' );
-                yatco_log( 'Stage 1: Scheduled WP-Cron event. Result: ' . ( $scheduled === false ? 'Failed' : 'Success' ), 'info' );
+                $scheduled = wp_schedule_single_event( time(), 'yatco_full_import_hook' );
+                yatco_log( 'Full Import: Scheduled WP-Cron event. Result: ' . ( $scheduled === false ? 'Failed' : 'Success' ), 'info' );
                 
                 // Force WP-Cron to run immediately
-                yatco_log( 'Stage 1: Calling spawn_cron()', 'info' );
+                yatco_log( 'Full Import: Calling spawn_cron()', 'info' );
                 spawn_cron();
                 
                 // Also trigger wp-cron.php directly (non-blocking)
-                yatco_log( 'Stage 1: Triggering wp-cron.php directly', 'info' );
+                yatco_log( 'Full Import: Triggering wp-cron.php directly', 'info' );
                 $cron_response = wp_remote_post( 
                     site_url( 'wp-cron.php?doing_wp_cron' ),
                     array(
@@ -216,38 +210,37 @@ function yatco_options_page() {
                     )
                 );
                 if ( is_wp_error( $cron_response ) ) {
-                    yatco_log( 'Stage 1: wp-cron.php request failed: ' . $cron_response->get_error_message(), 'error' );
+                    yatco_log( 'Full Import: wp-cron.php request failed: ' . $cron_response->get_error_message(), 'error' );
                 } else {
-                    yatco_log( 'Stage 1: wp-cron.php request sent (non-blocking)', 'info' );
+                    yatco_log( 'Full Import: wp-cron.php request sent (non-blocking)', 'info' );
                 }
                 
-                echo '<div class="notice notice-info"><p><strong>Stage 1 started!</strong> This will run in the background. Check the Status tab to see progress.</p></div>';
+                echo '<div class="notice notice-info"><p><strong>Full Import started!</strong> This will run in the background. Check the Status tab to see progress.</p></div>';
             }
         }
         
         // Direct run handler
-        if ( isset( $_POST['yatco_stage1_direct'] ) && check_admin_referer( 'yatco_stage1_direct', 'yatco_stage1_direct_nonce' ) ) {
+        if ( isset( $_POST['yatco_full_import_direct'] ) && check_admin_referer( 'yatco_full_import_direct', 'yatco_full_import_direct_nonce' ) ) {
             if ( empty( $token ) ) {
-                yatco_log( 'Stage 1 Direct: Import attempt failed - missing token', 'error' );
+                yatco_log( 'Full Import Direct: Import attempt failed - missing token', 'error' );
                 echo '<div class="notice notice-error"><p>Missing token. Please configure your API token first.</p></div>';
             } else {
-                yatco_log( 'Stage 1 Direct: Import triggered via Direct button', 'info' );
+                yatco_log( 'Full Import Direct: Import triggered via Direct button', 'info' );
                 
                 // Clear any existing progress
-                delete_transient( 'yatco_stage1_progress' );
+                delete_transient( 'yatco_import_progress' );
                 delete_transient( 'yatco_cache_warming_stop' );
                 
                 // Initialize progress immediately
-                set_transient( 'yatco_cache_warming_status', 'Stage 1: Starting direct import...', 600 );
-                set_transient( 'yatco_stage1_progress', array(
+                set_transient( 'yatco_cache_warming_status', 'Full Import: Starting direct import...', 600 );
+                set_transient( 'yatco_import_progress', array(
                     'last_processed' => 0,
                     'total' => 0,
                     'timestamp' => time(),
                     'percent' => 0,
-                    'stage' => 1,
                 ), 3600 );
                 
-                echo '<div class="notice notice-info"><p><strong>Stage 1 running directly...</strong> This will run synchronously and may take several minutes. <strong>Do not close this page.</strong> Check the Status tab for progress.</p></div>';
+                echo '<div class="notice notice-info"><p><strong>Full Import running directly...</strong> This will run synchronously and may take several minutes. <strong>Do not close this page.</strong> Check the Status tab for progress.</p></div>';
                 
                 // Flush output so user sees the message
                 if ( ob_get_level() > 0 ) {
@@ -258,62 +251,20 @@ function yatco_options_page() {
                 // Run directly
                 @set_time_limit( 600 );
                 @ini_set( 'max_execution_time', 600 );
-                yatco_log( 'Stage 1 Direct: Execution time limit set to 600 seconds', 'info' );
-                yatco_log( 'Stage 1 Direct: Calling yatco_stage1_import_ids_and_names()', 'info' );
-                yatco_stage1_import_ids_and_names( $token );
-                yatco_log( 'Stage 1 Direct: Import function completed', 'info' );
+                yatco_log( 'Full Import Direct: Execution time limit set to 600 seconds', 'info' );
+                yatco_log( 'Full Import Direct: Calling yatco_full_import()', 'info' );
+                yatco_full_import( $token );
+                yatco_log( 'Full Import Direct: Import function completed', 'info' );
                 
-                echo '<div class="notice notice-success"><p><strong>Stage 1 completed!</strong> Check the Status tab for details.</p></div>';
-            }
-        }
-    echo '</div>';
-        
-        // Stage 2 Button
-        echo '<div style="background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 20px; margin: 20px 0;">';
-        echo '<h3>Stage 2: Import Images</h3>';
-        echo '<p>Fetches images for all vessels from Stage 1. Requires Stage 1 to be completed first.</p>';
-        echo '<form method="post" style="margin-top: 15px;">';
-        wp_nonce_field( 'yatco_stage2_import', 'yatco_stage2_import_nonce' );
-        submit_button( 'Run Stage 2: Import Images', 'primary', 'yatco_stage2_import', false );
-    echo '</form>';
-
-        if ( isset( $_POST['yatco_stage2_import'] ) && check_admin_referer( 'yatco_stage2_import', 'yatco_stage2_import_nonce' ) ) {
-            if ( empty( $token ) ) {
-            echo '<div class="notice notice-error"><p>Missing token. Please configure your API token first.</p></div>';
-        } else {
-                // Schedule or run Stage 2
-                wp_schedule_single_event( time(), 'yatco_stage2_import_hook' );
-                spawn_cron();
-                echo '<div class="notice notice-info"><p><strong>Stage 2 started!</strong> This will run in the background. Check status below.</p></div>';
-            }
-        }
-            echo '</div>';
-            
-        // Stage 3 Button
-        echo '<div style="background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 20px; margin: 20px 0;">';
-        echo '<h3>Stage 3: Import Full Data</h3>';
-        echo '<p>Fetches full vessel data (descriptions, specs, etc.) for all vessels. Requires Stage 1 to be completed first.</p>';
-        echo '<form method="post" style="margin-top: 15px;">';
-        wp_nonce_field( 'yatco_stage3_import', 'yatco_stage3_import_nonce' );
-        submit_button( 'Run Stage 3: Import Full Data', 'primary', 'yatco_stage3_import', false );
-        echo '</form>';
-        
-        if ( isset( $_POST['yatco_stage3_import'] ) && check_admin_referer( 'yatco_stage3_import', 'yatco_stage3_import_nonce' ) ) {
-            if ( empty( $token ) ) {
-                echo '<div class="notice notice-error"><p>Missing token. Please configure your API token first.</p></div>';
-            } else {
-                // Schedule or run Stage 3
-                wp_schedule_single_event( time(), 'yatco_stage3_import_hook' );
-                spawn_cron();
-                echo '<div class="notice notice-info"><p><strong>Stage 3 started!</strong> This will run in the background. Check status below.</p></div>';
+                echo '<div class="notice notice-success"><p><strong>Full Import completed!</strong> Check the Status tab for details.</p></div>';
             }
         }
         echo '</div>';
         
         // Daily Sync Button
         echo '<div style="background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 20px; margin: 20px 0;">';
-        echo '<h3>Daily Sync: Check for Changes</h3>';
-        echo '<p>Checks for removed vessels and price changes. This is lightweight and can run daily.</p>';
+        echo '<h3>Daily Sync: Check for New or Removed Vessels</h3>';
+        echo '<p>Checks for new vessels (imports them) and removed vessels (marks as draft). This is lightweight and can run daily.</p>';
         $last_sync = get_option( 'yatco_daily_sync_last_run', 0 );
         if ( $last_sync > 0 ) {
             echo '<p style="color: #666; font-size: 13px;">Last run: ' . date( 'Y-m-d H:i:s', $last_sync ) . '</p>';
@@ -321,8 +272,7 @@ function yatco_options_page() {
             if ( ! empty( $sync_results ) ) {
                 echo '<p style="color: #666; font-size: 13px;">Last results: ' . 
                      intval( $sync_results['removed'] ) . ' removed, ' . 
-                     intval( $sync_results['new'] ) . ' new, ' . 
-                     intval( $sync_results['price_changes'] ) . ' price changes.</p>';
+                     intval( $sync_results['new'] ) . ' new vessels imported.</p>';
             }
         }
         echo '<form method="post" style="margin-top: 15px;">';
@@ -345,27 +295,15 @@ function yatco_options_page() {
         echo '<h2>Import Status & Progress</h2>';
         
         // Get all progress data
-        $stage1_progress = get_transient( 'yatco_stage1_progress' );
-        $stage2_progress = get_transient( 'yatco_stage2_progress' );
-        $stage3_progress = get_transient( 'yatco_stage3_progress' );
+        $import_progress = get_transient( 'yatco_import_progress' );
         $cache_status = get_transient( 'yatco_cache_warming_status' );
-        $cache_progress = get_transient( 'yatco_cache_warming_progress' );
         
-        // Determine which stage is active
+        // Determine if import is active
         $active_stage = 0;
         $active_progress = null;
-        if ( $stage3_progress !== false && is_array( $stage3_progress ) ) {
-            $active_stage = 3;
-            $active_progress = $stage3_progress;
-        } elseif ( $stage2_progress !== false && is_array( $stage2_progress ) ) {
-            $active_stage = 2;
-            $active_progress = $stage2_progress;
-        } elseif ( $stage1_progress !== false && is_array( $stage1_progress ) ) {
-            $active_stage = 1;
-            $active_progress = $stage1_progress;
-        } elseif ( $cache_progress !== false && is_array( $cache_progress ) ) {
+        if ( $import_progress !== false && is_array( $import_progress ) ) {
             $active_stage = 'full';
-            $active_progress = $cache_progress;
+            $active_progress = $import_progress;
         }
         
         // Display status bar
@@ -375,7 +313,7 @@ function yatco_options_page() {
             $current = isset( $active_progress['last_processed'] ) ? intval( $active_progress['last_processed'] ) : 0;
             $total = isset( $active_progress['total'] ) ? intval( $active_progress['total'] ) : 0;
             $percent = isset( $active_progress['percent'] ) ? floatval( $active_progress['percent'] ) : ( $total > 0 ? round( ( $current / $total ) * 100, 1 ) : 0 );
-            $stage_name = $active_stage === 'full' ? 'Full Import' : "Stage {$active_stage}";
+            $stage_name = 'Full Import';
             
             echo '<h3 style="margin-top: 0; color: #2271b1;">📊 ' . esc_html( $stage_name ) . ' Progress</h3>';
             
@@ -408,7 +346,7 @@ function yatco_options_page() {
                 }
             }
         } else {
-            echo '<p style="margin: 0; color: #666;">No active import. Start a staged import above to see progress.</p>';
+            echo '<p style="margin: 0; color: #666;">No active import. Start a full import above to see progress.</p>';
         }
         
         echo '</div>';
@@ -467,27 +405,15 @@ function yatco_options_page() {
         echo '<h2>Import Status & Progress</h2>';
         
         // Get all progress data
-        $stage1_progress = get_transient( 'yatco_stage1_progress' );
-        $stage2_progress = get_transient( 'yatco_stage2_progress' );
-        $stage3_progress = get_transient( 'yatco_stage3_progress' );
+        $import_progress = get_transient( 'yatco_import_progress' );
         $cache_status = get_transient( 'yatco_cache_warming_status' );
-        $cache_progress = get_transient( 'yatco_cache_warming_progress' );
         
-        // Determine which stage is active
+        // Determine if import is active
         $active_stage = 0;
         $active_progress = null;
-        if ( $stage3_progress !== false && is_array( $stage3_progress ) ) {
-            $active_stage = 3;
-            $active_progress = $stage3_progress;
-        } elseif ( $stage2_progress !== false && is_array( $stage2_progress ) ) {
-            $active_stage = 2;
-            $active_progress = $stage2_progress;
-        } elseif ( $stage1_progress !== false && is_array( $stage1_progress ) ) {
-            $active_stage = 1;
-            $active_progress = $stage1_progress;
-        } elseif ( $cache_progress !== false && is_array( $cache_progress ) ) {
+        if ( $import_progress !== false && is_array( $import_progress ) ) {
             $active_stage = 'full';
-            $active_progress = $cache_progress;
+            $active_progress = $import_progress;
         }
         
         // Display status bar
@@ -497,7 +423,7 @@ function yatco_options_page() {
             $current = isset( $active_progress['last_processed'] ) ? intval( $active_progress['last_processed'] ) : 0;
             $total = isset( $active_progress['total'] ) ? intval( $active_progress['total'] ) : 0;
             $percent = isset( $active_progress['percent'] ) ? floatval( $active_progress['percent'] ) : ( $total > 0 ? round( ( $current / $total ) * 100, 1 ) : 0 );
-            $stage_name = $active_stage === 'full' ? 'Full Import' : "Stage {$active_stage}";
+            $stage_name = 'Full Import';
             
             echo '<h3 style="margin-top: 0; color: #2271b1;">📊 ' . esc_html( $stage_name ) . ' Progress</h3>';
             
@@ -543,7 +469,7 @@ function yatco_options_page() {
             echo '<p><strong>Status:</strong> ' . esc_html( $cache_status ) . '</p>';
             echo '</div>';
         } else {
-            echo '<p style="margin: 0; color: #666;">No active import. Start a staged import in the Import tab to see progress.</p>';
+            echo '<p style="margin: 0; color: #666;">No active import. Start a full import in the Import tab to see progress.</p>';
         }
         
         echo '</div>';
@@ -555,38 +481,23 @@ function yatco_options_page() {
             set_transient( 'yatco_cache_warming_stop', true, 300 );
             
             // Cancel any scheduled cron jobs
-            $scheduled_stage1 = wp_next_scheduled( 'yatco_stage1_import_hook' );
-            $scheduled_stage2 = wp_next_scheduled( 'yatco_stage2_import_hook' );
-            $scheduled_stage3 = wp_next_scheduled( 'yatco_stage3_import_hook' );
+            $scheduled_full = wp_next_scheduled( 'yatco_full_import_hook' );
             $scheduled_warm = wp_next_scheduled( 'yatco_warm_cache_hook' );
             
-            if ( $scheduled_stage1 ) {
-                wp_unschedule_event( $scheduled_stage1, 'yatco_stage1_import_hook' );
-                yatco_log( 'Import: Cancelled scheduled Stage 1 event', 'info' );
-            }
-            if ( $scheduled_stage2 ) {
-                wp_unschedule_event( $scheduled_stage2, 'yatco_stage2_import_hook' );
-                yatco_log( 'Import: Cancelled scheduled Stage 2 event', 'info' );
-            }
-            if ( $scheduled_stage3 ) {
-                wp_unschedule_event( $scheduled_stage3, 'yatco_stage3_import_hook' );
-                yatco_log( 'Import: Cancelled scheduled Stage 3 event', 'info' );
+            if ( $scheduled_full ) {
+                wp_unschedule_event( $scheduled_full, 'yatco_full_import_hook' );
+                yatco_log( 'Import: Cancelled scheduled Full Import event', 'info' );
             }
             if ( $scheduled_warm ) {
                 wp_unschedule_event( $scheduled_warm, 'yatco_warm_cache_hook' );
                 yatco_log( 'Import: Cancelled scheduled warm cache event', 'info' );
             }
             
-            wp_clear_scheduled_hook( 'yatco_stage1_import_hook' );
-            wp_clear_scheduled_hook( 'yatco_stage2_import_hook' );
-            wp_clear_scheduled_hook( 'yatco_stage3_import_hook' );
+            wp_clear_scheduled_hook( 'yatco_full_import_hook' );
             wp_clear_scheduled_hook( 'yatco_warm_cache_hook' );
             
             // Clear progress and status
-            delete_transient( 'yatco_stage1_progress' );
-            delete_transient( 'yatco_stage2_progress' );
-            delete_transient( 'yatco_stage3_progress' );
-            delete_transient( 'yatco_cache_warming_progress' );
+            delete_transient( 'yatco_import_progress' );
             delete_transient( 'yatco_cache_warming_status' );
             
             set_transient( 'yatco_cache_warming_status', 'Import stopped by user.', 60 );
@@ -998,14 +909,11 @@ function yatco_options_page() {
     if ( isset( $wp_filter['yatco_warm_cache_hook'] ) ) {
         $hooks_registered[] = 'yatco_warm_cache_hook';
     }
-    if ( isset( $wp_filter['yatco_stage1_import_hook'] ) ) {
-        $hooks_registered[] = 'yatco_stage1_import_hook';
+    if ( isset( $wp_filter['yatco_full_import_hook'] ) ) {
+        $hooks_registered[] = 'yatco_full_import_hook';
     }
-    if ( isset( $wp_filter['yatco_stage2_import_hook'] ) ) {
-        $hooks_registered[] = 'yatco_stage2_import_hook';
-    }
-    if ( isset( $wp_filter['yatco_stage3_import_hook'] ) ) {
-        $hooks_registered[] = 'yatco_stage3_import_hook';
+    if ( isset( $wp_filter['yatco_daily_sync_hook'] ) ) {
+        $hooks_registered[] = 'yatco_daily_sync_hook';
     }
     if ( ! empty( $hooks_registered ) ) {
         echo '<span style="color: #46b450;">✔ Registered: ' . esc_html( implode( ', ', $hooks_registered ) ) . '</span>';
@@ -1014,20 +922,16 @@ function yatco_options_page() {
     }
     echo '</td></tr>';
     
-    $scheduled_stage1 = wp_next_scheduled( 'yatco_stage1_import_hook' );
-    $scheduled_stage2 = wp_next_scheduled( 'yatco_stage2_import_hook' );
-    $scheduled_stage3 = wp_next_scheduled( 'yatco_stage3_import_hook' );
+    $scheduled_full = wp_next_scheduled( 'yatco_full_import_hook' );
+    $scheduled_sync = wp_next_scheduled( 'yatco_daily_sync_hook' );
     $scheduled_warm = wp_next_scheduled( 'yatco_warm_cache_hook' );
     echo '<tr><td><strong>Scheduled Events:</strong></td><td>';
     $scheduled_events = array();
-    if ( $scheduled_stage1 ) {
-        $scheduled_events[] = 'Stage 1: ' . date( 'Y-m-d H:i:s', $scheduled_stage1 );
+    if ( $scheduled_full ) {
+        $scheduled_events[] = 'Full Import: ' . date( 'Y-m-d H:i:s', $scheduled_full );
     }
-    if ( $scheduled_stage2 ) {
-        $scheduled_events[] = 'Stage 2: ' . date( 'Y-m-d H:i:s', $scheduled_stage2 );
-    }
-    if ( $scheduled_stage3 ) {
-        $scheduled_events[] = 'Stage 3: ' . date( 'Y-m-d H:i:s', $scheduled_stage3 );
+    if ( $scheduled_sync ) {
+        $scheduled_events[] = 'Daily Sync: ' . date( 'Y-m-d H:i:s', $scheduled_sync );
     }
     if ( $scheduled_warm ) {
         $scheduled_events[] = 'Warm Cache: ' . date( 'Y-m-d H:i:s', $scheduled_warm );
@@ -1048,11 +952,11 @@ function yatco_options_page() {
     }
     echo '</td></tr>';
     
-        $cache_progress = get_transient( 'yatco_cache_warming_progress' );
+        $import_progress = get_transient( 'yatco_import_progress' );
     echo '<tr><td><strong>Last Progress:</strong></td><td>';
-    if ( $cache_progress !== false && is_array( $cache_progress ) ) {
-        $last_processed = isset( $cache_progress['last_processed'] ) ? intval( $cache_progress['last_processed'] ) : 0;
-        $total = isset( $cache_progress['total'] ) ? intval( $cache_progress['total'] ) : 0;
+    if ( $import_progress !== false && is_array( $import_progress ) ) {
+        $last_processed = isset( $import_progress['last_processed'] ) ? intval( $import_progress['last_processed'] ) : 0;
+        $total = isset( $import_progress['total'] ) ? intval( $import_progress['total'] ) : 0;
         echo number_format( $last_processed ) . ' / ' . number_format( $total );
     } else {
         echo 'No progress recorded';

@@ -1,12 +1,10 @@
 <?php
 /**
- * Staged Import System
+ * YATCO Import System
  * 
- * Implements a multi-stage import process to reduce server load:
- * - Stage 1: Fetch all active vessel IDs and names only (lightweight)
- * - Stage 2: Fetch images for vessels from Stage 1
- * - Stage 3: Fetch full data (descriptions, specs, etc.) for vessels
- * - Daily Sync: Check IDs for removed vessels and price changes
+ * Implements a unified import process:
+ * - Full Import: Fetches all active vessels with complete data (names, images, descriptions, specs, etc.)
+ * - Daily Sync: Checks for new or removed vessels only
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -108,6 +106,7 @@ function yatco_stage1_import_ids_and_names( $token ) {
         if ( $stop_flag !== false ) {
             yatco_log( 'Stage 1: Stop flag detected in batch, cancelling', 'warning' );
             delete_transient( 'yatco_cache_warming_stop' );
+            delete_transient( 'yatco_stage1_progress' );
             set_transient( 'yatco_cache_warming_status', 'Stage 1 stopped by user.', 60 );
             return;
         }
@@ -126,6 +125,16 @@ function yatco_stage1_import_ids_and_names( $token ) {
                 usleep( $delay_between_items * 1000000 ); // Convert to microseconds
             }
             
+            // Check stop flag before API call (in case it was set during delay)
+            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            if ( $stop_flag !== false ) {
+                yatco_log( 'Stage 1: Stop flag detected before API call, cancelling', 'warning' );
+                delete_transient( 'yatco_cache_warming_stop' );
+                delete_transient( 'yatco_stage1_progress' );
+                set_transient( 'yatco_cache_warming_status', 'Stage 1 stopped by user.', 60 );
+                return;
+            }
+            
             // Fetch lightweight data (just Result section for name)
             $endpoint = 'https://api.yatcoboss.com/api/v1/ForSale/Vessel/' . intval( $vessel_id ) . '/Details/FullSpecsAll';
             yatco_log( "Stage 1: Fetching vessel {$vessel_id} from API", 'debug' );
@@ -139,6 +148,16 @@ function yatco_stage1_import_ids_and_names( $token ) {
                     'timeout' => 15,
                 )
             );
+            
+            // Check stop flag after API call (in case it was set during the request)
+            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            if ( $stop_flag !== false ) {
+                yatco_log( 'Stage 1: Stop flag detected after API call, cancelling', 'warning' );
+                delete_transient( 'yatco_cache_warming_stop' );
+                delete_transient( 'yatco_stage1_progress' );
+                set_transient( 'yatco_cache_warming_status', 'Stage 1 stopped by user.', 60 );
+                return;
+            }
             
             if ( is_wp_error( $response ) ) {
                 yatco_log( "Stage 1: WP_Error for vessel {$vessel_id}: " . $response->get_error_message(), 'error' );
@@ -268,7 +287,9 @@ function yatco_stage2_import_images( $token ) {
         // Check stop flag
         $stop_flag = get_transient( 'yatco_cache_warming_stop' );
         if ( $stop_flag !== false ) {
+            yatco_log( 'Stage 2: Stop flag detected in batch, cancelling', 'warning' );
             delete_transient( 'yatco_cache_warming_stop' );
+            delete_transient( 'yatco_stage2_progress' );
             set_transient( 'yatco_cache_warming_status', 'Stage 2 stopped by user.', 60 );
             return;
         }
@@ -398,7 +419,9 @@ function yatco_stage3_import_full_data( $token ) {
         // Check stop flag
         $stop_flag = get_transient( 'yatco_cache_warming_stop' );
         if ( $stop_flag !== false ) {
+            yatco_log( 'Stage 3: Stop flag detected in batch, cancelling', 'warning' );
             delete_transient( 'yatco_cache_warming_stop' );
+            delete_transient( 'yatco_stage3_progress' );
             set_transient( 'yatco_cache_warming_status', 'Stage 3 stopped by user.', 60 );
             return;
         }
@@ -417,13 +440,40 @@ function yatco_stage3_import_full_data( $token ) {
                 usleep( $delay_between_items * 1000000 ); // Convert to microseconds
             }
             
+            // Check stop flag before calling import function
+            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            if ( $stop_flag !== false ) {
+                yatco_log( 'Stage 3: Stop flag detected before import, cancelling', 'warning' );
+                delete_transient( 'yatco_cache_warming_stop' );
+                delete_transient( 'yatco_stage3_progress' );
+                set_transient( 'yatco_cache_warming_status', 'Stage 3 stopped by user.', 60 );
+                return;
+            }
+            
             // Use existing import function for full data
             $import_result = yatco_import_single_vessel( $token, $vessel_id );
+            
+            // Check stop flag after import (in case it was set during the import)
+            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            if ( $stop_flag !== false ) {
+                yatco_log( 'Stage 3: Stop flag detected after import, cancelling', 'warning' );
+                delete_transient( 'yatco_cache_warming_stop' );
+                delete_transient( 'yatco_stage3_progress' );
+                set_transient( 'yatco_cache_warming_status', 'Stage 3 stopped by user.', 60 );
+                return;
+            }
             
             if ( ! is_wp_error( $import_result ) ) {
                 $post_id = $import_result;
                 update_post_meta( $post_id, 'yacht_import_stage', 3 );
                 $processed++;
+            } elseif ( $import_result->get_error_code() === 'import_stopped' ) {
+                // Import was stopped, exit immediately
+                yatco_log( 'Stage 3: Import stopped during vessel processing', 'warning' );
+                delete_transient( 'yatco_cache_warming_stop' );
+                delete_transient( 'yatco_stage3_progress' );
+                set_transient( 'yatco_cache_warming_status', 'Stage 3 stopped by user.', 60 );
+                return;
             }
         }
         
@@ -452,21 +502,158 @@ function yatco_stage3_import_full_data( $token ) {
 }
 
 /**
- * Daily Sync: Check IDs for removed vessels and price changes.
+ * Full Import: Import all active vessels with complete data.
+ * This replaces the 3-stage import with a single unified import.
+ */
+function yatco_full_import( $token ) {
+    yatco_log( 'Full Import: Starting', 'info' );
+    
+    // Check stop flag
+    $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+    if ( $stop_flag !== false ) {
+        yatco_log( 'Full Import: Stop flag detected, cancelling', 'warning' );
+        delete_transient( 'yatco_cache_warming_stop' );
+        delete_transient( 'yatco_import_progress' );
+        set_transient( 'yatco_cache_warming_status', 'Full Import cancelled.', 60 );
+        return;
+    }
+    
+    set_transient( 'yatco_cache_warming_status', 'Full Import: Fetching vessel IDs...', 600 );
+    yatco_log( 'Full Import: Fetching all active vessel IDs', 'info' );
+    
+    // Fetch all active vessel IDs
+    $vessel_ids = yatco_get_active_vessel_ids( $token, 0 );
+    
+    if ( is_wp_error( $vessel_ids ) ) {
+        set_transient( 'yatco_cache_warming_status', 'Full Import Error: ' . $vessel_ids->get_error_message(), 60 );
+        yatco_log( 'Full Import Error: Failed to fetch active vessel IDs: ' . $vessel_ids->get_error_message(), 'error' );
+        return;
+    }
+    
+    $total = count( $vessel_ids );
+    yatco_log( "Full Import: Found {$total} vessel IDs", 'info' );
+    set_transient( 'yatco_cache_warming_status', "Full Import: Processing {$total} vessels...", 600 );
+    
+    // Store vessel IDs for daily sync
+    update_option( 'yatco_vessel_ids', $vessel_ids, false );
+    
+    // Get progress
+    $progress = get_transient( 'yatco_import_progress' );
+    $start_from = 0;
+    
+    if ( $progress !== false && is_array( $progress ) ) {
+        $start_from = isset( $progress['last_processed'] ) ? intval( $progress['last_processed'] ) : 0;
+        $vessel_ids = array_slice( $vessel_ids, $start_from );
+        yatco_log( "Full Import: Resuming from position {$start_from}", 'info' );
+    } else {
+        yatco_log( 'Full Import: Starting fresh import', 'info' );
+    }
+    
+    $processed = 0;
+    $batch_size = 10; // Process 10 at a time to prevent server overload
+    $delay_seconds = 5; // 5 second delay between batches
+    $delay_between_items = 0.5; // 500ms delay between individual items
+    
+    yatco_log( "Full Import: Batch size: {$batch_size}, Delay between batches: {$delay_seconds}s, Delay between items: {$delay_between_items}s", 'info' );
+    
+    foreach ( array_chunk( $vessel_ids, $batch_size ) as $batch ) {
+        // Check stop flag
+        $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+        if ( $stop_flag !== false ) {
+            yatco_log( 'Full Import: Stop flag detected in batch, cancelling', 'warning' );
+            delete_transient( 'yatco_cache_warming_stop' );
+            delete_transient( 'yatco_import_progress' );
+            set_transient( 'yatco_cache_warming_status', 'Full Import stopped by user.', 60 );
+            return;
+        }
+        
+        foreach ( $batch as $vessel_id ) {
+            // Check stop flag
+            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            if ( $stop_flag !== false ) {
+                yatco_log( 'Full Import: Stop flag detected, cancelling', 'warning' );
+                delete_transient( 'yatco_cache_warming_stop' );
+                delete_transient( 'yatco_import_progress' );
+                set_transient( 'yatco_cache_warming_status', 'Full Import stopped by user.', 60 );
+                return;
+            }
+            
+            // Small delay between items
+            if ( $delay_between_items > 0 ) {
+                usleep( $delay_between_items * 1000000 );
+            }
+            
+            // Import full vessel data
+            yatco_log( "Full Import: Processing vessel {$vessel_id}", 'debug' );
+            $import_result = yatco_import_single_vessel( $token, $vessel_id );
+            
+            // Check stop flag after import
+            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            if ( $stop_flag !== false ) {
+                yatco_log( 'Full Import: Stop flag detected after import, cancelling', 'warning' );
+                delete_transient( 'yatco_cache_warming_stop' );
+                delete_transient( 'yatco_import_progress' );
+                set_transient( 'yatco_cache_warming_status', 'Full Import stopped by user.', 60 );
+                return;
+            }
+            
+            if ( ! is_wp_error( $import_result ) ) {
+                $processed++;
+                yatco_log( "Full Import: Successfully imported vessel {$vessel_id}", 'debug' );
+            } elseif ( $import_result->get_error_code() === 'import_stopped' ) {
+                yatco_log( 'Full Import: Import stopped during vessel processing', 'warning' );
+                delete_transient( 'yatco_cache_warming_stop' );
+                delete_transient( 'yatco_import_progress' );
+                set_transient( 'yatco_cache_warming_status', 'Full Import stopped by user.', 60 );
+                return;
+            } else {
+                yatco_log( "Full Import: Error importing vessel {$vessel_id}: " . $import_result->get_error_message(), 'error' );
+            }
+        }
+        
+        // Save progress
+        $current_total = $start_from + $processed;
+        $percent = $total > 0 ? round( ( $current_total / $total ) * 100, 1 ) : 0;
+        $progress_data = array(
+            'last_processed' => $current_total,
+            'total'         => $total,
+            'timestamp'     => time(),
+            'percent'       => $percent,
+        );
+        set_transient( 'yatco_import_progress', $progress_data, 3600 );
+        set_transient( 'yatco_cache_warming_status', "Full Import: Processed {$current_total} of {$total} vessels ({$percent}%)...", 600 );
+        yatco_log( "Full Import: Progress - {$current_total}/{$total} ({$percent}%)", 'info' );
+        
+        // Delay between batches
+        if ( $processed < $total ) {
+            sleep( $delay_seconds );
+        }
+    }
+    
+    // Clear progress
+    delete_transient( 'yatco_import_progress' );
+    set_transient( 'yatco_cache_warming_status', "Full Import Complete: Processed {$processed} vessels.", 300 );
+    yatco_log( "Full Import Complete: Processed {$processed} vessels.", 'info' );
+}
+
+/**
+ * Daily Sync: Check for new or removed vessels only.
  */
 function yatco_daily_sync_check( $token ) {
-    set_transient( 'yatco_cache_warming_status', 'Daily Sync: Checking for changes...', 600 );
+    yatco_log( 'Daily Sync: Starting', 'info' );
+    set_transient( 'yatco_cache_warming_status', 'Daily Sync: Checking for new or removed vessels...', 600 );
     
     // Get current active vessel IDs from API
     $current_ids = yatco_get_active_vessel_ids( $token, 0 );
     
     if ( is_wp_error( $current_ids ) ) {
         set_transient( 'yatco_cache_warming_status', 'Daily Sync Error: ' . $current_ids->get_error_message(), 60 );
+        yatco_log( 'Daily Sync Error: ' . $current_ids->get_error_message(), 'error' );
         return;
     }
     
     // Get stored vessel IDs
-    $stored_ids = get_option( 'yatco_stage1_vessel_ids', array() );
+    $stored_ids = get_option( 'yatco_vessel_ids', array() );
     
     // Find removed vessels
     $removed_ids = array_diff( $stored_ids, $current_ids );
@@ -475,9 +662,10 @@ function yatco_daily_sync_check( $token ) {
     $new_ids = array_diff( $current_ids, $stored_ids );
     
     // Update stored IDs
-    update_option( 'yatco_stage1_vessel_ids', $current_ids, false );
+    update_option( 'yatco_vessel_ids', $current_ids, false );
     
     // Mark removed vessels as draft
+    $removed_count = 0;
     foreach ( $removed_ids as $vessel_id ) {
         $post_id = yatco_find_vessel_post_by_id( $vessel_id );
         if ( $post_id ) {
@@ -487,77 +675,40 @@ function yatco_daily_sync_check( $token ) {
             ) );
             update_post_meta( $post_id, 'yacht_removed_from_api', true );
             update_post_meta( $post_id, 'yacht_removed_date', time() );
+            $removed_count++;
         }
     }
     
-    // Check for price changes on existing vessels
-    $price_changes = 0;
-    $batch_size = 50;
-    $delay_seconds = 1;
-    
-    foreach ( array_chunk( array_intersect( $current_ids, $stored_ids ), $batch_size ) as $batch ) {
-        foreach ( $batch as $vessel_id ) {
-            $post_id = yatco_find_vessel_post_by_id( $vessel_id );
-            if ( ! $post_id ) {
-                continue;
+    // Import new vessels
+    $new_count = 0;
+    if ( ! empty( $new_ids ) ) {
+        yatco_log( "Daily Sync: Found " . count( $new_ids ) . " new vessels to import", 'info' );
+        foreach ( $new_ids as $vessel_id ) {
+            $import_result = yatco_import_single_vessel( $token, $vessel_id );
+            if ( ! is_wp_error( $import_result ) ) {
+                $new_count++;
             }
-            
-            // Fetch lightweight price data
-            $endpoint = 'https://api.yatcoboss.com/api/v1/ForSale/Vessel/' . intval( $vessel_id ) . '/Details/FullSpecsAll';
-            $response = wp_remote_get(
-                $endpoint,
-                array(
-                    'headers' => array(
-                        'Authorization' => 'Basic ' . $token,
-                        'Accept'        => 'application/json',
-                    ),
-                    'timeout' => 15,
-                )
-            );
-            
-            if ( is_wp_error( $response ) || wp_remote_retrieve_response_code( $response ) !== 200 ) {
-                continue;
-            }
-            
-            $data = json_decode( wp_remote_retrieve_body( $response ), true );
-            if ( empty( $data ) || ! isset( $data['Result'] ) ) {
-                continue;
-            }
-            
-            $result = $data['Result'];
-            $current_price = isset( $result['AskingPriceCompare'] ) ? floatval( $result['AskingPriceCompare'] ) : 0;
-            $stored_price = floatval( get_post_meta( $post_id, 'yacht_price_usd', true ) );
-            
-            if ( $current_price > 0 && $stored_price > 0 && abs( $current_price - $stored_price ) > 0.01 ) {
-                // Price changed - update it
-                update_post_meta( $post_id, 'yacht_price_usd', $current_price );
-                update_post_meta( $post_id, 'yacht_price', $current_price );
-                if ( isset( $result['AskingPriceFormatted'] ) ) {
-                    update_post_meta( $post_id, 'yacht_price_formatted', $result['AskingPriceFormatted'] );
-                }
-                update_post_meta( $post_id, 'yacht_price_changed', true );
-                update_post_meta( $post_id, 'yacht_price_changed_date', time() );
-                $price_changes++;
-            }
+            // Small delay between imports
+            usleep( 500000 ); // 500ms
         }
-        
-        sleep( $delay_seconds );
     }
-    
-    $removed_count = count( $removed_ids );
-    $new_count = count( $new_ids );
-    
-    $status_msg = "Daily Sync Complete: {$removed_count} removed, {$new_count} new, {$price_changes} price changes.";
-    set_transient( 'yatco_cache_warming_status', $status_msg, 300 );
     
     // Store sync results
-    update_option( 'yatco_daily_sync_last_run', time() );
-    update_option( 'yatco_daily_sync_results', array(
+    $sync_results = array(
         'removed' => $removed_count,
         'new' => $new_count,
-        'price_changes' => $price_changes,
         'timestamp' => time(),
-    ), false );
+    );
+    update_option( 'yatco_daily_sync_results', $sync_results, false );
+    update_option( 'yatco_daily_sync_last_run', time(), false );
+    
+    $status_message = sprintf(
+        'Daily Sync Complete: %d removed, %d new vessels imported.',
+        $removed_count,
+        $new_count
+    );
+    set_transient( 'yatco_cache_warming_status', $status_message, 300 );
+    yatco_log( $status_message, 'info' );
 }
 
 /**

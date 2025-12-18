@@ -199,9 +199,23 @@ function yatco_build_brief_from_fullspecs( $vessel_id, $full ) {
  * @return int|WP_Error     Post ID on success, WP_Error on failure
  */
 function yatco_import_single_vessel( $token, $vessel_id ) {
+    // Check stop flag before starting import
+    $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+    if ( $stop_flag !== false ) {
+        yatco_log( "Import: Stop flag detected in yatco_import_single_vessel for vessel {$vessel_id}, cancelling", 'warning' );
+        return new WP_Error( 'import_stopped', 'Import stopped by user.' );
+    }
+    
     $full = yatco_fetch_fullspecs( $token, $vessel_id );
     if ( is_wp_error( $full ) ) {
         return $full;
+    }
+    
+    // Check stop flag after fetching data
+    $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+    if ( $stop_flag !== false ) {
+        yatco_log( "Import: Stop flag detected after fetching data for vessel {$vessel_id}, cancelling", 'warning' );
+        return new WP_Error( 'import_stopped', 'Import stopped by user.' );
     }
 
     // Get Result and BasicInfo for easier access.

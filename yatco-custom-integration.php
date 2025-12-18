@@ -39,57 +39,45 @@ add_action( 'init', 'yatco_register_shortcode' );
 // Register cache warming hook
 add_action( 'yatco_warm_cache_hook', 'yatco_warm_cache_function' );
 
-// Register staged import hooks
-add_action( 'yatco_stage1_import_hook', function() {
-    yatco_log( 'Stage 1: Hook triggered via WP-Cron', 'info' );
+// Register import hooks
+add_action( 'yatco_full_import_hook', function() {
+    yatco_log( 'Full Import: Hook triggered via WP-Cron', 'info' );
     $token = yatco_get_token();
     if ( ! empty( $token ) ) {
-        yatco_log( 'Stage 1: Token found, calling import function', 'info' );
-        yatco_stage1_import_ids_and_names( $token );
+        yatco_log( 'Full Import: Token found, calling import function', 'info' );
+        yatco_full_import( $token );
     } else {
-        yatco_log( 'Stage 1: Hook triggered but no token found', 'error' );
-    }
-} );
-add_action( 'yatco_stage2_import_hook', function() {
-    $token = yatco_get_token();
-    if ( ! empty( $token ) ) {
-        yatco_stage2_import_images( $token );
-    }
-} );
-add_action( 'yatco_stage3_import_hook', function() {
-    $token = yatco_get_token();
-    if ( ! empty( $token ) ) {
-        yatco_stage3_import_full_data( $token );
+        yatco_log( 'Full Import: Hook triggered but no token found', 'error' );
     }
 } );
 
-// AJAX handler to run Stage 1 directly (for when WP-Cron isn't working)
-add_action( 'wp_ajax_yatco_run_stage1_direct', 'yatco_ajax_run_stage1_direct' );
-function yatco_ajax_run_stage1_direct() {
-    check_ajax_referer( 'yatco_run_stage1', 'nonce' );
+// AJAX handler to run Full Import directly (for when WP-Cron isn't working)
+add_action( 'wp_ajax_yatco_run_full_import_direct', 'yatco_ajax_run_full_import_direct' );
+function yatco_ajax_run_full_import_direct() {
+    check_ajax_referer( 'yatco_run_full_import', 'nonce' );
     
     if ( ! current_user_can( 'manage_options' ) ) {
-        yatco_log( 'Stage 1 Direct: Unauthorized access attempt', 'error' );
+        yatco_log( 'Full Import Direct: Unauthorized access attempt', 'error' );
         wp_send_json_error( array( 'message' => 'Unauthorized' ) );
         return;
     }
     
-    yatco_log( 'Stage 1 Direct: AJAX handler called', 'info' );
+    yatco_log( 'Full Import Direct: AJAX handler called', 'info' );
     
     // Increase execution time
     @set_time_limit( 300 );
     @ini_set( 'max_execution_time', 300 );
-    yatco_log( 'Stage 1 Direct: Execution time limit set to 300 seconds', 'info' );
+    yatco_log( 'Full Import Direct: Execution time limit set to 300 seconds', 'info' );
     
     $token = yatco_get_token();
     if ( ! empty( $token ) ) {
-        yatco_log( 'Stage 1 Direct: Token found, starting import', 'info' );
-        // Run Stage 1
-        yatco_stage1_import_ids_and_names( $token );
-        yatco_log( 'Stage 1 Direct: Import function completed', 'info' );
-        wp_send_json_success( array( 'message' => 'Stage 1 completed' ) );
+        yatco_log( 'Full Import Direct: Token found, starting import', 'info' );
+        // Run Full Import
+        yatco_full_import( $token );
+        yatco_log( 'Full Import Direct: Import function completed', 'info' );
+        wp_send_json_success( array( 'message' => 'Full Import completed' ) );
     } else {
-        yatco_log( 'Stage 1 Direct: No API token found', 'error' );
+        yatco_log( 'Full Import Direct: No API token found', 'error' );
         wp_send_json_error( array( 'message' => 'No API token' ) );
     }
 }
@@ -103,27 +91,15 @@ function yatco_ajax_get_import_status() {
     }
     
     // Get all progress data
-    $stage1_progress = get_transient( 'yatco_stage1_progress' );
-    $stage2_progress = get_transient( 'yatco_stage2_progress' );
-    $stage3_progress = get_transient( 'yatco_stage3_progress' );
+    $import_progress = get_transient( 'yatco_import_progress' );
     $cache_status = get_transient( 'yatco_cache_warming_status' );
-    $cache_progress = get_transient( 'yatco_cache_warming_progress' );
     
-    // Determine which stage is active
+    // Determine if import is active
     $active_stage = 0;
     $active_progress = null;
-    if ( $stage3_progress !== false && is_array( $stage3_progress ) ) {
-        $active_stage = 3;
-        $active_progress = $stage3_progress;
-    } elseif ( $stage2_progress !== false && is_array( $stage2_progress ) ) {
-        $active_stage = 2;
-        $active_progress = $stage2_progress;
-    } elseif ( $stage1_progress !== false && is_array( $stage1_progress ) ) {
-        $active_stage = 1;
-        $active_progress = $stage1_progress;
-    } elseif ( $cache_progress !== false && is_array( $cache_progress ) ) {
+    if ( $import_progress !== false && is_array( $import_progress ) ) {
         $active_stage = 'full';
-        $active_progress = $cache_progress;
+        $active_progress = $import_progress;
     }
     
     ob_start();
@@ -133,7 +109,7 @@ function yatco_ajax_get_import_status() {
         $current = isset( $active_progress['last_processed'] ) ? intval( $active_progress['last_processed'] ) : 0;
         $total = isset( $active_progress['total'] ) ? intval( $active_progress['total'] ) : 0;
         $percent = isset( $active_progress['percent'] ) ? floatval( $active_progress['percent'] ) : ( $total > 0 ? round( ( $current / $total ) * 100, 1 ) : 0 );
-        $stage_name = $active_stage === 'full' ? 'Full Import' : "Stage {$active_stage}";
+        $stage_name = 'Full Import';
         
         echo '<h3 style="margin-top: 0; color: #2271b1;">📊 ' . esc_html( $stage_name ) . ' Progress</h3>';
         
@@ -193,26 +169,17 @@ function yatco_ajax_stop_import() {
     
     yatco_log( 'Import: Stop requested via AJAX', 'info' );
     
-    // Set stop flag for running processes - keep it active for 5 minutes
-    set_transient( 'yatco_cache_warming_stop', true, 300 );
+    // Set stop flag for running processes - keep it active for 10 minutes to ensure it's detected
+    // Use a timestamp so we can verify it was set recently
+    set_transient( 'yatco_cache_warming_stop', time(), 600 );
     
     // Cancel any scheduled cron jobs
-    $scheduled_stage1 = wp_next_scheduled( 'yatco_stage1_import_hook' );
-    $scheduled_stage2 = wp_next_scheduled( 'yatco_stage2_import_hook' );
-    $scheduled_stage3 = wp_next_scheduled( 'yatco_stage3_import_hook' );
+    $scheduled_full = wp_next_scheduled( 'yatco_full_import_hook' );
     $scheduled_warm = wp_next_scheduled( 'yatco_warm_cache_hook' );
     
-    if ( $scheduled_stage1 ) {
-        wp_unschedule_event( $scheduled_stage1, 'yatco_stage1_import_hook' );
-        yatco_log( 'Import: Cancelled scheduled Stage 1 event', 'info' );
-    }
-    if ( $scheduled_stage2 ) {
-        wp_unschedule_event( $scheduled_stage2, 'yatco_stage2_import_hook' );
-        yatco_log( 'Import: Cancelled scheduled Stage 2 event', 'info' );
-    }
-    if ( $scheduled_stage3 ) {
-        wp_unschedule_event( $scheduled_stage3, 'yatco_stage3_import_hook' );
-        yatco_log( 'Import: Cancelled scheduled Stage 3 event', 'info' );
+    if ( $scheduled_full ) {
+        wp_unschedule_event( $scheduled_full, 'yatco_full_import_hook' );
+        yatco_log( 'Import: Cancelled scheduled Full Import event', 'info' );
     }
     if ( $scheduled_warm ) {
         wp_unschedule_event( $scheduled_warm, 'yatco_warm_cache_hook' );
