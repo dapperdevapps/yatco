@@ -482,9 +482,11 @@ function yatco_options_page() {
         
         // Handle stop import form submission
         if ( isset( $_POST['yatco_stop_import'] ) && check_admin_referer( 'yatco_stop_import', 'yatco_stop_import_nonce' ) ) {
-            yatco_log( 'Import: Stop button clicked', 'info' );
-            // Set stop flag for running processes - keep it active for 5 minutes so running processes can detect it
-            set_transient( 'yatco_cache_warming_stop', true, 300 );
+            yatco_log( 'Import: Stop button clicked (form submission)', 'info' );
+            // Set stop flag using WordPress option (more reliable for direct runs)
+            update_option( 'yatco_import_stop_flag', time(), false );
+            // Also set as transient for backwards compatibility
+            set_transient( 'yatco_cache_warming_stop', time(), 900 );
             
             // Cancel any scheduled cron jobs
             $scheduled_full = wp_next_scheduled( 'yatco_full_import_hook' );
@@ -502,12 +504,13 @@ function yatco_options_page() {
             wp_clear_scheduled_hook( 'yatco_full_import_hook' );
             wp_clear_scheduled_hook( 'yatco_warm_cache_hook' );
             
-            // Clear progress and status
+            // Clear progress and status (but KEEP the stop flag so running import can detect it!)
             delete_transient( 'yatco_import_progress' );
             delete_transient( 'yatco_cache_warming_status' );
             
+            // Set status message
             set_transient( 'yatco_cache_warming_status', 'Import stopped by user.', 60 );
-            yatco_log( 'Import: Stop signal sent and progress cleared', 'info' );
+            yatco_log( 'Import: Stop signal sent and progress cleared (stop flag remains active)', 'info' );
             
             echo '<div class="notice notice-success" style="margin-top: 15px;"><p><strong>Stop signal sent!</strong> The import will stop at the next checkpoint (within a few seconds). Progress has been reset.</p></div>';
         }
@@ -717,6 +720,7 @@ function yatco_options_page() {
                     require_once YATCO_PLUGIN_DIR . 'includes/yatco-helpers.php';
                     
                     // Clear any stop flag that might be lingering from previous imports
+                    delete_option( 'yatco_import_stop_flag' );
                     delete_transient( 'yatco_cache_warming_stop' );
                     
                     // Increase execution time for test
@@ -740,7 +744,7 @@ function yatco_options_page() {
                         if ( $import_result->get_error_code() === 'import_stopped' ) {
                             echo '<p style="color: #dc3232;"><strong>Note:</strong> The import was stopped because a stop flag was detected. This might be from a previous import. Try clearing the stop flag and running the test again.</p>';
                         } else {
-                            echo '<p>This might be due to missing or invalid data in the API response. Check the raw JSON below for details.</p>';
+                        echo '<p>This might be due to missing or invalid data in the API response. Check the raw JSON below for details.</p>';
                         }
                         echo '</div>';
                     } elseif ( empty( $import_result ) ) {

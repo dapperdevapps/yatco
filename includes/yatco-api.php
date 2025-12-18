@@ -70,8 +70,11 @@ function yatco_get_active_vessel_ids( $token, $max_records = 50 ) {
  * Helper: fetch FullSpecsAll for a vessel.
  */
 function yatco_fetch_fullspecs( $token, $vessel_id ) {
-    // Check stop flag right before API call
-    $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+    // Check stop flag right before API call (check both option and transient)
+    $stop_flag = get_option( 'yatco_import_stop_flag', false );
+    if ( $stop_flag === false ) {
+        $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+    }
     if ( $stop_flag !== false ) {
         return new WP_Error( 'import_stopped', 'Import stopped by user.' );
     }
@@ -89,8 +92,11 @@ function yatco_fetch_fullspecs( $token, $vessel_id ) {
         )
     );
     
-    // Check stop flag immediately after API call (in case it was set during the request)
-    $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+    // Check stop flag immediately after API call (check both option and transient)
+    $stop_flag = get_option( 'yatco_import_stop_flag', false );
+    if ( $stop_flag === false ) {
+        $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+    }
     if ( $stop_flag !== false ) {
         return new WP_Error( 'import_stopped', 'Import stopped by user.' );
     }

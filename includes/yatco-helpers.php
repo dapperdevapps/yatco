@@ -199,8 +199,11 @@ function yatco_build_brief_from_fullspecs( $vessel_id, $full ) {
  * @return int|WP_Error     Post ID on success, WP_Error on failure
  */
 function yatco_import_single_vessel( $token, $vessel_id ) {
-    // Check stop flag before starting import
-    $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+    // Check stop flag before starting import (check both option and transient)
+    $stop_flag = get_option( 'yatco_import_stop_flag', false );
+    if ( $stop_flag === false ) {
+        $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+    }
     if ( $stop_flag !== false ) {
         yatco_log( "Import: Stop flag detected in yatco_import_single_vessel for vessel {$vessel_id}, cancelling", 'warning' );
         return new WP_Error( 'import_stopped', 'Import stopped by user.' );
@@ -211,8 +214,11 @@ function yatco_import_single_vessel( $token, $vessel_id ) {
         return $full;
     }
     
-    // Check stop flag after fetching data
-    $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+    // Check stop flag after fetching data (check both option and transient)
+    $stop_flag = get_option( 'yatco_import_stop_flag', false );
+    if ( $stop_flag === false ) {
+        $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+    }
     if ( $stop_flag !== false ) {
         yatco_log( "Import: Stop flag detected after fetching data for vessel {$vessel_id}, cancelling", 'warning' );
         return new WP_Error( 'import_stopped', 'Import stopped by user.' );
