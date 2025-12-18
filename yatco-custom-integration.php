@@ -169,9 +169,10 @@ function yatco_ajax_stop_import() {
     
     yatco_log( 'Import: Stop requested via AJAX', 'info' );
     
-    // Set stop flag for running processes - keep it active for 10 minutes to ensure it's detected
+    // Set stop flag for running processes - keep it active for 15 minutes to ensure it's detected
     // Use a timestamp so we can verify it was set recently
-    set_transient( 'yatco_cache_warming_stop', time(), 600 );
+    // Longer expiration when running directly (synchronous) to ensure it's detected
+    set_transient( 'yatco_cache_warming_stop', time(), 900 );
     
     // Cancel any scheduled cron jobs
     $scheduled_full = wp_next_scheduled( 'yatco_full_import_hook' );

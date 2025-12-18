@@ -578,9 +578,29 @@ function yatco_full_import( $token ) {
                 return;
             }
             
-            // Small delay between items
+            // Flush output so stop button can be processed (when running directly)
+            if ( ob_get_level() > 0 ) {
+                ob_flush();
+            }
+            flush();
+            
+            // Small delay between items - check stop flag during delay
             if ( $delay_between_items > 0 ) {
-                usleep( $delay_between_items * 1000000 );
+                // Break delay into smaller chunks and check stop flag between chunks
+                $chunk_size = 100000; // 100ms chunks
+                $total_chunks = ( $delay_between_items * 1000000 ) / $chunk_size;
+                for ( $i = 0; $i < $total_chunks; $i++ ) {
+                    usleep( $chunk_size );
+                    // Check stop flag every chunk
+                    $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+                    if ( $stop_flag !== false ) {
+                        yatco_log( 'Full Import: Stop flag detected during delay, cancelling', 'warning' );
+                        delete_transient( 'yatco_cache_warming_stop' );
+                        delete_transient( 'yatco_import_progress' );
+                        set_transient( 'yatco_cache_warming_status', 'Full Import stopped by user.', 60 );
+                        return;
+                    }
+                }
             }
             
             // Import full vessel data
@@ -596,6 +616,12 @@ function yatco_full_import( $token ) {
                 set_transient( 'yatco_cache_warming_status', 'Full Import stopped by user.', 60 );
                 return;
             }
+            
+            // Flush output after each vessel (when running directly)
+            if ( ob_get_level() > 0 ) {
+                ob_flush();
+            }
+            flush();
             
             if ( ! is_wp_error( $import_result ) ) {
                 $processed++;
@@ -624,9 +650,27 @@ function yatco_full_import( $token ) {
         set_transient( 'yatco_cache_warming_status', "Full Import: Processed {$current_total} of {$total} vessels ({$percent}%)...", 600 );
         yatco_log( "Full Import: Progress - {$current_total}/{$total} ({$percent}%)", 'info' );
         
-        // Delay between batches
+        // Flush output after each batch (when running directly)
+        if ( ob_get_level() > 0 ) {
+            ob_flush();
+        }
+        flush();
+        
+        // Delay between batches - check stop flag during delay
         if ( $processed < $total ) {
-            sleep( $delay_seconds );
+            // Break delay into 1-second chunks and check stop flag between chunks
+            for ( $i = 0; $i < $delay_seconds; $i++ ) {
+                sleep( 1 );
+                // Check stop flag every second
+                $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+                if ( $stop_flag !== false ) {
+                    yatco_log( 'Full Import: Stop flag detected during batch delay, cancelling', 'warning' );
+                    delete_transient( 'yatco_cache_warming_stop' );
+                    delete_transient( 'yatco_import_progress' );
+                    set_transient( 'yatco_cache_warming_status', 'Full Import stopped by user.', 60 );
+                    return;
+                }
+            }
         }
     }
     

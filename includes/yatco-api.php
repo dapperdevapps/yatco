@@ -70,6 +70,12 @@ function yatco_get_active_vessel_ids( $token, $max_records = 50 ) {
  * Helper: fetch FullSpecsAll for a vessel.
  */
 function yatco_fetch_fullspecs( $token, $vessel_id ) {
+    // Check stop flag right before API call
+    $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+    if ( $stop_flag !== false ) {
+        return new WP_Error( 'import_stopped', 'Import stopped by user.' );
+    }
+    
     $endpoint = 'https://api.yatcoboss.com/api/v1/ForSale/Vessel/' . intval( $vessel_id ) . '/Details/FullSpecsAll';
 
     $response = wp_remote_get(
@@ -82,6 +88,12 @@ function yatco_fetch_fullspecs( $token, $vessel_id ) {
             'timeout' => 30,
         )
     );
+    
+    // Check stop flag immediately after API call (in case it was set during the request)
+    $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+    if ( $stop_flag !== false ) {
+        return new WP_Error( 'import_stopped', 'Import stopped by user.' );
+    }
 
     if ( is_wp_error( $response ) ) {
         return $response;
