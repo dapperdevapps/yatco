@@ -165,10 +165,16 @@ function yatco_options_page() {
         echo '<div style="background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 20px; margin: 20px 0;">';
         echo '<h3>Stage 1: Import IDs & Names</h3>';
         echo '<p>Fetches all active vessel IDs and names only. Creates minimal CPT posts. This is the fastest stage.</p>';
-        echo '<form method="post" style="margin-top: 15px;">';
+        echo '<div style="display: flex; gap: 10px; margin-top: 15px;">';
+        echo '<form method="post" style="margin: 0;">';
         wp_nonce_field( 'yatco_stage1_import', 'yatco_stage1_import_nonce' );
-        submit_button( 'Run Stage 1: Import IDs & Names', 'primary', 'yatco_stage1_import', false );
-    echo '</form>';
+        submit_button( 'Run Stage 1 (WP-Cron)', 'primary', 'yatco_stage1_import', false );
+        echo '</form>';
+        echo '<form method="post" style="margin: 0;">';
+        wp_nonce_field( 'yatco_stage1_direct', 'yatco_stage1_direct_nonce' );
+        submit_button( 'Run Stage 1 Directly (If WP-Cron Not Working)', 'secondary', 'yatco_stage1_direct', false );
+        echo '</form>';
+        echo '</div>';
 
         if ( isset( $_POST['yatco_stage1_import'] ) && check_admin_referer( 'yatco_stage1_import', 'yatco_stage1_import_nonce' ) ) {
             if ( empty( $token ) ) {
@@ -178,26 +184,33 @@ function yatco_options_page() {
                 delete_transient( 'yatco_stage1_progress' );
                 delete_transient( 'yatco_cache_warming_stop' );
                 
+                // Initialize progress immediately so status bar appears
+                set_transient( 'yatco_cache_warming_status', 'Stage 1: Starting import...', 600 );
+                set_transient( 'yatco_stage1_progress', array(
+                    'last_processed' => 0,
+                    'total' => 0,
+                    'timestamp' => time(),
+                    'percent' => 0,
+                    'stage' => 1,
+                ), 3600 );
+                
                 // Schedule and trigger immediately
                 wp_schedule_single_event( time(), 'yatco_stage1_import_hook' );
                 
                 // Force WP-Cron to run immediately
                 spawn_cron();
                 
-                // Also trigger directly in background (non-blocking)
+                // Also trigger wp-cron.php directly (non-blocking)
                 wp_remote_post( 
-                    admin_url( 'admin-ajax.php' ),
+                    site_url( 'wp-cron.php?doing_wp_cron' ),
                     array(
                         'blocking'  => false,
                         'timeout'   => 0.01,
                         'sslverify' => false,
-                        'body'      => array(
-                            'action' => 'yatco_trigger_stage1_direct'
-                        )
                     )
                 );
                 
-                echo '<div class="notice notice-info"><p><strong>Stage 1 started!</strong> This will run in the background. Check the Status tab below for progress.</p></div>';
+                echo '<div class="notice notice-info"><p><strong>Stage 1 started!</strong> This will run in the background. Check the Status tab to see progress.</p></div>';
             }
         }
     echo '</div>';
@@ -398,16 +411,106 @@ function yatco_options_page() {
     // Status Tab - show cache warming status
     if ( $current_tab === 'status' ) {
         echo '<div class="yatco-status-section">';
-        echo '<h2>Cache Status & Progress</h2>';
+        echo '<h2>Import Status & Progress</h2>';
         
-        $pre_cache_status = get_transient( 'yatco_cache_warming_status' );
-        if ( $pre_cache_status !== false ) {
-            echo '<div class="notice notice-info" style="margin: 20px 0;">';
-            echo '<p><strong>Status:</strong> ' . esc_html( $pre_cache_status ) . '</p>';
+        // Get all progress data
+        $stage1_progress = get_transient( 'yatco_stage1_progress' );
+        $stage2_progress = get_transient( 'yatco_stage2_progress' );
+        $stage3_progress = get_transient( 'yatco_stage3_progress' );
+        $cache_status = get_transient( 'yatco_cache_warming_status' );
+        $cache_progress = get_transient( 'yatco_cache_warming_progress' );
+        
+        // Determine which stage is active
+        $active_stage = 0;
+        $active_progress = null;
+        if ( $stage3_progress !== false && is_array( $stage3_progress ) ) {
+            $active_stage = 3;
+            $active_progress = $stage3_progress;
+        } elseif ( $stage2_progress !== false && is_array( $stage2_progress ) ) {
+            $active_stage = 2;
+            $active_progress = $stage2_progress;
+        } elseif ( $stage1_progress !== false && is_array( $stage1_progress ) ) {
+            $active_stage = 1;
+            $active_progress = $stage1_progress;
+        } elseif ( $cache_progress !== false && is_array( $cache_progress ) ) {
+            $active_stage = 'full';
+            $active_progress = $cache_progress;
+        }
+        
+        // Display status bar
+        echo '<div id="yatco-import-status-display" style="background: #fff; border: 2px solid #2271b1; border-radius: 4px; padding: 20px; margin: 20px 0;">';
+        
+        if ( $active_stage > 0 || $active_stage === 'full' ) {
+            $current = isset( $active_progress['last_processed'] ) ? intval( $active_progress['last_processed'] ) : 0;
+            $total = isset( $active_progress['total'] ) ? intval( $active_progress['total'] ) : 0;
+            $percent = isset( $active_progress['percent'] ) ? floatval( $active_progress['percent'] ) : ( $total > 0 ? round( ( $current / $total ) * 100, 1 ) : 0 );
+            $stage_name = $active_stage === 'full' ? 'Full Import' : "Stage {$active_stage}";
+            
+            echo '<h3 style="margin-top: 0; color: #2271b1;">📊 ' . esc_html( $stage_name ) . ' Progress</h3>';
+            
+            if ( $cache_status !== false ) {
+                echo '<p style="margin: 10px 0; font-size: 14px; color: #666;"><strong>Status:</strong> ' . esc_html( $cache_status ) . '</p>';
+            }
+            
+            echo '<div style="background: #f0f0f0; border-radius: 10px; height: 30px; margin: 15px 0; position: relative; overflow: hidden;">';
+            echo '<div id="yatco-progress-bar" style="background: linear-gradient(90deg, #2271b1 0%, #46b450 100%); height: 100%; width: ' . esc_attr( $percent ) . '%; transition: width 0.3s ease; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: bold; font-size: 12px;">';
+            echo esc_html( $percent ) . '%';
+            echo '</div>';
+            echo '</div>';
+            
+            echo '<div style="display: flex; justify-content: space-between; margin-top: 10px; font-size: 13px; color: #666;">';
+            echo '<span><strong>Processed:</strong> ' . number_format( $current ) . ' / ' . number_format( $total ) . '</span>';
+            echo '<span><strong>Remaining:</strong> ' . number_format( $total - $current ) . '</span>';
+            echo '</div>';
+            
+            // Estimated time remaining
+            if ( isset( $active_progress['timestamp'] ) && $current > 0 ) {
+                $time_elapsed = time() - intval( $active_progress['timestamp'] );
+                if ( $time_elapsed > 0 && $current > 0 ) {
+                    $rate = $current / $time_elapsed; // items per second
+                    $remaining = $total - $current;
+                    if ( $rate > 0 ) {
+                        $eta_seconds = $remaining / $rate;
+                        $eta_minutes = round( $eta_seconds / 60, 1 );
+                        echo '<p style="margin: 10px 0 0 0; font-size: 12px; color: #666;"><strong>Estimated time remaining:</strong> ' . esc_html( $eta_minutes ) . ' minutes</p>';
+                    }
+                }
+            }
+        } elseif ( $cache_status !== false ) {
+            echo '<div class="notice notice-info" style="margin: 0;">';
+            echo '<p><strong>Status:</strong> ' . esc_html( $cache_status ) . '</p>';
             echo '</div>';
         } else {
-            echo '<p>No active import status.</p>';
+            echo '<p style="margin: 0; color: #666;">No active import. Start a staged import in the Import tab to see progress.</p>';
         }
+        
+        echo '</div>';
+        
+        // AJAX script for real-time updates
+        echo '<script type="text/javascript">';
+        echo 'jQuery(document).ready(function($) {';
+        echo '    function updateImportStatus() {';
+        echo '        $.ajax({';
+        echo '            url: ajaxurl,';
+        echo '            data: {';
+        echo '                action: "yatco_get_import_status",';
+        echo '                _ajax_nonce: "' . wp_create_nonce( 'yatco_get_import_status_nonce' ) . '"';
+        echo '            },';
+        echo '            success: function(response) {';
+        echo '                if (response.success) {';
+        echo '                    $("#yatco-import-status-display").html(response.data.html);';
+        echo '                } else {';
+        echo '                    $("#yatco-import-status-display").html("<p>Error fetching status: " + response.data + "</p>");';
+        echo '                }';
+        echo '            }';
+        echo '        });';
+        echo '    }';
+        echo '    // Update status every 3 seconds';
+        echo '    setInterval(updateImportStatus, 3000);';
+        echo '    // Initial load';
+        echo '    updateImportStatus();';
+        echo '});';
+        echo '</script>';
         
         echo '</div>'; // Close status tab section
     }
@@ -757,18 +860,47 @@ function yatco_options_page() {
     }
     echo '</td></tr>';
     
-    echo '<tr><td><strong>Hook Registered:</strong></td><td>';
+    echo '<tr><td><strong>Hooks Registered:</strong></td><td>';
+    $hooks_registered = array();
     if ( isset( $wp_filter['yatco_warm_cache_hook'] ) ) {
-        echo '<span style="color: #46b450;">✔ Registered</span>';
+        $hooks_registered[] = 'yatco_warm_cache_hook';
+    }
+    if ( isset( $wp_filter['yatco_stage1_import_hook'] ) ) {
+        $hooks_registered[] = 'yatco_stage1_import_hook';
+    }
+    if ( isset( $wp_filter['yatco_stage2_import_hook'] ) ) {
+        $hooks_registered[] = 'yatco_stage2_import_hook';
+    }
+    if ( isset( $wp_filter['yatco_stage3_import_hook'] ) ) {
+        $hooks_registered[] = 'yatco_stage3_import_hook';
+    }
+    if ( ! empty( $hooks_registered ) ) {
+        echo '<span style="color: #46b450;">✔ Registered: ' . esc_html( implode( ', ', $hooks_registered ) ) . '</span>';
     } else {
-        echo '<span style="color: #dc3232;">❌ Not Registered</span>';
+        echo '<span style="color: #dc3232;">❌ No hooks registered</span>';
     }
     echo '</td></tr>';
     
-    $scheduled = wp_next_scheduled( 'yatco_warm_cache_hook' );
+    $scheduled_stage1 = wp_next_scheduled( 'yatco_stage1_import_hook' );
+    $scheduled_stage2 = wp_next_scheduled( 'yatco_stage2_import_hook' );
+    $scheduled_stage3 = wp_next_scheduled( 'yatco_stage3_import_hook' );
+    $scheduled_warm = wp_next_scheduled( 'yatco_warm_cache_hook' );
     echo '<tr><td><strong>Scheduled Events:</strong></td><td>';
-    if ( $scheduled ) {
-        echo '<span style="color: #ff9800;">⚠ Scheduled for ' . date( 'Y-m-d H:i:s', $scheduled ) . '</span>';
+    $scheduled_events = array();
+    if ( $scheduled_stage1 ) {
+        $scheduled_events[] = 'Stage 1: ' . date( 'Y-m-d H:i:s', $scheduled_stage1 );
+    }
+    if ( $scheduled_stage2 ) {
+        $scheduled_events[] = 'Stage 2: ' . date( 'Y-m-d H:i:s', $scheduled_stage2 );
+    }
+    if ( $scheduled_stage3 ) {
+        $scheduled_events[] = 'Stage 3: ' . date( 'Y-m-d H:i:s', $scheduled_stage3 );
+    }
+    if ( $scheduled_warm ) {
+        $scheduled_events[] = 'Warm Cache: ' . date( 'Y-m-d H:i:s', $scheduled_warm );
+    }
+    if ( ! empty( $scheduled_events ) ) {
+        echo '<span style="color: #ff9800;">⚠ ' . esc_html( implode( '<br />', $scheduled_events ) ) . '</span>';
     } else {
         echo 'None scheduled';
     }

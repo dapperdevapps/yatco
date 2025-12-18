@@ -59,6 +59,30 @@ add_action( 'yatco_stage3_import_hook', function() {
     }
 } );
 
+// AJAX handler to run Stage 1 directly (for when WP-Cron isn't working)
+add_action( 'wp_ajax_yatco_run_stage1_direct', 'yatco_ajax_run_stage1_direct' );
+function yatco_ajax_run_stage1_direct() {
+    check_ajax_referer( 'yatco_run_stage1', 'nonce' );
+    
+    if ( ! current_user_can( 'manage_options' ) ) {
+        wp_send_json_error( array( 'message' => 'Unauthorized' ) );
+        return;
+    }
+    
+    // Increase execution time
+    @set_time_limit( 300 );
+    @ini_set( 'max_execution_time', 300 );
+    
+    $token = yatco_get_token();
+    if ( ! empty( $token ) ) {
+        // Run Stage 1
+        yatco_stage1_import_ids_and_names( $token );
+        wp_send_json_success( array( 'message' => 'Stage 1 completed' ) );
+    } else {
+        wp_send_json_error( array( 'message' => 'No API token' ) );
+    }
+}
+
 // AJAX handler for import status
 add_action( 'wp_ajax_yatco_get_import_status', 'yatco_ajax_get_import_status' );
 function yatco_ajax_get_import_status() {
@@ -92,9 +116,9 @@ function yatco_ajax_get_import_status() {
     }
     
     ob_start();
-    echo '<div id="yatco-import-status" style="background: #fff; border: 2px solid #2271b1; border-radius: 4px; padding: 20px; margin: 20px 0;">';
     
     if ( $active_stage > 0 || $active_stage === 'full' ) {
+        echo '<div id="yatco-import-status" style="background: #fff; border: 2px solid #2271b1; border-radius: 4px; padding: 20px; margin: 20px 0;">';
         $current = isset( $active_progress['last_processed'] ) ? intval( $active_progress['last_processed'] ) : 0;
         $total = isset( $active_progress['total'] ) ? intval( $active_progress['total'] ) : 0;
         $percent = isset( $active_progress['percent'] ) ? floatval( $active_progress['percent'] ) : ( $total > 0 ? round( ( $current / $total ) * 100, 1 ) : 0 );
