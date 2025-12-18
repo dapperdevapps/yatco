@@ -529,6 +529,15 @@ function yatco_options_page() {
                     }
                 }
             }
+            
+            // Stop button
+            echo '<div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #e0e0e0;">';
+            echo '<form method="post" id="yatco-stop-import-form" style="display: inline-block;">';
+            wp_nonce_field( 'yatco_stop_import', 'yatco_stop_import_nonce' );
+            echo '<button type="submit" name="yatco_stop_import" class="button button-secondary" style="background: #dc3232; border-color: #dc3232; color: #fff; font-weight: bold; padding: 8px 16px;">🛑 Stop Import</button>';
+            echo '</form>';
+            echo '<p style="margin: 8px 0 0 0; font-size: 12px; color: #666;">Click to cancel the current import. The import will stop at the next checkpoint.</p>';
+            echo '</div>';
         } elseif ( $cache_status !== false ) {
             echo '<div class="notice notice-info" style="margin: 0;">';
             echo '<p><strong>Status:</strong> ' . esc_html( $cache_status ) . '</p>';
@@ -538,6 +547,53 @@ function yatco_options_page() {
         }
         
         echo '</div>';
+        
+        // Handle stop import form submission
+        if ( isset( $_POST['yatco_stop_import'] ) && check_admin_referer( 'yatco_stop_import', 'yatco_stop_import_nonce' ) ) {
+            yatco_log( 'Import: Stop button clicked', 'info' );
+            // Set stop flag for running processes - keep it active for 5 minutes so running processes can detect it
+            set_transient( 'yatco_cache_warming_stop', true, 300 );
+            
+            // Cancel any scheduled cron jobs
+            $scheduled_stage1 = wp_next_scheduled( 'yatco_stage1_import_hook' );
+            $scheduled_stage2 = wp_next_scheduled( 'yatco_stage2_import_hook' );
+            $scheduled_stage3 = wp_next_scheduled( 'yatco_stage3_import_hook' );
+            $scheduled_warm = wp_next_scheduled( 'yatco_warm_cache_hook' );
+            
+            if ( $scheduled_stage1 ) {
+                wp_unschedule_event( $scheduled_stage1, 'yatco_stage1_import_hook' );
+                yatco_log( 'Import: Cancelled scheduled Stage 1 event', 'info' );
+            }
+            if ( $scheduled_stage2 ) {
+                wp_unschedule_event( $scheduled_stage2, 'yatco_stage2_import_hook' );
+                yatco_log( 'Import: Cancelled scheduled Stage 2 event', 'info' );
+            }
+            if ( $scheduled_stage3 ) {
+                wp_unschedule_event( $scheduled_stage3, 'yatco_stage3_import_hook' );
+                yatco_log( 'Import: Cancelled scheduled Stage 3 event', 'info' );
+            }
+            if ( $scheduled_warm ) {
+                wp_unschedule_event( $scheduled_warm, 'yatco_warm_cache_hook' );
+                yatco_log( 'Import: Cancelled scheduled warm cache event', 'info' );
+            }
+            
+            wp_clear_scheduled_hook( 'yatco_stage1_import_hook' );
+            wp_clear_scheduled_hook( 'yatco_stage2_import_hook' );
+            wp_clear_scheduled_hook( 'yatco_stage3_import_hook' );
+            wp_clear_scheduled_hook( 'yatco_warm_cache_hook' );
+            
+            // Clear progress and status
+            delete_transient( 'yatco_stage1_progress' );
+            delete_transient( 'yatco_stage2_progress' );
+            delete_transient( 'yatco_stage3_progress' );
+            delete_transient( 'yatco_cache_warming_progress' );
+            delete_transient( 'yatco_cache_warming_status' );
+            
+            set_transient( 'yatco_cache_warming_status', 'Import stopped by user.', 60 );
+            yatco_log( 'Import: Stop signal sent and progress cleared', 'info' );
+            
+            echo '<div class="notice notice-success" style="margin-top: 15px;"><p><strong>Stop signal sent!</strong> The import will stop at the next checkpoint (within a few seconds). Progress has been reset.</p></div>';
+        }
         
         // AJAX script for real-time updates
         echo '<script type="text/javascript">';
@@ -553,6 +609,26 @@ function yatco_options_page() {
         echo '            success: function(response) {';
         echo '                if (response && response.success && response.data && response.data.html) {';
         echo '                    $("#yatco-import-status-display").html(response.data.html);';
+        echo '                    // Re-bind stop button click handler';
+        echo '                    $("#yatco-stop-import-btn").off("click").on("click", function() {';
+        echo '                        if (!confirm("Are you sure you want to stop the import? It will stop at the next checkpoint.")) {';
+        echo '                            return false;';
+        echo '                        }';
+        echo '                        $.ajax({';
+        echo '                            url: ajaxurl,';
+        echo '                            type: "POST",';
+        echo '                            data: {';
+        echo '                                action: "yatco_stop_import",';
+        echo '                                nonce: "' . wp_create_nonce( 'yatco_stop_import' ) . '"';
+        echo '                            },';
+        echo '                            success: function(response) {';
+        echo '                                if (response.success) {';
+        echo '                                    alert("Stop signal sent! The import will stop at the next checkpoint.");';
+        echo '                                    updateImportStatus();';
+        echo '                                }';
+        echo '                            }';
+        echo '                        });';
+        echo '                    });';
         echo '                } else if (response && response.data) {';
         echo '                    $("#yatco-import-status-display").html("<p>Error: " + (response.data.message || response.data) + "</p>");';
         echo '                }';
@@ -1526,7 +1602,21 @@ function yatco_update_vessel_meta_box_callback( $post ) {
     
     // Get YATCO listing URL from stored meta, or build it if not stored
     $yatco_listing_url = get_post_meta( $post->ID, 'yacht_yatco_listing_url', true );
+    
+    // Check if URL is in old format (just ID, not full slug)
+    // Old format: https://www.yatco.com/yacht/444215/
+    // New format: https://www.yatco.com/yacht/70-rizzardi-motor-yacht-2026-407649/
+    $needs_regeneration = false;
     if ( empty( $yatco_listing_url ) ) {
+        $needs_regeneration = true;
+    } else {
+        // Check if URL matches old format (just number before the trailing slash)
+        if ( preg_match( '#https?://www\.yatco\.com/yacht/(\d+)/?$#', $yatco_listing_url, $matches ) ) {
+            $needs_regeneration = true;
+        }
+    }
+    
+    if ( $needs_regeneration ) {
         // Build YATCO listing URL using helper function
         $length = get_post_meta( $post->ID, 'yacht_length_feet', true );
         $builder = get_post_meta( $post->ID, 'yacht_make', true );
