@@ -702,14 +702,45 @@ function yatco_options_page() {
                     echo '<h3>Step 3: Importing Vessel to CPT</h3>';
                     echo '<p>Now importing vessel ID ' . esc_html( $found_vessel_id ) . ' data into your Custom Post Type...</p>';
                     
+                    // Flush output so user sees the message
+                    if ( ob_get_level() > 0 ) {
+                        ob_flush();
+                    }
+                    flush();
+                    
                     require_once YATCO_PLUGIN_DIR . 'includes/yatco-helpers.php';
+                    
+                    // Clear any stop flag that might be lingering from previous imports
+                    delete_transient( 'yatco_cache_warming_stop' );
+                    
+                    // Increase execution time for test
+                    @set_time_limit( 120 );
+                    @ini_set( 'max_execution_time', 120 );
+                    
+                    echo '<p style="color: #666; font-size: 13px;">Calling yatco_import_single_vessel()...</p>';
+                    
+                    // Flush again
+                    if ( ob_get_level() > 0 ) {
+                        ob_flush();
+                    }
+                    flush();
                     
                     $import_result = yatco_import_single_vessel( $token, $found_vessel_id );
                     
                     if ( is_wp_error( $import_result ) ) {
                         echo '<div class="notice notice-error">';
                         echo '<p><strong>❌ Import Failed:</strong> ' . esc_html( $import_result->get_error_message() ) . '</p>';
-                        echo '<p>This might be due to missing or invalid data in the API response. Check the raw JSON below for details.</p>';
+                        echo '<p><strong>Error Code:</strong> ' . esc_html( $import_result->get_error_code() ) . '</p>';
+                        if ( $import_result->get_error_code() === 'import_stopped' ) {
+                            echo '<p style="color: #dc3232;"><strong>Note:</strong> The import was stopped because a stop flag was detected. This might be from a previous import. Try clearing the stop flag and running the test again.</p>';
+                        } else {
+                            echo '<p>This might be due to missing or invalid data in the API response. Check the raw JSON below for details.</p>';
+                        }
+                        echo '</div>';
+                    } elseif ( empty( $import_result ) ) {
+                        echo '<div class="notice notice-error">';
+                        echo '<p><strong>❌ Import Failed:</strong> The import function returned an empty result. This might indicate a fatal error occurred.</p>';
+                        echo '<p>Please check your PHP error logs for more details.</p>';
                         echo '</div>';
                     } else {
                         $post_id = $import_result;
