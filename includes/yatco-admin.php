@@ -1382,158 +1382,12 @@ function yatco_options_page() {
         echo '</div>';
     }
     
-    // Status Tab
-    if ( $current_tab === 'status' ) {
-        echo '<div class="yatco-status-section">';
-    echo '<h2>Cache Status & Progress</h2>';
-        
-        $cache_status = get_transient( 'yatco_cache_warming_status' );
-        $cache_progress = get_transient( 'yatco_cache_warming_progress' );
-    
-    if ( $cache_status !== false ) {
-        echo '<div class="notice notice-info">';
-        echo '<p><strong>Status:</strong> ' . esc_html( $cache_status ) . '</p>';
-        echo '</div>';
-    } else {
-        echo '<p>No status recorded.</p>';
-    }
-    
-    if ( $cache_progress !== false && is_array( $cache_progress ) ) {
-        $last_processed = isset( $cache_progress['last_processed'] ) ? intval( $cache_progress['last_processed'] ) : 0;
-        $total = isset( $cache_progress['total'] ) ? intval( $cache_progress['total'] ) : 0;
-        $timestamp = isset( $cache_progress['timestamp'] ) ? intval( $cache_progress['timestamp'] ) : 0;
-        $is_progress_stuck = false;
-        
-        // Check if progress is stuck (hasn't been updated in 30 minutes)
-        if ( $timestamp > 0 && ( time() - $timestamp > 1800 ) && $last_processed < $total ) {
-            $is_progress_stuck = true;
-        }
-        
-        if ( $total > 0 ) {
-            $percent = round( ( $last_processed / $total ) * 100, 1 );
-            echo '<div style="background: #f9f9f9; border: 1px solid #ddd; padding: 20px; margin: 20px 0;">';
-            echo '<h3>Progress</h3>';
-            
-            if ( $is_progress_stuck ) {
-                echo '<div class="notice notice-warning" style="margin: 10px 0; padding: 10px;">';
-                echo '<p><strong>⚠️ Import appears to be stuck!</strong> Progress hasn\'t been updated in over 30 minutes. The process may have crashed. Please click "Stop Import" below and restart if needed.</p>';
-                echo '</div>';
-            }
-            
-            echo '<p>Processed: <strong>' . number_format( $last_processed ) . ' / ' . number_format( $total ) . '</strong> vessels (' . $percent . '%)</p>';
-            
-            if ( $timestamp > 0 ) {
-                $last_update = human_time_diff( $timestamp, time() );
-                echo '<p style="color: #666; font-size: 12px;">Last updated: ' . $last_update . ' ago</p>';
-            }
-            
-            $progress_width = min( $percent, 100 );
-            $progress_color = $is_progress_stuck ? '#dc3232' : '#2271b1';
-            echo '<div style="background: #e0e0e0; border-radius: 4px; height: 30px; width: 100%; position: relative; overflow: hidden;">';
-            echo '<div style="background: ' . $progress_color . '; height: 100%; width: ' . $progress_width . '%; transition: width 0.3s ease; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: bold; font-size: 12px;">' . $percent . '%</div>';
-            echo '</div>';
-            
-            if ( ( $is_running || $is_progress_stuck ) && $last_processed < $total ) {
-                echo '<form method="post" style="margin-top: 15px;">';
-                wp_nonce_field( 'yatco_stop_import', 'yatco_stop_import_nonce' );
-                echo '<button type="submit" name="yatco_stop_import" class="button button-secondary" style="background: #dc3232; border-color: #dc3232; color: #fff; font-weight: bold; padding: 8px 16px;">🛑 Stop Import Now</button>';
-                echo '</form>';
-            }
-            
-            // Support both old format (vessels) and new format (vessel_ids)
-            $has_vessel_list = false;
-            if ( isset( $cache_progress['vessels'] ) && is_array( $cache_progress['vessels'] ) && ! empty( $cache_progress['vessels'] ) ) {
-                $has_vessel_list = true;
-                $recent_vessels = array_slice( $cache_progress['vessels'], -10 );
-                echo '<h4 style="margin-top: 20px;">Recently Processed Vessels</h4>';
-                echo '<table class="widefat fixed striped" style="margin-top: 10px;">';
-                echo '<thead><tr><th>Vessel ID</th><th>Name</th><th>Price</th><th>Year</th><th>LOA</th></tr></thead>';
-                echo '<tbody>';
-                foreach ( $recent_vessels as $vessel ) {
-                    echo '<tr>';
-                    echo '<td>' . esc_html( isset( $vessel['id'] ) ? $vessel['id'] : '' ) . '</td>';
-                    echo '<td>' . esc_html( isset( $vessel['name'] ) ? $vessel['name'] : '' ) . '</td>';
-                    echo '<td>' . esc_html( isset( $vessel['price'] ) ? $vessel['price'] : '' ) . '</td>';
-                    echo '<td>' . esc_html( isset( $vessel['year'] ) ? $vessel['year'] : '' ) . '</td>';
-                    echo '<td>' . esc_html( isset( $vessel['loa'] ) ? $vessel['loa'] : '' ) . '</td>';
-                    echo '</tr>';
-                }
-                echo '</tbody>';
-                echo '</table>';
-                
-                if ( count( $cache_progress['vessels'] ) > 10 ) {
-                    echo '<p style="font-size: 12px; color: #666; margin-top: 10px;">Showing last 10 vessels. Total processed: ' . count( $cache_progress['vessels'] ) . '</p>';
-                }
-            }
-            
-            echo '</div>';
-        } else {
-            echo '<p>Progress data exists but total is 0.</p>';
-        }
-    } else {
-        echo '<p>No progress recorded.</p>';
-    }
-    
-        echo '<hr style="margin: 30px 0;" />';
-    echo '<h2>Cache Management</h2>';
-    
-    if ( isset( $_POST['yatco_warm_cache'] ) && check_admin_referer( 'yatco_warm_cache', 'yatco_warm_cache_nonce' ) ) {
-        if ( empty( $token ) ) {
-            echo '<div class="notice notice-error"><p>Missing token. Please configure your API token first.</p></div>';
-        } else {
-            delete_transient( 'yatco_cache_warming_progress' );
-            delete_transient( 'yatco_cache_warming_status' );
-            
-            if ( function_exists( 'set_transient' ) ) {
-                set_transient( 'yatco_cache_warming_status', 'Starting cache warm-up...', 600 );
-            }
-            
-            wp_schedule_single_event( time(), 'yatco_warm_cache_hook' );
-            
-            spawn_cron();
-            
-            wp_remote_post(
-                admin_url( 'admin-ajax.php' ),
-                array(
-                    'timeout'   => 0.01,
-                    'blocking'  => false,
-                    'sslverify' => false,
-                    'body'      => array(
-                        'action' => 'yatco_trigger_cache_warming',
-                        'nonce'  => wp_create_nonce( 'yatco_trigger_warming' ),
-                    ),
-                )
-            );
-            
-            $cpt_count = wp_count_posts( 'yacht' );
-            $published_count = isset( $cpt_count->publish ) ? intval( $cpt_count->publish ) : 0;
-            
-            echo '<div class="notice notice-info"><p><strong>CPT import started!</strong> This will run in the background and may take several minutes for 7000+ vessels.</p>';
-            echo '<p>Current yacht posts in CPT: <strong>' . number_format( $published_count ) . '</strong></p>';
-            echo '<p>The system processes vessels in batches of 20 to prevent timeouts. Progress is saved automatically, so if interrupted, it will resume from where it left off.</p>';
-            echo '<p><em>Note: If progress doesn\'t appear within 30 seconds, try clicking "Import All Vessels to CPT" again or check if WP-Cron is enabled on your server.</em></p></div>';
-        }
-    }
-    
-    echo '<form method="post" style="margin-top: 10px;">';
-    wp_nonce_field( 'yatco_clear_cache', 'yatco_clear_cache_nonce' );
-    submit_button( 'Clear Transient Cache Only', 'secondary', 'yatco_clear_cache' );
-    echo '<p style="font-size: 12px; color: #666; margin: 5px 0;">This clears only transient caches. CPT posts remain unchanged.</p>';
-    echo '</form>';
-    
-    if ( isset( $_POST['yatco_clear_cache'] ) && check_admin_referer( 'yatco_clear_cache', 'yatco_clear_cache_nonce' ) ) {
-        delete_transient( 'yatco_cache_warming_progress' );
-        delete_transient( 'yatco_cache_warming_status' );
-        echo '<div class="notice notice-success"><p><strong>Cache cleared!</strong> Transient caches have been cleared. CPT posts remain unchanged.</p></div>';
-        }
-        echo '</div>';
-    }
-    
-    // Status Tab
-    if ( $current_tab === 'status' ) {
-        echo '<div class="yatco-status-section">';
-        echo '<h2>Cache Status & Progress</h2>';
-    echo '<div style="background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; padding: 20px; margin: 20px 0;">';
+    // Troubleshooting Tab
+    if ( $current_tab === 'troubleshooting' ) {
+        echo '<div class="yatco-troubleshooting-section">';
+        echo '<h2>Troubleshooting</h2>';
+        echo '<p>This section contains diagnostic tools and information to help troubleshoot issues.</p>';
+        echo '<div style="background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; padding: 20px; margin: 20px 0;">';
     
     $cron_disabled = defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON;
     echo '<h3>WP-Cron Status</h3>';
@@ -1786,14 +1640,7 @@ function yatco_options_page() {
     echo '<p style="font-size: 12px; color: #666; margin-top: 10px;">Note: Replace <code>*/15</code> with your desired frequency (e.g., <code>*/5</code> for every 5 minutes). Add this to your server\'s crontab using <code>crontab -e</code>.</p>';
     echo '</div>';
     echo '</div>';
-    }
-    
-    // Troubleshooting Tab
-    if ( $current_tab === 'troubleshooting' ) {
-        echo '<div class="yatco-troubleshooting-section">';
-        echo '<h2>Troubleshooting</h2>';
-        echo '<p>This section contains diagnostic tools and information to help troubleshoot issues.</p>';
-    echo '</div>';
+    echo '</div>'; // Close troubleshooting section
     }
     
     echo '</div>'; // End tab content
