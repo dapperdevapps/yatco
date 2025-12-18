@@ -1610,8 +1610,12 @@ function yatco_update_vessel_meta_box_callback( $post ) {
     if ( empty( $yatco_listing_url ) ) {
         $needs_regeneration = true;
     } else {
-        // Check if URL matches old format (just number before the trailing slash)
+        // Check if URL matches old format (just number before the trailing slash, no hyphens)
+        // URLs with hyphens are the new format
         if ( preg_match( '#https?://www\.yatco\.com/yacht/(\d+)/?$#', $yatco_listing_url, $matches ) ) {
+            $needs_regeneration = true;
+        } elseif ( strpos( $yatco_listing_url, '-' ) === false ) {
+            // URL exists but has no hyphens, likely old format
             $needs_regeneration = true;
         }
     }

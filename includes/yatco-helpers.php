@@ -742,7 +742,7 @@ function yatco_import_single_vessel( $token, $vessel_id ) {
         $yatco_listing_url = $misc['YatcoUrl'];
     }
     
-    // If no URL from API, fall back to building it (for backwards compatibility)
+    // If no URL from API, build it from available data
     if ( empty( $yatco_listing_url ) ) {
         $category_for_url = ! empty( $sub_category ) ? $sub_category : ( ! empty( $category ) ? $category : $type );
         // Ensure loa_feet is numeric (not null) for URL building
@@ -750,6 +750,8 @@ function yatco_import_single_vessel( $token, $vessel_id ) {
         $yatco_listing_url = yatco_build_listing_url( $post_id, $mlsid, $vessel_id, $loa_feet_for_url, $make, $category_for_url, $year );
     }
     
+    // Always update the URL during import to ensure it's correct (even if it was previously set)
+    // This ensures URLs are rebuilt with correct data when Stage 3 runs
     update_post_meta( $post_id, 'yacht_yatco_listing_url', $yatco_listing_url );
     update_post_meta( $post_id, 'yacht_price', $price_formatted_display ); // Save formatted price string
     update_post_meta( $post_id, 'yacht_price_usd', $price_usd );

@@ -287,8 +287,12 @@ function yatco_show_yacht_list_column( $column, $post_id ) {
         if ( empty( $listing_url ) ) {
             $needs_regeneration = true;
         } else {
-            // Check if URL matches old format (just number before the trailing slash)
+            // Check if URL matches old format (just number before the trailing slash, no hyphens)
+            // URLs with hyphens are the new format
             if ( preg_match( '#https?://www\.yatco\.com/yacht/(\d+)/?$#', $listing_url, $matches ) ) {
+                $needs_regeneration = true;
+            } elseif ( strpos( $listing_url, '-' ) === false ) {
+                // URL exists but has no hyphens, likely old format
                 $needs_regeneration = true;
             }
         }
@@ -312,6 +316,10 @@ function yatco_show_yacht_list_column( $column, $post_id ) {
             
             if ( ! empty( $mlsid ) || ! empty( $vessel_id ) ) {
                 $listing_url = yatco_build_listing_url( $post_id, $mlsid, $vessel_id, $length, $builder, $category, $year );
+                // Save the regenerated URL for future use
+                if ( ! empty( $listing_url ) ) {
+                    update_post_meta( $post_id, 'yacht_yatco_listing_url', $listing_url );
+                }
             }
         }
         if ( ! empty( $listing_url ) ) {

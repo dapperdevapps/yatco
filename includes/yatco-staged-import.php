@@ -158,7 +158,20 @@ function yatco_stage1_import_ids_and_names( $token ) {
             }
             
             $result = $data['Result'];
-            $name = isset( $result['VesselName'] ) ? $result['VesselName'] : 'Vessel ' . $vessel_id;
+            $basic = isset( $data['BasicInfo'] ) ? $data['BasicInfo'] : array();
+            
+            // Vessel name: Prefer BasicInfo.BoatName (better case formatting), then Result.VesselName
+            // BasicInfo.BoatName usually has proper case like "All Ocean Yachts 100' Fiberglass"
+            // Result.VesselName is often all caps like "ALL OCEAN YACHTS 100′ FIBERGLASS"
+            $name = '';
+            if ( ! empty( $basic['BoatName'] ) ) {
+                $name = $basic['BoatName'];
+            } elseif ( ! empty( $result['VesselName'] ) ) {
+                $name = $result['VesselName'];
+            } else {
+                $name = 'Vessel ' . $vessel_id;
+            }
+            
             $mlsid = isset( $result['MLSID'] ) ? $result['MLSID'] : $vessel_id;
             
             // Find or create post - use vessel name exactly as provided by API
