@@ -637,11 +637,11 @@ function yatco_full_import( $token ) {
 }
 
 /**
- * Daily Sync: Check for new or removed vessels only.
+ * Daily Sync: Check for new/removed vessels and update prices/days on market.
  */
 function yatco_daily_sync_check( $token ) {
     yatco_log( 'Daily Sync: Starting', 'info' );
-    set_transient( 'yatco_cache_warming_status', 'Daily Sync: Checking for new or removed vessels...', 600 );
+    set_transient( 'yatco_cache_warming_status', 'Daily Sync: Checking for changes...', 600 );
     
     // Get current active vessel IDs from API
     $current_ids = yatco_get_active_vessel_ids( $token, 0 );
@@ -660,6 +660,9 @@ function yatco_daily_sync_check( $token ) {
     
     // Find new vessels
     $new_ids = array_diff( $current_ids, $stored_ids );
+    
+    // Find existing vessels (for price/days on market updates)
+    $existing_ids = array_intersect( $current_ids, $stored_ids );
     
     // Update stored IDs
     update_option( 'yatco_vessel_ids', $current_ids, false );
@@ -693,19 +696,129 @@ function yatco_daily_sync_check( $token ) {
         }
     }
     
+    // Check and update prices and days on market for existing vessels
+    $price_updates = 0;
+    $days_on_market_updates = 0;
+    $batch_size = 50; // Process 50 at a time
+    $delay_seconds = 1; // 1 second delay between batches
+    
+    if ( ! empty( $existing_ids ) ) {
+        yatco_log( "Daily Sync: Checking prices and days on market for " . count( $existing_ids ) . " existing vessels", 'info' );
+        set_transient( 'yatco_cache_warming_status', 'Daily Sync: Updating prices and days on market...', 600 );
+        
+        foreach ( array_chunk( $existing_ids, $batch_size ) as $batch ) {
+            // Check stop flag
+            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            if ( $stop_flag !== false ) {
+                yatco_log( 'Daily Sync: Stop flag detected, cancelling', 'warning' );
+                break;
+            }
+            
+            foreach ( $batch as $vessel_id ) {
+                $post_id = yatco_find_vessel_post_by_id( $vessel_id );
+                if ( ! $post_id ) {
+                    continue;
+                }
+                
+                // Fetch lightweight data to check price and days on market
+                $endpoint = 'https://api.yatcoboss.com/api/v1/ForSale/Vessel/' . intval( $vessel_id ) . '/Details/FullSpecsAll';
+                $response = wp_remote_get(
+                    $endpoint,
+                    array(
+                        'headers' => array(
+                            'Authorization' => 'Basic ' . $token,
+                            'Accept'        => 'application/json',
+                        ),
+                        'timeout' => 15,
+                    )
+                );
+                
+                if ( is_wp_error( $response ) || wp_remote_retrieve_response_code( $response ) !== 200 ) {
+                    continue;
+                }
+                
+                $data = json_decode( wp_remote_retrieve_body( $response ), true );
+                if ( empty( $data ) || ! isset( $data['Result'] ) ) {
+                    continue;
+                }
+                
+                $result = $data['Result'];
+                $basic = isset( $data['BasicInfo'] ) ? $data['BasicInfo'] : array();
+                $misc = isset( $data['MiscInfo'] ) ? $data['MiscInfo'] : array();
+                
+                // Check and update price
+                $api_price_usd = null;
+                if ( isset( $basic['AskingPriceUSD'] ) && $basic['AskingPriceUSD'] > 0 ) {
+                    $api_price_usd = floatval( $basic['AskingPriceUSD'] );
+                } elseif ( isset( $result['AskingPriceCompare'] ) && $result['AskingPriceCompare'] > 0 ) {
+                    $api_price_usd = floatval( $result['AskingPriceCompare'] );
+                }
+                
+                if ( $api_price_usd !== null ) {
+                    $stored_price = get_post_meta( $post_id, 'yacht_price_usd', true );
+                    $stored_price = ! empty( $stored_price ) ? floatval( $stored_price ) : null;
+                    
+                    // Check if price changed
+                    if ( $stored_price === null || abs( $api_price_usd - $stored_price ) > 0.01 ) {
+                        // Price changed - update it
+                        $price_formatted = isset( $result['AskingPriceFormatted'] ) ? $result['AskingPriceFormatted'] : '';
+                        update_post_meta( $post_id, 'yacht_price_usd', $api_price_usd );
+                        update_post_meta( $post_id, 'yacht_price', $price_formatted );
+                        update_post_meta( $post_id, 'yacht_last_updated', time() );
+                        $price_updates++;
+                        yatco_log( "Daily Sync: Updated price for vessel {$vessel_id} from {$stored_price} to {$api_price_usd}", 'info' );
+                    }
+                }
+                
+                // Check and update days on market
+                $api_days_on_market = null;
+                if ( isset( $result['DaysOnMarket'] ) && $result['DaysOnMarket'] > 0 ) {
+                    $api_days_on_market = intval( $result['DaysOnMarket'] );
+                } elseif ( isset( $misc['DaysOnMarket'] ) && $misc['DaysOnMarket'] > 0 ) {
+                    $api_days_on_market = intval( $misc['DaysOnMarket'] );
+                }
+                
+                if ( $api_days_on_market !== null ) {
+                    $stored_days = get_post_meta( $post_id, 'yacht_days_on_market', true );
+                    $stored_days = ! empty( $stored_days ) ? intval( $stored_days ) : null;
+                    
+                    // Check if days on market changed
+                    if ( $stored_days === null || $api_days_on_market !== $stored_days ) {
+                        update_post_meta( $post_id, 'yacht_days_on_market', $api_days_on_market );
+                        update_post_meta( $post_id, 'yacht_last_updated', time() );
+                        $days_on_market_updates++;
+                        yatco_log( "Daily Sync: Updated days on market for vessel {$vessel_id} from {$stored_days} to {$api_days_on_market}", 'info' );
+                    }
+                }
+                
+                // Small delay between items
+                usleep( 200000 ); // 200ms
+            }
+            
+            // Delay between batches
+            if ( count( $batch ) === $batch_size ) {
+                sleep( $delay_seconds );
+            }
+        }
+    }
+    
     // Store sync results
     $sync_results = array(
         'removed' => $removed_count,
         'new' => $new_count,
+        'price_updates' => $price_updates,
+        'days_on_market_updates' => $days_on_market_updates,
         'timestamp' => time(),
     );
     update_option( 'yatco_daily_sync_results', $sync_results, false );
     update_option( 'yatco_daily_sync_last_run', time(), false );
     
     $status_message = sprintf(
-        'Daily Sync Complete: %d removed, %d new vessels imported.',
+        'Daily Sync Complete: %d removed, %d new, %d price updates, %d days on market updates.',
         $removed_count,
-        $new_count
+        $new_count,
+        $price_updates,
+        $days_on_market_updates
     );
     set_transient( 'yatco_cache_warming_status', $status_message, 300 );
     yatco_log( $status_message, 'info' );

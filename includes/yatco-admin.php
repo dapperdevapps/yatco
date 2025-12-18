@@ -263,16 +263,22 @@ function yatco_options_page() {
         
         // Daily Sync Button
         echo '<div style="background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 20px; margin: 20px 0;">';
-        echo '<h3>Daily Sync: Check for New or Removed Vessels</h3>';
-        echo '<p>Checks for new vessels (imports them) and removed vessels (marks as draft). This is lightweight and can run daily.</p>';
+        echo '<h3>Daily Sync: Check for Changes</h3>';
+        echo '<p>Checks for new vessels (imports them), removed vessels (marks as draft), and updates prices and days on market for existing vessels. This can run daily.</p>';
         $last_sync = get_option( 'yatco_daily_sync_last_run', 0 );
         if ( $last_sync > 0 ) {
             echo '<p style="color: #666; font-size: 13px;">Last run: ' . date( 'Y-m-d H:i:s', $last_sync ) . '</p>';
             $sync_results = get_option( 'yatco_daily_sync_results', array() );
             if ( ! empty( $sync_results ) ) {
+                $removed = isset( $sync_results['removed'] ) ? intval( $sync_results['removed'] ) : 0;
+                $new = isset( $sync_results['new'] ) ? intval( $sync_results['new'] ) : 0;
+                $price_updates = isset( $sync_results['price_updates'] ) ? intval( $sync_results['price_updates'] ) : 0;
+                $days_updates = isset( $sync_results['days_on_market_updates'] ) ? intval( $sync_results['days_on_market_updates'] ) : 0;
                 echo '<p style="color: #666; font-size: 13px;">Last results: ' . 
-                     intval( $sync_results['removed'] ) . ' removed, ' . 
-                     intval( $sync_results['new'] ) . ' new vessels imported.</p>';
+                     $removed . ' removed, ' . 
+                     $new . ' new, ' . 
+                     $price_updates . ' price updates, ' . 
+                     $days_updates . ' days on market updates.</p>';
             }
         }
         echo '<form method="post" style="margin-top: 15px;">';
