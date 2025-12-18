@@ -215,6 +215,7 @@ function yatco_import_single_vessel( $token, $vessel_id ) {
     $accommodations = isset( $full['Accommodations'] ) ? $full['Accommodations'] : array();
     $speed_weight = isset( $full['SpeedWeight'] ) ? $full['SpeedWeight'] : array();
     $hull_deck = isset( $full['HullDeck'] ) ? $full['HullDeck'] : array();
+    $seo = isset( $full['SEO'] ) ? $full['SEO'] : array();
 
     // Basic fields – updated to match actual API structure.
     $name   = '';
@@ -717,12 +718,38 @@ function yatco_import_single_vessel( $token, $vessel_id ) {
     update_post_meta( $post_id, 'yacht_vessel_id', $vessel_id ); // Store vessel ID for reference
     
     // Store YATCO listing URL for easy access in admin
-    // Build proper YATCO URL with slug format: length-builder-category-year-mlsid
-    // Use category or sub_category for the type part (e.g., "motor-yacht")
-    $category_for_url = ! empty( $sub_category ) ? $sub_category : ( ! empty( $category ) ? $category : $type );
-    // Ensure loa_feet is numeric (not null) for URL building
-    $loa_feet_for_url = ( $loa_feet !== null && $loa_feet > 0 ) ? $loa_feet : 0;
-    $yatco_listing_url = yatco_build_listing_url( $post_id, $mlsid, $vessel_id, $loa_feet_for_url, $make, $category_for_url, $year );
+    // First, try to get URL from API (SEO section or other fields)
+    $yatco_listing_url = '';
+    
+    // Check for URL in various possible API fields
+    if ( ! empty( $seo['SEOPageTitle'] ) && strpos( $seo['SEOPageTitle'], 'http' ) !== false ) {
+        $yatco_listing_url = $seo['SEOPageTitle'];
+    } elseif ( ! empty( $result['YatcoUrl'] ) ) {
+        $yatco_listing_url = $result['YatcoUrl'];
+    } elseif ( ! empty( $result['PublicUrl'] ) ) {
+        $yatco_listing_url = $result['PublicUrl'];
+    } elseif ( ! empty( $result['ListingUrl'] ) ) {
+        $yatco_listing_url = $result['ListingUrl'];
+    } elseif ( ! empty( $result['CanonicalUrl'] ) ) {
+        $yatco_listing_url = $result['CanonicalUrl'];
+    } elseif ( ! empty( $basic['YatcoUrl'] ) ) {
+        $yatco_listing_url = $basic['YatcoUrl'];
+    } elseif ( ! empty( $basic['PublicUrl'] ) ) {
+        $yatco_listing_url = $basic['PublicUrl'];
+    } elseif ( ! empty( $basic['ListingUrl'] ) ) {
+        $yatco_listing_url = $basic['ListingUrl'];
+    } elseif ( ! empty( $misc['YatcoUrl'] ) ) {
+        $yatco_listing_url = $misc['YatcoUrl'];
+    }
+    
+    // If no URL from API, fall back to building it (for backwards compatibility)
+    if ( empty( $yatco_listing_url ) ) {
+        $category_for_url = ! empty( $sub_category ) ? $sub_category : ( ! empty( $category ) ? $category : $type );
+        // Ensure loa_feet is numeric (not null) for URL building
+        $loa_feet_for_url = ( $loa_feet !== null && $loa_feet > 0 ) ? $loa_feet : 0;
+        $yatco_listing_url = yatco_build_listing_url( $post_id, $mlsid, $vessel_id, $loa_feet_for_url, $make, $category_for_url, $year );
+    }
+    
     update_post_meta( $post_id, 'yacht_yatco_listing_url', $yatco_listing_url );
     update_post_meta( $post_id, 'yacht_price', $price_formatted_display ); // Save formatted price string
     update_post_meta( $post_id, 'yacht_price_usd', $price_usd );
