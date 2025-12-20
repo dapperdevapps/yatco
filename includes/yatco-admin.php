@@ -337,18 +337,20 @@ function yatco_options_page() {
             echo '<h3 style="margin-top: 0; color: #2271b1;">📊 ' . esc_html( $stage_name ) . ' Progress</h3>';
             
             if ( $cache_status !== false ) {
-                echo '<p style="margin: 10px 0; font-size: 14px; color: #666;"><strong>Status:</strong> ' . esc_html( $cache_status ) . '</p>';
+                echo '<p id="yatco-status-text" style="margin: 10px 0; font-size: 14px; color: #666;"><strong>Status:</strong> ' . esc_html( $cache_status ) . '</p>';
+            } else {
+                echo '<p id="yatco-status-text" style="margin: 10px 0; font-size: 14px; color: #666;"><strong>Status:</strong> <span>Starting...</span></p>';
             }
             
             echo '<div style="background: #f0f0f0; border-radius: 10px; height: 30px; margin: 15px 0; position: relative; overflow: hidden;">';
-            echo '<div id="yatco-progress-bar" style="background: linear-gradient(90deg, #2271b1 0%, #46b450 100%); height: 100%; width: ' . esc_attr( $percent ) . '%; transition: width 0.3s ease; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: bold; font-size: 12px;">';
+            echo '<div id="yatco-progress-bar" style="background: linear-gradient(90deg, #2271b1 0%, #46b450 100%); height: 100%; width: ' . esc_attr( $percent ) . '%; transition: width 0.5s ease-in-out; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: bold; font-size: 12px;">';
             echo esc_html( $percent ) . '%';
             echo '</div>';
             echo '</div>';
             
             echo '<div style="display: flex; justify-content: space-between; margin-top: 10px; font-size: 13px; color: #666;">';
-            echo '<span><strong>Processed:</strong> ' . number_format( $current ) . ' / ' . number_format( $total ) . '</span>';
-            echo '<span><strong>Remaining:</strong> ' . number_format( $total - $current ) . '</span>';
+            echo '<span><strong>Processed:</strong> <span id="yatco-processed-count">' . number_format( $current ) . ' / ' . number_format( $total ) . '</span></span>';
+            echo '<span><strong>Remaining:</strong> <span id="yatco-remaining-count">' . number_format( $total - $current ) . '</span></span>';
             echo '</div>';
             
             // Estimated time remaining
@@ -360,9 +362,15 @@ function yatco_options_page() {
                     if ( $rate > 0 ) {
                         $eta_seconds = $remaining / $rate;
                         $eta_minutes = round( $eta_seconds / 60, 1 );
-                        echo '<p style="margin: 10px 0 0 0; font-size: 12px; color: #666;"><strong>Estimated time remaining:</strong> ' . esc_html( $eta_minutes ) . ' minutes</p>';
+                        echo '<p style="margin: 10px 0 0 0; font-size: 12px; color: #666;"><strong>Estimated time remaining:</strong> <span id="yatco-eta-text">' . esc_html( $eta_minutes ) . ' minutes</span></p>';
+                    } else {
+                        echo '<p style="margin: 10px 0 0 0; font-size: 12px; color: #666;"><strong>Estimated time remaining:</strong> <span id="yatco-eta-text">calculating...</span></p>';
                     }
+                } else {
+                    echo '<p style="margin: 10px 0 0 0; font-size: 12px; color: #666;"><strong>Estimated time remaining:</strong> <span id="yatco-eta-text">calculating...</span></p>';
                 }
+            } else {
+                echo '<p style="margin: 10px 0 0 0; font-size: 12px; color: #666;"><strong>Estimated time remaining:</strong> <span id="yatco-eta-text">calculating...</span></p>';
             }
         } else {
             echo '<p style="margin: 0; color: #666;">No active import. Start a full import above to see progress.</p>';
@@ -370,7 +378,7 @@ function yatco_options_page() {
         
         echo '</div>';
         
-        // Auto-refresh script
+        // Auto-refresh script - replaced by new AJAX code below
         echo '<script>
         (function() {
             function updateStatus() {
@@ -551,9 +559,10 @@ function yatco_options_page() {
             echo '<div class="notice notice-success" style="margin-top: 15px;"><p><strong>Stop signal sent!</strong> The import will stop at the next checkpoint (within a few seconds). Progress has been reset.</p></div>';
         }
         
-        // AJAX script for real-time updates
+        // AJAX script for real-time updates with smooth progress bar animation
         echo '<script type="text/javascript">';
         echo 'jQuery(document).ready(function($) {';
+        echo '    var updateInterval = null;';
         echo '    function updateImportStatus() {';
         echo '        $.ajax({';
         echo '            url: ajaxurl,';
@@ -563,30 +572,47 @@ function yatco_options_page() {
         echo '                _ajax_nonce: "' . wp_create_nonce( 'yatco_get_import_status_nonce' ) . '"';
         echo '            },';
         echo '            success: function(response) {';
-        echo '                if (response && response.success && response.data && response.data.html) {';
-        echo '                    $("#yatco-import-status-display").html(response.data.html);';
-        echo '                    // Re-bind stop button click handler';
-        echo '                    $("#yatco-stop-import-btn").off("click").on("click", function() {';
-        echo '                        if (!confirm("Are you sure you want to stop the import? It will stop at the next checkpoint.")) {';
-        echo '                            return false;';
+        echo '                if (response && response.success && response.data) {';
+        echo '                    var data = response.data;';
+        echo '                    ';
+        echo '                    if (data.active && data.progress) {';
+        echo '                        // Update status text';
+        echo '                        if (data.status && $("#yatco-status-text").length) {';
+        echo '                            $("#yatco-status-text").text(data.status);';
         echo '                        }';
-        echo '                        $.ajax({';
-        echo '                            url: ajaxurl,';
-        echo '                            type: "POST",';
-        echo '                            data: {';
-        echo '                                action: "yatco_stop_import",';
-        echo '                                nonce: "' . wp_create_nonce( 'yatco_stop_import' ) . '"';
-        echo '                            },';
-        echo '                            success: function(response) {';
-        echo '                                if (response.success) {';
-        echo '                                    alert("Stop signal sent! The import will stop at the next checkpoint.");';
-        echo '                                    updateImportStatus();';
-        echo '                                }';
-        echo '                            }';
-        echo '                        });';
-        echo '                    });';
-        echo '                } else if (response && response.data) {';
-        echo '                    $("#yatco-import-status-display").html("<p>Error: " + (response.data.message || response.data) + "</p>");';
+        echo '                        ';
+        echo '                        // Smoothly update progress bar';
+        echo '                        var percent = data.progress.percent || 0;';
+        echo '                        var progressBar = $("#yatco-progress-bar");';
+        echo '                        if (progressBar.length) {';
+        echo '                            progressBar.css("width", percent + "%");';
+        echo '                            progressBar.text(percent.toFixed(1) + "%");';
+        echo '                        }';
+        echo '                        ';
+        echo '                        // Update processed/remaining counts';
+        echo '                        if (data.progress.current !== undefined && $("#yatco-processed-count").length) {';
+        echo '                            $("#yatco-processed-count").text(data.progress.current.toLocaleString() + " / " + data.progress.total.toLocaleString());';
+        echo '                        }';
+        echo '                        if (data.progress.remaining !== undefined && $("#yatco-remaining-count").length) {';
+        echo '                            $("#yatco-remaining-count").text(data.progress.remaining.toLocaleString());';
+        echo '                        }';
+        echo '                        ';
+        echo '                        // Update ETA';
+        echo '                        if (data.progress.eta_minutes !== undefined && $("#yatco-eta-text").length) {';
+        echo '                            $("#yatco-eta-text").text(data.progress.eta_minutes + " minutes");';
+        echo '                        }';
+        echo '                        ';
+        echo '                        // Keep polling';
+        echo '                        if (!updateInterval) {';
+        echo '                            updateInterval = setInterval(updateImportStatus, 2000); // Update every 2 seconds';
+        echo '                        }';
+        echo '                    } else {';
+        echo '                        // Import is not active, stop polling';
+        echo '                        if (updateInterval) {';
+        echo '                            clearInterval(updateInterval);';
+        echo '                            updateInterval = null;';
+        echo '                        }';
+        echo '                    }';
         echo '                }';
         echo '            },';
         echo '            error: function(xhr, status, error) {';
@@ -594,10 +620,10 @@ function yatco_options_page() {
         echo '            }';
         echo '        });';
         echo '    }';
-        echo '    // Update status every 3 seconds';
-        echo '    setInterval(updateImportStatus, 3000);';
-        echo '    // Initial load';
+        echo '    ';
+        echo '    // Start polling immediately and continue every 2 seconds';
         echo '    updateImportStatus();';
+        echo '    updateInterval = setInterval(updateImportStatus, 2000);';
         echo '});';
         echo '</script>';
         

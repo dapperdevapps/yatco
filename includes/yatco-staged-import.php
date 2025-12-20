@@ -535,8 +535,7 @@ function yatco_full_import( $token ) {
     }
     
     $total = count( $vessel_ids );
-    yatco_log( "Full Import: Found {$total} vessel IDs", 'info' );
-    set_transient( 'yatco_cache_warming_status', "Full Import: Processing {$total} vessels...", 600 );
+    yatco_log( "Full Import: Found {$total} vessel IDs from API", 'info' );
     
     // Store vessel IDs for daily sync
     update_option( 'yatco_vessel_ids', $vessel_ids, false );
@@ -544,13 +543,19 @@ function yatco_full_import( $token ) {
     // Get progress
     $progress = get_transient( 'yatco_import_progress' );
     $start_from = 0;
+    $skip_existing = false;
     
     if ( $progress !== false && is_array( $progress ) ) {
+        // Resuming from previous run
         $start_from = isset( $progress['last_processed'] ) ? intval( $progress['last_processed'] ) : 0;
         $vessel_ids = array_slice( $vessel_ids, $start_from );
         yatco_log( "Full Import: Resuming from position {$start_from}", 'info' );
     } else {
-        yatco_log( 'Full Import: Starting fresh import', 'info' );
+        // Fresh import - check which vessels already exist to skip them
+        yatco_log( 'Full Import: Starting fresh import - checking for existing vessels...', 'info' );
+        set_transient( 'yatco_cache_warming_status', 'Full Import: Checking for existing vessels...', 600 );
+        
+        $skip_existing = true;
     }
     
     // Build lookup map for existing vessels to avoid expensive queries during import
@@ -598,12 +603,42 @@ function yatco_full_import( $token ) {
     
     yatco_log( "Full Import: Built lookup map with " . count( $vessel_id_lookup ) . " vessel IDs and " . count( $mlsid_lookup ) . " MLSIDs", 'info' );
     
+    // On fresh import, filter out vessels that already exist
+    if ( $skip_existing ) {
+        $original_count = count( $vessel_ids );
+        $vessel_ids_to_process = array();
+        
+        foreach ( $vessel_ids as $vessel_id ) {
+            $vessel_id_int = intval( $vessel_id );
+            // Skip if vessel ID already exists in lookup map
+            if ( ! isset( $vessel_id_lookup[ $vessel_id_int ] ) ) {
+                $vessel_ids_to_process[] = $vessel_id;
+            }
+        }
+        
+        $skipped_count = $original_count - count( $vessel_ids_to_process );
+        $vessel_ids = $vessel_ids_to_process;
+        
+        yatco_log( "Full Import: Skipped {$skipped_count} existing vessels, {$original_count} total found, " . count( $vessel_ids ) . " new to process", 'info' );
+        set_transient( 'yatco_cache_warming_status', "Full Import: Skipped {$skipped_count} existing vessels, processing " . count( $vessel_ids ) . " new vessels...", 600 );
+    }
+    
+    $total_to_process = count( $vessel_ids );
+    if ( $total_to_process === 0 ) {
+        yatco_log( 'Full Import: No new vessels to process. All vessels are already imported.', 'info' );
+        delete_transient( 'yatco_import_progress' );
+        set_transient( 'yatco_cache_warming_status', 'Full Import Complete: All vessels are already imported.', 300 );
+        return;
+    }
+    
+    set_transient( 'yatco_cache_warming_status', "Full Import: Processing {$total_to_process} vessels...", 600 );
+    
     $processed = 0;
     $batch_size = 2; // Process 2 at a time (balanced between speed and stability)
     $delay_seconds = 3; // 3 second delay between batches (reduced to speed up)
     $delay_between_items = 0.5; // 0.5 second delay between individual items (reduced from 2 seconds)
     
-    yatco_log( "Full Import: Batch size: {$batch_size}, Delay between batches: {$delay_seconds}s, Delay between items: {$delay_between_items}s", 'info' );
+    yatco_log( "Full Import: Processing {$total_to_process} vessels. Batch size: {$batch_size}, Delay between batches: {$delay_seconds}s, Delay between items: {$delay_between_items}s", 'info' );
     
     foreach ( array_chunk( $vessel_ids, $batch_size ) as $batch ) {
         // Check stop flag (check both option and transient)
@@ -710,16 +745,16 @@ function yatco_full_import( $token ) {
         
         // Save progress
         $current_total = $start_from + $processed;
-        $percent = $total > 0 ? round( ( $current_total / $total ) * 100, 1 ) : 0;
+        $percent = $total_to_process > 0 ? round( ( $processed / $total_to_process ) * 100, 1 ) : 0;
         $progress_data = array(
             'last_processed' => $current_total,
-            'total'         => $total,
+            'total'         => $total_to_process,
             'timestamp'     => time(),
             'percent'       => $percent,
         );
         set_transient( 'yatco_import_progress', $progress_data, 3600 );
-        set_transient( 'yatco_cache_warming_status', "Full Import: Processed {$current_total} of {$total} vessels ({$percent}%)...", 600 );
-        yatco_log( "Full Import: Progress - {$current_total}/{$total} ({$percent}%)", 'info' );
+        set_transient( 'yatco_cache_warming_status', "Full Import: Processed {$processed} of {$total_to_process} vessels ({$percent}%)...", 600 );
+        yatco_log( "Full Import: Progress - {$processed}/{$total_to_process} ({$percent}%)", 'info' );
         
         // Flush output after each batch (when running directly)
         if ( ob_get_level() > 0 ) {
@@ -733,7 +768,7 @@ function yatco_full_import( $token ) {
         }
         
         // Delay between batches - check stop flag during delay
-        if ( $processed < $total ) {
+        if ( $processed < $total_to_process ) {
             // Break delay into 1-second chunks and check stop flag between chunks
             for ( $i = 0; $i < $delay_seconds; $i++ ) {
                 sleep( 1 );

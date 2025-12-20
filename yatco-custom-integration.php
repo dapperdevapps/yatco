@@ -106,47 +106,29 @@ function yatco_ajax_get_import_status() {
         $active_progress = $daily_sync_progress;
     }
     
-    ob_start();
+    // Return structured data for real-time updates instead of HTML
+    $response_data = array(
+        'active' => false,
+        'stage' => null,
+        'status' => $cache_status !== false ? $cache_status : null,
+        'progress' => null,
+    );
     
-    if ( $active_stage > 0 || $active_stage === 'full' ) {
-        echo '<div id="yatco-import-status" style="background: #fff; border: 2px solid #2271b1; border-radius: 4px; padding: 20px; margin: 20px 0;">';
+    if ( $active_stage === 'full' && $active_progress ) {
         $current = isset( $active_progress['last_processed'] ) ? intval( $active_progress['last_processed'] ) : 0;
         $total = isset( $active_progress['total'] ) ? intval( $active_progress['total'] ) : 0;
         $percent = isset( $active_progress['percent'] ) ? floatval( $active_progress['percent'] ) : ( $total > 0 ? round( ( $current / $total ) * 100, 1 ) : 0 );
-        $stage_name = 'Full Import';
         
-        echo '<h3 style="margin-top: 0; color: #2271b1;">📊 ' . esc_html( $stage_name ) . ' Progress</h3>';
+        $response_data['active'] = true;
+        $response_data['stage'] = 'full';
+        $response_data['progress'] = array(
+            'current' => $current,
+            'total' => $total,
+            'percent' => $percent,
+            'remaining' => $total - $current,
+        );
         
-        if ( $cache_status !== false ) {
-            echo '<p style="margin: 10px 0; font-size: 14px; color: #666;"><strong>Status:</strong> ' . esc_html( $cache_status ) . '</p>';
-        }
-        
-        echo '<div style="background: #f0f0f0; border-radius: 10px; height: 30px; margin: 15px 0; position: relative; overflow: hidden;">';
-        echo '<div id="yatco-progress-bar" style="background: linear-gradient(90deg, #2271b1 0%, #46b450 100%); height: 100%; width: ' . esc_attr( $percent ) . '%; transition: width 0.3s ease; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: bold; font-size: 12px;">';
-        echo esc_html( $percent ) . '%';
-        echo '</div>';
-        echo '</div>';
-        
-        echo '<div style="display: flex; justify-content: space-between; margin-top: 10px; font-size: 13px; color: #666;">';
-        echo '<span><strong>Processed:</strong> ' . number_format( $current ) . ' / ' . number_format( $total ) . '</span>';
-        echo '<span><strong>Remaining:</strong> ' . number_format( $total - $current ) . '</span>';
-        echo '</div>';
-        
-        // Show daily sync details
-        if ( $active_stage === 'daily_sync' ) {
-            $removed = isset( $active_progress['removed'] ) ? intval( $active_progress['removed'] ) : 0;
-            $new = isset( $active_progress['new'] ) ? intval( $active_progress['new'] ) : 0;
-            $price_updates = isset( $active_progress['price_updates'] ) ? intval( $active_progress['price_updates'] ) : 0;
-            $days_updates = isset( $active_progress['days_on_market_updates'] ) ? intval( $active_progress['days_on_market_updates'] ) : 0;
-            echo '<div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e0e0e0; font-size: 13px; color: #666;">';
-            echo '<p style="margin: 5px 0;"><strong>Removed:</strong> ' . number_format( $removed ) . '</p>';
-            echo '<p style="margin: 5px 0;"><strong>New:</strong> ' . number_format( $new ) . '</p>';
-            echo '<p style="margin: 5px 0;"><strong>Price Updates:</strong> ' . number_format( $price_updates ) . '</p>';
-            echo '<p style="margin: 5px 0;"><strong>Days on Market Updates:</strong> ' . number_format( $days_updates ) . '</p>';
-            echo '</div>';
-        }
-        
-        // Estimated time remaining
+        // Calculate ETA
         if ( isset( $active_progress['timestamp'] ) && $current > 0 ) {
             $time_elapsed = time() - intval( $active_progress['timestamp'] );
             if ( $time_elapsed > 0 && $current > 0 ) {
@@ -154,30 +136,30 @@ function yatco_ajax_get_import_status() {
                 $remaining = $total - $current;
                 if ( $rate > 0 ) {
                     $eta_seconds = $remaining / $rate;
-                    $eta_minutes = round( $eta_seconds / 60, 1 );
-                    echo '<p style="margin: 10px 0 0 0; font-size: 12px; color: #666;"><strong>Estimated time remaining:</strong> ' . esc_html( $eta_minutes ) . ' minutes</p>';
+                    $response_data['progress']['eta_minutes'] = round( $eta_seconds / 60, 1 );
                 }
             }
         }
+    } elseif ( $active_stage === 'daily_sync' && $active_progress ) {
+        $current = isset( $active_progress['processed'] ) ? intval( $active_progress['processed'] ) : 0;
+        $total = isset( $active_progress['total'] ) ? intval( $active_progress['total'] ) : 0;
+        $percent = $total > 0 ? round( ( $current / $total ) * 100, 1 ) : 0;
         
-        // Stop button
-        echo '<div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #e0e0e0;">';
-        echo '<button type="button" id="yatco-stop-import-btn" class="button button-secondary" style="background: #dc3232; border-color: #dc3232; color: #fff; font-weight: bold; padding: 8px 16px;">🛑 Stop Import</button>';
-        echo '<p style="margin: 8px 0 0 0; font-size: 12px; color: #666;">Click to cancel the current import. The import will stop at the next checkpoint.</p>';
-        echo '</div>';
-    } elseif ( $cache_status !== false && strpos( $cache_status, 'Daily Sync' ) !== false ) {
-        // Show daily sync status even if no progress bar
-        echo '<div class="notice notice-info" style="margin: 0;">';
-        echo '<p><strong>Status:</strong> ' . esc_html( $cache_status ) . '</p>';
-        echo '</div>';
-    } else {
-        echo '<p style="margin: 0; color: #666;">No active import. Start a full import above to see progress.</p>';
+        $response_data['active'] = true;
+        $response_data['stage'] = 'daily_sync';
+        $response_data['progress'] = array(
+            'current' => $current,
+            'total' => $total,
+            'percent' => $percent,
+            'remaining' => $total - $current,
+            'removed' => isset( $active_progress['removed'] ) ? intval( $active_progress['removed'] ) : 0,
+            'new' => isset( $active_progress['new'] ) ? intval( $active_progress['new'] ) : 0,
+            'price_updates' => isset( $active_progress['price_updates'] ) ? intval( $active_progress['price_updates'] ) : 0,
+            'days_on_market_updates' => isset( $active_progress['days_on_market_updates'] ) ? intval( $active_progress['days_on_market_updates'] ) : 0,
+        );
     }
     
-    echo '</div>';
-    $html = ob_get_clean();
-    
-    wp_send_json_success( array( 'html' => $html ) );
+    wp_send_json_success( $response_data );
 }
 
 // AJAX handler to stop import
