@@ -599,9 +599,9 @@ function yatco_full_import( $token ) {
     yatco_log( "Full Import: Built lookup map with " . count( $vessel_id_lookup ) . " vessel IDs and " . count( $mlsid_lookup ) . " MLSIDs", 'info' );
     
     $processed = 0;
-    $batch_size = 3; // Process 3 at a time to prevent server overload and timeouts
-    $delay_seconds = 10; // 10 second delay between batches to give server time to recover
-    $delay_between_items = 2; // 2 second delay between individual items
+    $batch_size = 2; // Process 2 at a time (balanced between speed and stability)
+    $delay_seconds = 3; // 3 second delay between batches (reduced to speed up)
+    $delay_between_items = 0.5; // 0.5 second delay between individual items (reduced from 2 seconds)
     
     yatco_log( "Full Import: Batch size: {$batch_size}, Delay between batches: {$delay_seconds}s, Delay between items: {$delay_between_items}s", 'info' );
     
@@ -701,6 +701,11 @@ function yatco_full_import( $token ) {
             } else {
                 yatco_log( "Full Import: Error importing vessel {$vessel_id}: " . $import_result->get_error_message(), 'error' );
             }
+            
+            // Memory cleanup after each vessel to prevent memory buildup
+            if ( function_exists( 'gc_collect_cycles' ) ) {
+                gc_collect_cycles();
+            }
         }
         
         // Save progress
@@ -721,6 +726,11 @@ function yatco_full_import( $token ) {
             ob_flush();
         }
         flush();
+        
+        // Memory cleanup after each batch
+        if ( function_exists( 'gc_collect_cycles' ) ) {
+            gc_collect_cycles();
+        }
         
         // Delay between batches - check stop flag during delay
         if ( $processed < $total ) {

@@ -927,63 +927,67 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
     // Download first image and set it as featured image
     // Only download the first/main image to save storage space
     // This must run AFTER the post is created/updated
-    $image_url_to_download = '';
+    // OPTIMIZATION: Skip if featured image already exists to avoid unnecessary downloads and timeouts
+    $existing_thumbnail_id = get_post_thumbnail_id( $post_id );
     
-    if ( isset( $full['PhotoGallery'] ) && is_array( $full['PhotoGallery'] ) && ! empty( $full['PhotoGallery'] ) ) {
-        // Get the first photo from the gallery (usually the main photo)
-        $first_photo = $full['PhotoGallery'][0];
+    if ( ! $existing_thumbnail_id ) {
+        // Only download if we don't already have a featured image
+        $image_url_to_download = '';
+        $first_photo = null;
         
-        // Use largeImageURL if available, fallback to medium or main photo URL
-        if ( ! empty( $first_photo['largeImageURL'] ) ) {
-            $image_url_to_download = $first_photo['largeImageURL'];
-        } elseif ( ! empty( $first_photo['mediumImageURL'] ) ) {
-            $image_url_to_download = $first_photo['mediumImageURL'];
-        } elseif ( ! empty( $first_photo['smallImageURL'] ) ) {
-            $image_url_to_download = $first_photo['smallImageURL'];
-        }
-    }
-    
-    // Fallback to main photo URL from Result/BasicInfo if PhotoGallery is empty
-    if ( empty( $image_url_to_download ) && ! empty( $image_url ) ) {
-        $image_url_to_download = $image_url;
-    }
-    
-    // Download and set as featured image
-    // WordPress requires featured images to be local files in the media library
-    // So we must download the image - cannot use external URLs directly
-    if ( ! empty( $image_url_to_download ) && $post_id ) {
-        require_once ABSPATH . 'wp-admin/includes/media.php';
-        require_once ABSPATH . 'wp-admin/includes/file.php';
-        require_once ABSPATH . 'wp-admin/includes/image.php';
-        
-        // Build a caption from vessel name if available
-        $caption = '';
-        if ( ! empty( $name ) ) {
-            $caption = $name;
-        }
-        if ( isset( $first_photo ) && ! empty( $first_photo['Caption'] ) ) {
-            $caption = ! empty( $caption ) ? $caption . ' - ' . $first_photo['Caption'] : $first_photo['Caption'];
+        if ( isset( $full['PhotoGallery'] ) && is_array( $full['PhotoGallery'] ) && ! empty( $full['PhotoGallery'] ) ) {
+            // Get the first photo from the gallery (usually the main photo)
+            $first_photo = $full['PhotoGallery'][0];
+            
+            // Use largeImageURL if available, fallback to medium or main photo URL
+            if ( ! empty( $first_photo['largeImageURL'] ) ) {
+                $image_url_to_download = $first_photo['largeImageURL'];
+            } elseif ( ! empty( $first_photo['mediumImageURL'] ) ) {
+                $image_url_to_download = $first_photo['mediumImageURL'];
+            } elseif ( ! empty( $first_photo['smallImageURL'] ) ) {
+                $image_url_to_download = $first_photo['smallImageURL'];
+            }
         }
         
-        // Check if we already have a featured image for this vessel
-        $existing_thumbnail_id = get_post_thumbnail_id( $post_id );
+        // Fallback to main photo URL from Result/BasicInfo if PhotoGallery is empty
+        if ( empty( $image_url_to_download ) && ! empty( $image_url ) ) {
+            $image_url_to_download = $image_url;
+        }
         
-            // Download and attach the image
+        // Download and set as featured image
+        // WordPress requires featured images to be local files in the media library
+        // So we must download the image - cannot use external URLs directly
+        if ( ! empty( $image_url_to_download ) && $post_id ) {
+            require_once ABSPATH . 'wp-admin/includes/media.php';
+            require_once ABSPATH . 'wp-admin/includes/file.php';
+            require_once ABSPATH . 'wp-admin/includes/image.php';
+            
+            // Build a caption from vessel name if available
+            $caption = '';
+            if ( ! empty( $name ) ) {
+                $caption = $name;
+            }
+            if ( $first_photo && ! empty( $first_photo['Caption'] ) ) {
+                $caption = ! empty( $caption ) ? $caption . ' - ' . $first_photo['Caption'] : $first_photo['Caption'];
+            }
+            
+            // Download and attach the image with timeout protection
             // media_sideload_image returns attachment ID on success, or WP_Error on failure
             // It handles the download, creates attachment, and generates thumbnails
             
-            // Temporarily increase timeouts for image downloads
+            // Set timeouts for image downloads (reduced to prevent hanging)
             $old_timeout = ini_get( 'default_socket_timeout' );
-            ini_set( 'default_socket_timeout', 30 );
+            ini_set( 'default_socket_timeout', 15 ); // Reduced from 30 to 15 seconds to prevent timeouts
             
-            $attach_id = media_sideload_image( $image_url_to_download, $post_id, $caption, 'id' );
+            // Wrap in try-catch-like error handling
+            $attach_id = @media_sideload_image( $image_url_to_download, $post_id, $caption, 'id' );
             
             // Restore original timeout
             ini_set( 'default_socket_timeout', $old_timeout );
             
             if ( is_wp_error( $attach_id ) ) {
-                // Log error for debugging (but don't break the import)
-                error_log( 'YATCO: Failed to download featured image for post ' . $post_id . ': ' . $attach_id->get_error_message() . ' | Error Code: ' . $attach_id->get_error_code() . ' | URL: ' . $image_url_to_download );
+                // Log error but don't break the import - image downloads can fail and that's OK
+                yatco_log( "Image download failed for vessel {$vessel_id} (non-fatal): " . $attach_id->get_error_message(), 'warning' );
             } elseif ( $attach_id && is_numeric( $attach_id ) ) {
                 // Ensure attachment is properly associated with the post
                 wp_update_post( array(
@@ -994,17 +998,11 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
                 // Set as featured image
                 $thumbnail_set = set_post_thumbnail( $post_id, $attach_id );
                 
-                if ( $thumbnail_set ) {
-                    // Delete old featured image if it exists and is different (to save space)
-                    if ( $existing_thumbnail_id && $existing_thumbnail_id != $attach_id ) {
-                        wp_delete_attachment( $existing_thumbnail_id, true );
-                    }
-                } else {
-                    error_log( 'YATCO: Failed to set featured image for post ' . $post_id . ', attachment ID: ' . $attach_id . ' | Post type: ' . get_post_type( $post_id ) );
+                if ( ! $thumbnail_set ) {
+                    yatco_log( "Failed to set featured image for vessel {$vessel_id}, attachment ID: {$attach_id}", 'warning' );
                 }
-            } else {
-                error_log( 'YATCO: media_sideload_image returned unexpected value for post ' . $post_id . ': ' . var_export( $attach_id, true ) );
             }
+        }
     }
     
     // Store image gallery URLs in meta for reference (without downloading all images)
