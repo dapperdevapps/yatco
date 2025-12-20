@@ -553,6 +553,51 @@ function yatco_full_import( $token ) {
         yatco_log( 'Full Import: Starting fresh import', 'info' );
     }
     
+    // Build lookup map for existing vessels to avoid expensive queries during import
+    // This is a one-time query that builds vessel_id -> post_id and mlsid -> post_id maps
+    set_transient( 'yatco_cache_warming_status', 'Full Import: Building vessel lookup map...', 600 );
+    yatco_log( 'Full Import: Building vessel lookup map for faster imports', 'info' );
+    
+    global $wpdb;
+    $vessel_id_lookup = array();
+    $mlsid_lookup = array();
+    
+    // Get all existing yacht posts with their vessel IDs in one query
+    $vessel_id_posts = $wpdb->get_results( $wpdb->prepare( "
+        SELECT pm.post_id, pm.meta_value as vessel_id
+        FROM {$wpdb->postmeta} pm
+        INNER JOIN {$wpdb->posts} p ON pm.post_id = p.ID
+        WHERE p.post_type = %s
+        AND pm.meta_key = 'yacht_vessel_id'
+        AND pm.meta_value != ''
+        AND pm.meta_value IS NOT NULL
+    ", 'yacht' ) );
+    
+    foreach ( $vessel_id_posts as $post ) {
+        if ( ! empty( $post->vessel_id ) ) {
+            $vessel_id_lookup[ intval( $post->vessel_id ) ] = intval( $post->post_id );
+        }
+    }
+    
+    // Get all existing yacht posts with their MLSIDs in one query
+    $mlsid_posts = $wpdb->get_results( $wpdb->prepare( "
+        SELECT pm.post_id, pm.meta_value as mlsid
+        FROM {$wpdb->postmeta} pm
+        INNER JOIN {$wpdb->posts} p ON pm.post_id = p.ID
+        WHERE p.post_type = %s
+        AND pm.meta_key = 'yacht_mlsid'
+        AND pm.meta_value != ''
+        AND pm.meta_value IS NOT NULL
+    ", 'yacht' ) );
+    
+    foreach ( $mlsid_posts as $post ) {
+        if ( ! empty( $post->mlsid ) ) {
+            $mlsid_lookup[ $post->mlsid ] = intval( $post->post_id );
+        }
+    }
+    
+    yatco_log( "Full Import: Built lookup map with " . count( $vessel_id_lookup ) . " vessel IDs and " . count( $mlsid_lookup ) . " MLSIDs", 'info' );
+    
     $processed = 0;
     $batch_size = 3; // Process 3 at a time to prevent server overload and timeouts
     $delay_seconds = 10; // 10 second delay between batches to give server time to recover
@@ -621,7 +666,7 @@ function yatco_full_import( $token ) {
             
             // Import full vessel data
             yatco_log( "Full Import: Processing vessel {$vessel_id}", 'debug' );
-            $import_result = yatco_import_single_vessel( $token, $vessel_id );
+            $import_result = yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup, $mlsid_lookup );
             
             // Check stop flag after import (check both option and transient)
             $stop_flag = get_option( 'yatco_import_stop_flag', false );

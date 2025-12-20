@@ -194,11 +194,13 @@ function yatco_build_brief_from_fullspecs( $vessel_id, $full ) {
  * - Maintains post ID and permalink for existing vessels
  * - Updates yacht_last_updated timestamp on every import
  * 
- * @param string $token     YATCO API token
- * @param int    $vessel_id YATCO Vessel ID
- * @return int|WP_Error     Post ID on success, WP_Error on failure
+ * @param string $token           YATCO API token
+ * @param int    $vessel_id       YATCO Vessel ID
+ * @param array  $vessel_id_lookup Optional lookup map: vessel_id => post_id (for performance optimization)
+ * @param array  $mlsid_lookup     Optional lookup map: mlsid => post_id (for performance optimization)
+ * @return int|WP_Error           Post ID on success, WP_Error on failure
  */
-function yatco_import_single_vessel( $token, $vessel_id ) {
+function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = null, $mlsid_lookup = null ) {
     // Check stop flag before starting import (check both option and transient)
     $stop_flag = get_option( 'yatco_import_stop_flag', false );
     if ( $stop_flag === false ) {
@@ -444,36 +446,46 @@ function yatco_import_single_vessel( $token, $vessel_id ) {
     // This ensures we can match and update existing vessels even if MLSID changes or is missing.
     $post_id = 0;
     
-    // Try matching by MLSID first (most reliable identifier).
-    if ( ! empty( $mlsid ) ) {
-        $existing = get_posts(
-            array(
-                'post_type'   => 'yacht',
-                'meta_key'    => 'yacht_mlsid',
-                'meta_value'  => $mlsid,
-                'numberposts' => 1,
-                'fields'      => 'ids',
-            )
-        );
-        if ( ! empty( $existing ) ) {
-            $post_id = (int) $existing[0];
-        }
+    // Use lookup maps if provided (for performance optimization during full imports)
+    if ( is_array( $mlsid_lookup ) && ! empty( $mlsid ) && isset( $mlsid_lookup[ $mlsid ] ) ) {
+        $post_id = (int) $mlsid_lookup[ $mlsid ];
+    } elseif ( is_array( $vessel_id_lookup ) && ! empty( $vessel_id ) && isset( $vessel_id_lookup[ intval( $vessel_id ) ] ) ) {
+        $post_id = (int) $vessel_id_lookup[ intval( $vessel_id ) ];
     }
     
-    // Fallback: If MLSID matching failed, try matching by VesselID.
-    // This handles cases where MLSID might be missing or changed.
-    if ( ! $post_id && ! empty( $vessel_id ) ) {
-        $existing = get_posts(
-            array(
-                'post_type'   => 'yacht',
-                'meta_key'    => 'yacht_vessel_id',
-                'meta_value'  => $vessel_id,
-                'numberposts' => 1,
-                'fields'      => 'ids',
-            )
-        );
-        if ( ! empty( $existing ) ) {
-            $post_id = (int) $existing[0];
+    // Fallback to database queries if lookup maps not provided or didn't find a match
+    if ( ! $post_id ) {
+        // Try matching by MLSID first (most reliable identifier).
+        if ( ! empty( $mlsid ) ) {
+            $existing = get_posts(
+                array(
+                    'post_type'   => 'yacht',
+                    'meta_key'    => 'yacht_mlsid',
+                    'meta_value'  => $mlsid,
+                    'numberposts' => 1,
+                    'fields'      => 'ids',
+                )
+            );
+            if ( ! empty( $existing ) ) {
+                $post_id = (int) $existing[0];
+            }
+        }
+        
+        // Fallback: If MLSID matching failed, try matching by VesselID.
+        // This handles cases where MLSID might be missing or changed.
+        if ( ! $post_id && ! empty( $vessel_id ) ) {
+            $existing = get_posts(
+                array(
+                    'post_type'   => 'yacht',
+                    'meta_key'    => 'yacht_vessel_id',
+                    'meta_value'  => $vessel_id,
+                    'numberposts' => 1,
+                    'fields'      => 'ids',
+                )
+            );
+            if ( ! empty( $existing ) ) {
+                $post_id = (int) $existing[0];
+            }
         }
     }
 
