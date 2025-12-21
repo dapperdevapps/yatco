@@ -115,8 +115,10 @@ function yatco_ajax_get_import_status() {
     );
     
     if ( $active_stage === 'full' && $active_progress ) {
-        $current = isset( $active_progress['last_processed'] ) ? intval( $active_progress['last_processed'] ) : 0;
+        // Use 'processed' count if available (more accurate), otherwise fall back to 'last_processed'
+        $current = isset( $active_progress['processed'] ) ? intval( $active_progress['processed'] ) : ( isset( $active_progress['last_processed'] ) ? intval( $active_progress['last_processed'] ) : 0 );
         $total = isset( $active_progress['total'] ) ? intval( $active_progress['total'] ) : 0;
+        // Prefer saved percent if available (more accurate), otherwise calculate
         $percent = isset( $active_progress['percent'] ) ? floatval( $active_progress['percent'] ) : ( $total > 0 ? round( ( $current / $total ) * 100, 1 ) : 0 );
         
         $response_data['active'] = true;

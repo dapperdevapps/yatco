@@ -768,7 +768,7 @@ function yatco_full_import( $token ) {
                 // Check if connection was aborted (browser closed, timeout, etc.)
                 if ( connection_aborted() ) {
                     yatco_log( "Full Import: Connection aborted while processing vessel {$vessel_id}. Saving progress...", 'warning' );
-                    // Save progress before returning
+                    // Save progress before returning (using current processed count before incrementing)
                     $current_position = $resume_from_index + $processed;
                     $percent = $total_to_process > 0 ? round( ( $processed / $total_to_process ) * 100, 1 ) : 0;
                     $progress_data = array(
@@ -784,10 +784,36 @@ function yatco_full_import( $token ) {
             } catch ( Exception $e ) {
                 yatco_log( "Full Import: Exception while importing vessel {$vessel_id}: " . $e->getMessage() . ' | Trace: ' . $e->getTraceAsString(), 'error' );
                 $import_result = new WP_Error( 'import_exception', $e->getMessage() );
+                
+                // Save progress even on error so we can resume
+                $current_position = $resume_from_index + $processed;
+                $percent = $total_to_process > 0 ? round( ( $processed / $total_to_process ) * 100, 1 ) : 0;
+                $progress_data = array(
+                    'last_processed' => $current_position,
+                    'processed'      => $processed,
+                    'total'          => $total_to_process,
+                    'timestamp'      => time(),
+                    'percent'        => $percent,
+                );
+                set_transient( 'yatco_import_progress', $progress_data, 3600 );
+                wp_cache_flush();
             } catch ( Error $e ) {
                 // PHP 7+ Error class (fatal errors that can be caught)
                 yatco_log( "Full Import: Fatal error while importing vessel {$vessel_id}: " . $e->getMessage() . ' | Trace: ' . $e->getTraceAsString(), 'error' );
                 $import_result = new WP_Error( 'import_fatal_error', $e->getMessage() );
+                
+                // Save progress even on fatal error so we can resume
+                $current_position = $resume_from_index + $processed;
+                $percent = $total_to_process > 0 ? round( ( $processed / $total_to_process ) * 100, 1 ) : 0;
+                $progress_data = array(
+                    'last_processed' => $current_position,
+                    'processed'      => $processed,
+                    'total'          => $total_to_process,
+                    'timestamp'      => time(),
+                    'percent'        => $percent,
+                );
+                set_transient( 'yatco_import_progress', $progress_data, 3600 );
+                wp_cache_flush();
             }
             
             // Check if vessel import is taking too long and skip if needed
@@ -795,6 +821,19 @@ function yatco_full_import( $token ) {
             if ( $vessel_elapsed > $vessel_max_time && ( is_wp_error( $import_result ) || $import_result === null ) ) {
                 yatco_log( "Full Import: Vessel {$vessel_id} exceeded time limit ({$vessel_elapsed}s > {$vessel_max_time}s), skipping to next vessel", 'warning' );
                 $import_result = new WP_Error( 'import_timeout', "Vessel import exceeded {$vessel_max_time} second timeout" );
+                
+                // Save progress after timeout
+                $current_position = $resume_from_index + $processed;
+                $percent = $total_to_process > 0 ? round( ( $processed / $total_to_process ) * 100, 1 ) : 0;
+                $progress_data = array(
+                    'last_processed' => $current_position,
+                    'processed'      => $processed,
+                    'total'          => $total_to_process,
+                    'timestamp'      => time(),
+                    'percent'        => $percent,
+                );
+                set_transient( 'yatco_import_progress', $progress_data, 3600 );
+                wp_cache_flush();
             }
             
             // Check stop flag after import (check both option and transient)
@@ -831,24 +870,46 @@ function yatco_full_import( $token ) {
                 yatco_log( "Full Import: Error importing vessel {$vessel_id}: " . $import_result->get_error_message(), 'error' );
             }
             
+            // Save progress after EACH vessel for real-time updates (critical for progress bar)
+            // Track both position (for resuming) and processed count (for progress display)
+            $current_position = $resume_from_index + $processed;
+            $percent = $total_to_process > 0 ? round( ( $processed / $total_to_process ) * 100, 1 ) : 0;
+            $progress_data = array(
+                'last_processed' => $current_position, // Position in array (for resuming)
+                'processed'      => $processed,        // Actual count of successfully processed vessels
+                'total'          => $total_to_process,
+                'timestamp'      => time(),
+                'percent'        => $percent,
+            );
+            set_transient( 'yatco_import_progress', $progress_data, 3600 );
+            set_transient( 'yatco_cache_warming_status', "Full Import: Processed {$processed} of {$total_to_process} vessels ({$percent}%)...", 600 );
+            
+            // Force flush transients to database immediately
+            wp_cache_flush();
+            
             // Memory cleanup after each vessel to prevent memory buildup
             if ( function_exists( 'gc_collect_cycles' ) ) {
                 gc_collect_cycles();
             }
         }
         
-        // Save progress after each batch (critical for resuming if stopped)
+        // Progress is already saved after each vessel, but save again after batch for extra safety
         // Track position in the filtered array (vessels to process)
         $current_position = $resume_from_index + $processed;
         $percent = $total_to_process > 0 ? round( ( $processed / $total_to_process ) * 100, 1 ) : 0;
         $progress_data = array(
             'last_processed' => $current_position, // Position in filtered array
-            'total'         => $total_to_process,
-            'timestamp'     => time(),
-            'percent'       => $percent,
+            'processed'      => $processed,        // Actual count of successfully processed vessels
+            'total'          => $total_to_process,
+            'timestamp'      => time(),
+            'percent'        => $percent,
         );
         set_transient( 'yatco_import_progress', $progress_data, 3600 );
         set_transient( 'yatco_cache_warming_status', "Full Import: Processed {$processed} of {$total_to_process} vessels ({$percent}%)...", 600 );
+        
+        // Force flush transients to database immediately
+        wp_cache_flush();
+        
         yatco_log( "Full Import: Batch {$batch_number} complete - Progress: {$processed}/{$total_to_process} ({$percent}%) | Position: {$current_position}", 'info' );
         
         // Flush output after each batch (when running directly)
