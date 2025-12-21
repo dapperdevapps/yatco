@@ -746,7 +746,14 @@ function yatco_full_import( $token ) {
             }
             
             // Import full vessel data
-            yatco_log( "Full Import: Processing vessel {$vessel_id}", 'info' );
+            yatco_log( "Full Import: Starting vessel {$vessel_id} (vessel " . ($processed + 1) . " of {$total_to_process})", 'info' );
+            
+            // Log memory usage every 10 vessels
+            if ( $processed % 10 == 0 && function_exists( 'memory_get_usage' ) ) {
+                $memory_mb = round( memory_get_usage( true ) / 1024 / 1024, 2 );
+                $peak_memory_mb = round( memory_get_peak_usage( true ) / 1024 / 1024, 2 );
+                yatco_log( "Full Import: Memory usage - Current: {$memory_mb} MB, Peak: {$peak_memory_mb} MB", 'info' );
+            }
             
             // Reset execution time before each vessel import
             @set_time_limit( 120 ); // 2 minutes per vessel max (reduced from 3)
@@ -880,12 +887,26 @@ function yatco_full_import( $token ) {
                 'total'          => $total_to_process,
                 'timestamp'      => time(),
                 'percent'        => $percent,
+                'last_vessel_id' => $vessel_id,        // Track last vessel processed for debugging
             );
-            set_transient( 'yatco_import_progress', $progress_data, 3600 );
-            set_transient( 'yatco_cache_warming_status', "Full Import: Processed {$processed} of {$total_to_process} vessels ({$percent}%)...", 600 );
             
-            // Force flush transients to database immediately
+            // Delete cache before saving to ensure fresh data
+            wp_cache_delete( 'yatco_import_progress', 'transient' );
+            wp_cache_delete( 'yatco_cache_warming_status', 'transient' );
+            
+            // Save with autoload=false to force database write
+            delete_transient( 'yatco_import_progress' );
+            set_transient( 'yatco_import_progress', $progress_data, 3600 );
+            delete_transient( 'yatco_cache_warming_status' );
+            set_transient( 'yatco_cache_warming_status', "Full Import: Processed {$processed} of {$total_to_process} vessels ({$percent}%) - Last vessel: {$vessel_id}", 600 );
+            
+            // Force database write - bypass all caches
             wp_cache_flush();
+            
+            // Log progress save for debugging
+            if ( $processed % 10 == 0 || $processed <= 5 ) {
+                yatco_log( "Full Import: Progress saved - {$processed}/{$total_to_process} ({$percent}%) - Last vessel: {$vessel_id}", 'info' );
+            }
             
             // Memory cleanup after each vessel to prevent memory buildup
             if ( function_exists( 'gc_collect_cycles' ) ) {

@@ -85,12 +85,20 @@ function yatco_ajax_run_full_import_direct() {
 // AJAX handler for import status
 add_action( 'wp_ajax_yatco_get_import_status', 'yatco_ajax_get_import_status' );
 function yatco_ajax_get_import_status() {
+    // Note: Nonce check is optional here to allow polling from different tabs
+    // We still check user capability for security
+    if ( isset( $_POST['_ajax_nonce'] ) ) {
+        check_ajax_referer( 'yatco_get_import_status_nonce', '_ajax_nonce', false );
+    }
+    
     if ( ! current_user_can( 'manage_options' ) ) {
         wp_send_json_error( array( 'message' => 'Unauthorized' ) );
         return;
     }
     
-    // Get all progress data
+    // Get all progress data - bypass object cache to get fresh data
+    wp_cache_delete( 'yatco_import_progress', 'transient' );
+    wp_cache_delete( 'yatco_cache_warming_status', 'transient' );
     $import_progress = get_transient( 'yatco_import_progress' );
     $daily_sync_progress = get_transient( 'yatco_daily_sync_progress' );
     $cache_status = get_transient( 'yatco_cache_warming_status' );

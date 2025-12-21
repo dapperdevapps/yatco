@@ -257,8 +257,8 @@ function yatco_options_page() {
                 
                 // Wrap in try-catch to catch fatal errors
                 try {
-                    yatco_full_import( $token );
-                    yatco_log( 'Full Import Direct: Import function completed', 'info' );
+                yatco_full_import( $token );
+                yatco_log( 'Full Import Direct: Import function completed', 'info' );
                 } catch ( Exception $e ) {
                     yatco_log( 'Full Import Direct: Fatal error occurred: ' . $e->getMessage(), 'error' );
                     set_transient( 'yatco_cache_warming_status', 'Full Import Error: ' . $e->getMessage(), 300 );
@@ -448,12 +448,27 @@ function yatco_options_page() {
         echo '                }';
         echo '            },';
         echo '            error: function(xhr, status, error) {';
-        echo '                console.error("AJAX error:", error);';
+        echo '                console.error("YATCO Import Progress AJAX Error:", {';
+        echo '                    status: status,';
+        echo '                    error: error,';
+        echo '                    response: xhr.responseText,';
+        echo '                    statusCode: xhr.status';
+        echo '                });';
+        echo '            },';
+        echo '            complete: function(xhr, status) {';
+        echo '                // Log every response for debugging';
+        echo '                if (window.yatcoDebug) {';
+        echo '                    console.log("YATCO Progress Poll:", status, xhr.responseJSON);';
+        echo '                }';
         echo '            }';
         echo '        });';
         echo '    }';
         echo '    ';
+        echo '    // Enable debug mode: set window.yatcoDebug = true in console to see all AJAX calls';
+        echo '    window.yatcoDebugProgress = function() { window.yatcoDebug = true; console.log("YATCO debug mode enabled"); };';
+        echo '    ';
         echo '    // Start polling immediately and continue every 2 seconds';
+        echo '    console.log("YATCO: Starting progress polling...");';
         echo '    updateImportProgress();';
         echo '    importUpdateInterval = setInterval(updateImportProgress, 2000);';
         echo '});';
