@@ -746,23 +746,33 @@ function yatco_full_import( $token ) {
             }
             
             // Import full vessel data
-            yatco_log( "Full Import: Processing vessel {$vessel_id}", 'debug' );
+            yatco_log( "Full Import: Processing vessel {$vessel_id}", 'info' );
             
             // Reset execution time before each vessel import
-            @set_time_limit( 180 ); // 3 minutes per vessel should be plenty
+            @set_time_limit( 120 ); // 2 minutes per vessel max (reduced from 3)
+            
+            // Track start time for timeout detection
+            $vessel_start_time = time();
+            $vessel_max_time = 120; // Maximum seconds per vessel (2 minutes)
             
             // Wrap in try-catch to handle errors gracefully and continue
             try {
                 $import_result = yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup, $mlsid_lookup );
                 
+                // Check if vessel import took too long
+                $vessel_elapsed = time() - $vessel_start_time;
+                if ( $vessel_elapsed > $vessel_max_time ) {
+                    yatco_log( "Full Import: Vessel {$vessel_id} took {$vessel_elapsed} seconds (exceeded {$vessel_max_time}s limit), but completed", 'warning' );
+                }
+                
                 // Check if connection was aborted (browser closed, timeout, etc.)
                 if ( connection_aborted() ) {
                     yatco_log( "Full Import: Connection aborted while processing vessel {$vessel_id}. Saving progress...", 'warning' );
                     // Save progress before returning
-                    $current_total = $start_from + $processed;
+                    $current_position = $resume_from_index + $processed;
                     $percent = $total_to_process > 0 ? round( ( $processed / $total_to_process ) * 100, 1 ) : 0;
                     $progress_data = array(
-                        'last_processed' => $current_total,
+                        'last_processed' => $current_position,
                         'total'         => $total_to_process,
                         'timestamp'     => time(),
                         'percent'       => $percent,
@@ -778,6 +788,13 @@ function yatco_full_import( $token ) {
                 // PHP 7+ Error class (fatal errors that can be caught)
                 yatco_log( "Full Import: Fatal error while importing vessel {$vessel_id}: " . $e->getMessage() . ' | Trace: ' . $e->getTraceAsString(), 'error' );
                 $import_result = new WP_Error( 'import_fatal_error', $e->getMessage() );
+            }
+            
+            // Check if vessel import is taking too long and skip if needed
+            $vessel_elapsed = time() - $vessel_start_time;
+            if ( $vessel_elapsed > $vessel_max_time && ( is_wp_error( $import_result ) || $import_result === null ) ) {
+                yatco_log( "Full Import: Vessel {$vessel_id} exceeded time limit ({$vessel_elapsed}s > {$vessel_max_time}s), skipping to next vessel", 'warning' );
+                $import_result = new WP_Error( 'import_timeout', "Vessel import exceeded {$vessel_max_time} second timeout" );
             }
             
             // Check stop flag after import (check both option and transient)

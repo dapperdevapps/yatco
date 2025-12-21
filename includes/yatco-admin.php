@@ -388,99 +388,76 @@ function yatco_options_page() {
         echo '</div>';
         
         // Real-time progress bar update script (for Import tab)
-        echo '<script type="text/javascript">
-        (function() {
-            var updateInterval = null;
-            function updateProgress() {
-                if (!document.getElementById("yatco-progress-bar")) {
-                    return;
-                }
-                
-                var xhr = new XMLHttpRequest();
-                xhr.open("POST", ajaxurl, true);
-                xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
-                xhr.onload = function() {
-                    if (xhr.status === 200) {
-                        try {
-                            var response = JSON.parse(xhr.responseText);
-                            if (response && response.success && response.data) {
-                                var data = response.data;
-                                
-                                if (data.active && data.progress) {
-                                    // Update status text
-                                    var statusEl = document.getElementById("yatco-status-text");
-                                    if (statusEl && data.status) {
-                                        var statusHtml = "<strong>Status:</strong> " + data.status;
-                                        if (statusEl.innerHTML !== statusHtml) {
-                                            statusEl.innerHTML = statusHtml;
-                                        }
-                                    }
-                                    
-                                    // Smoothly update progress bar
-                                    var percent = data.progress.percent || 0;
-                                    var progressBar = document.getElementById("yatco-progress-bar");
-                                    if (progressBar) {
-                                        var currentWidth = parseFloat(progressBar.style.width) || 0;
-                                        if (Math.abs(currentWidth - percent) > 0.1) {
-                                            progressBar.style.width = percent + "%";
-                                            progressBar.textContent = percent.toFixed(1) + "%";
-                                        }
-                                    }
-                                    
-                                    // Update counts
-                                    var processedEl = document.getElementById("yatco-processed-count");
-                                    if (processedEl && data.progress.current !== undefined) {
-                                        var newText = data.progress.current.toLocaleString() + " / " + data.progress.total.toLocaleString();
-                                        if (processedEl.textContent !== newText) {
-                                            processedEl.textContent = newText;
-                                        }
-                                    }
-                                    
-                                    var remainingEl = document.getElementById("yatco-remaining-count");
-                                    if (remainingEl && data.progress.remaining !== undefined) {
-                                        var newRemaining = data.progress.remaining.toLocaleString();
-                                        if (remainingEl.textContent !== newRemaining) {
-                                            remainingEl.textContent = newRemaining;
-                                        }
-                                    }
-                                    
-                                    // Update ETA
-                                    var etaEl = document.getElementById("yatco-eta-text");
-                                    if (etaEl && data.progress.eta_minutes !== undefined) {
-                                        var newEta = data.progress.eta_minutes + " minutes";
-                                        if (etaEl.textContent !== newEta) {
-                                            etaEl.textContent = newEta;
-                                        }
-                                    }
-                                    
-                                    // Keep polling
-                                    if (!updateInterval) {
-                                        updateInterval = setInterval(updateProgress, 2000);
-                                    }
-                                } else {
-                                    // No active import, stop polling
-                                    if (updateInterval) {
-                                        clearInterval(updateInterval);
-                                        updateInterval = null;
-                                    }
-                                }
-                            }
-                        } catch(e) {
-                            console.error("Error parsing status:", e);
-                        }
-                    }
-                };
-                xhr.onerror = function() {
-                    console.error("AJAX request failed");
-                };
-                xhr.send("action=yatco_get_import_status&_ajax_nonce=' . wp_create_nonce( 'yatco_get_import_status_nonce' ) . '");
-            }
-            
-            // Start polling immediately and continue every 2 seconds
-            updateProgress();
-            updateInterval = setInterval(updateProgress, 2000);
-        })();
-        </script>';
+        echo '<script type="text/javascript">';
+        echo 'jQuery(document).ready(function($) {';
+        echo '    var importUpdateInterval = null;';
+        echo '    function updateImportProgress() {';
+        echo '        if (!$("#yatco-progress-bar").length) {';
+        echo '            return;';
+        echo '        }';
+        echo '        ';
+        echo '        $.ajax({';
+        echo '            url: ajaxurl,';
+        echo '            type: "POST",';
+        echo '            data: {';
+        echo '                action: "yatco_get_import_status",';
+        echo '                _ajax_nonce: "' . wp_create_nonce( 'yatco_get_import_status_nonce' ) . '"';
+        echo '            },';
+        echo '            success: function(response) {';
+        echo '                if (response && response.success && response.data) {';
+        echo '                    var data = response.data;';
+        echo '                    ';
+        echo '                    if (data.active && data.progress) {';
+        echo '                        // Update status text';
+        echo '                        if (data.status && $("#yatco-status-text").length) {';
+        echo '                            $("#yatco-status-text").html("<strong>Status:</strong> " + data.status);';
+        echo '                        }';
+        echo '                        ';
+        echo '                        // Smoothly update progress bar';
+        echo '                        var percent = data.progress.percent || 0;';
+        echo '                        var progressBar = $("#yatco-progress-bar");';
+        echo '                        if (progressBar.length) {';
+        echo '                            progressBar.css("width", percent + "%");';
+        echo '                            progressBar.text(percent.toFixed(1) + "%");';
+        echo '                        }';
+        echo '                        ';
+        echo '                        // Update counts';
+        echo '                        if (data.progress.current !== undefined && $("#yatco-processed-count").length) {';
+        echo '                            $("#yatco-processed-count").text(data.progress.current.toLocaleString() + " / " + data.progress.total.toLocaleString());';
+        echo '                        }';
+        echo '                        if (data.progress.remaining !== undefined && $("#yatco-remaining-count").length) {';
+        echo '                            $("#yatco-remaining-count").text(data.progress.remaining.toLocaleString());';
+        echo '                        }';
+        echo '                        ';
+        echo '                        // Update ETA';
+        echo '                        if (data.progress.eta_minutes !== undefined && $("#yatco-eta-text").length) {';
+        echo '                            $("#yatco-eta-text").text(data.progress.eta_minutes + " minutes");';
+        echo '                        }';
+        echo '                        ';
+        echo '                        // Keep polling';
+        echo '                        if (!importUpdateInterval) {';
+        echo '                            importUpdateInterval = setInterval(updateImportProgress, 2000);';
+        echo '                        }';
+        echo '                    } else {';
+        echo '                        // No active import, stop polling';
+        echo '                        if (importUpdateInterval) {';
+        echo '                            clearInterval(importUpdateInterval);';
+        echo '                            importUpdateInterval = null;';
+        echo '                        }';
+        echo '                    }';
+        echo '                }';
+        echo '            },';
+        echo '            error: function(xhr, status, error) {';
+        echo '                console.error("AJAX error:", error);';
+        echo '            }';
+        echo '        });';
+        echo '    }';
+        echo '    ';
+        echo '    // Start polling immediately and continue every 2 seconds';
+        echo '    updateImportProgress();';
+        echo '    importUpdateInterval = setInterval(updateImportProgress, 2000);';
+        echo '});';
+        echo '</script>';
         
         echo '<hr style="margin: 30px 0;" />';
         echo '<h2>Full Import (All Stages at Once)</h2>';
@@ -708,88 +685,80 @@ function yatco_options_page() {
         echo '});';
         echo '</script>';
         
-        // Also add real-time update script for Status tab (using vanilla JS for compatibility)
-        echo '<script type="text/javascript">
-        (function() {
-            var updateInterval = null;
-            function updateStatusTab() {
-                // Only run if we\'re on the status tab and progress bar exists
-                if (!document.getElementById("yatco-progress-bar")) {
-                    return;
-                }
-                
-                var xhr = new XMLHttpRequest();
-                xhr.open("POST", ajaxurl, true);
-                xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
-                xhr.onload = function() {
-                    if (xhr.status === 200) {
-                        try {
-                            var response = JSON.parse(xhr.responseText);
-                            if (response && response.success && response.data) {
-                                var data = response.data;
-                                
-                                if (data.active && data.progress) {
-                                    // Update status text
-                                    var statusEl = document.getElementById("yatco-status-text");
-                                    if (statusEl && data.status) {
-                                        statusEl.innerHTML = "<strong>Status:</strong> " + data.status;
-                                    }
-                                    
-                                    // Smoothly update progress bar
-                                    var percent = data.progress.percent || 0;
-                                    var progressBar = document.getElementById("yatco-progress-bar");
-                                    if (progressBar) {
-                                        progressBar.style.width = percent + "%";
-                                        progressBar.textContent = percent.toFixed(1) + "%";
-                                    }
-                                    
-                                    // Update counts
-                                    var processedEl = document.getElementById("yatco-processed-count");
-                                    if (processedEl && data.progress.current !== undefined) {
-                                        processedEl.textContent = data.progress.current.toLocaleString() + " / " + data.progress.total.toLocaleString();
-                                    }
-                                    
-                                    var remainingEl = document.getElementById("yatco-remaining-count");
-                                    if (remainingEl && data.progress.remaining !== undefined) {
-                                        remainingEl.textContent = data.progress.remaining.toLocaleString();
-                                    }
-                                    
-                                    // Update ETA
-                                    var etaEl = document.getElementById("yatco-eta-text");
-                                    if (etaEl && data.progress.eta_minutes !== undefined) {
-                                        etaEl.textContent = data.progress.eta_minutes + " minutes";
-                                    }
-                                    
-                                    // Keep polling
-                                    if (!updateInterval) {
-                                        updateInterval = setInterval(updateStatusTab, 2000);
-                                    }
-                                } else {
-                                    // No active import, stop polling
-                                    if (updateInterval) {
-                                        clearInterval(updateInterval);
-                                        updateInterval = null;
-                                    }
-                                }
-                            }
-                        } catch(e) {
-                            console.error("Error parsing status:", e);
-                        }
-                    }
-                };
-                xhr.onerror = function() {
-                    console.error("AJAX request failed");
-                };
-                xhr.send("action=yatco_get_import_status&_ajax_nonce=' . wp_create_nonce( 'yatco_get_import_status_nonce' ) . '");
-            }
-            
-            // Start polling for status tab
-            if (document.getElementById("yatco-progress-bar")) {
-                updateStatusTab();
-                updateInterval = setInterval(updateStatusTab, 2000);
-            }
-        })();
-        </script>';
+        // Also add real-time update script for Status tab (using jQuery for consistency)
+        echo '<script type="text/javascript">';
+        echo 'jQuery(document).ready(function($) {';
+        echo '    var statusUpdateInterval = null;';
+        echo '    function updateStatusTab() {';
+        echo '        // Only run if we\'re on the status tab and progress bar exists';
+        echo '        if (!$("#yatco-progress-bar").length) {';
+        echo '            return;';
+        echo '        }';
+        echo '        ';
+        echo '        $.ajax({';
+        echo '            url: ajaxurl,';
+        echo '            type: "POST",';
+        echo '            data: {';
+        echo '                action: "yatco_get_import_status",';
+        echo '                _ajax_nonce: "' . wp_create_nonce( 'yatco_get_import_status_nonce' ) . '"';
+        echo '            },';
+        echo '            success: function(response) {';
+        echo '                if (response && response.success && response.data) {';
+        echo '                    var data = response.data;';
+        echo '                    ';
+        echo '                    if (data.active && data.progress) {';
+        echo '                        // Update status text';
+        echo '                        if (data.status && $("#yatco-status-text").length) {';
+        echo '                            $("#yatco-status-text").html("<strong>Status:</strong> " + data.status);';
+        echo '                        }';
+        echo '                        ';
+        echo '                        // Smoothly update progress bar';
+        echo '                        var percent = data.progress.percent || 0;';
+        echo '                        var progressBar = $("#yatco-progress-bar");';
+        echo '                        if (progressBar.length) {';
+        echo '                            progressBar.css("width", percent + "%");';
+        echo '                            progressBar.text(percent.toFixed(1) + "%");';
+        echo '                        }';
+        echo '                        ';
+        echo '                        // Update counts';
+        echo '                        if (data.progress.current !== undefined && $("#yatco-processed-count").length) {';
+        echo '                            $("#yatco-processed-count").text(data.progress.current.toLocaleString() + " / " + data.progress.total.toLocaleString());';
+        echo '                        }';
+        echo '                        if (data.progress.remaining !== undefined && $("#yatco-remaining-count").length) {';
+        echo '                            $("#yatco-remaining-count").text(data.progress.remaining.toLocaleString());';
+        echo '                        }';
+        echo '                        ';
+        echo '                        // Update ETA';
+        echo '                        if (data.progress.eta_minutes !== undefined && $("#yatco-eta-text").length) {';
+        echo '                            $("#yatco-eta-text").text(data.progress.eta_minutes + " minutes");';
+        echo '                        }';
+        echo '                        ';
+        echo '                        // Keep polling';
+        echo '                        if (!statusUpdateInterval) {';
+        echo '                            statusUpdateInterval = setInterval(updateStatusTab, 2000);';
+        echo '                        }';
+        echo '                    } else {';
+        echo '                        // No active import, stop polling';
+        echo '                        if (statusUpdateInterval) {';
+        echo '                            clearInterval(statusUpdateInterval);';
+        echo '                            statusUpdateInterval = null;';
+        echo '                        }';
+        echo '                    }';
+        echo '                }';
+        echo '            },';
+        echo '            error: function(xhr, status, error) {';
+        echo '                console.error("AJAX error:", error);';
+        echo '            }';
+        echo '        });';
+        echo '    }';
+        echo '    ';
+        echo '    // Start polling for status tab';
+        echo '    if ($("#yatco-progress-bar").length) {';
+        echo '        updateStatusTab();';
+        echo '        statusUpdateInterval = setInterval(updateStatusTab, 2000);';
+        echo '    }';
+        echo '});';
+        echo '</script>';
         
         echo '</div>'; // Close status tab section
     }

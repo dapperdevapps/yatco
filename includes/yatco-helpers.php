@@ -201,6 +201,8 @@ function yatco_build_brief_from_fullspecs( $vessel_id, $full ) {
  * @return int|WP_Error           Post ID on success, WP_Error on failure
  */
 function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = null, $mlsid_lookup = null ) {
+    $function_start_time = time();
+    
     // Check stop flag before starting import (check both option and transient)
     $stop_flag = get_option( 'yatco_import_stop_flag', false );
     if ( $stop_flag === false ) {
@@ -211,8 +213,14 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
         return new WP_Error( 'import_stopped', 'Import stopped by user.' );
     }
     
+    yatco_log( "Import: Starting API fetch for vessel {$vessel_id}", 'debug' );
+    $api_start_time = time();
     $full = yatco_fetch_fullspecs( $token, $vessel_id );
+    $api_elapsed = time() - $api_start_time;
+    yatco_log( "Import: API fetch for vessel {$vessel_id} completed in {$api_elapsed} seconds", 'debug' );
+    
     if ( is_wp_error( $full ) ) {
+        yatco_log( "Import: API fetch failed for vessel {$vessel_id}: " . $full->get_error_message(), 'error' );
         return $full;
     }
     
@@ -977,10 +985,36 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
             
             // Set timeouts for image downloads (reduced to prevent hanging)
             $old_timeout = ini_get( 'default_socket_timeout' );
-            ini_set( 'default_socket_timeout', 15 ); // Reduced from 30 to 15 seconds to prevent timeouts
+            ini_set( 'default_socket_timeout', 10 ); // Reduced to 10 seconds to prevent hanging
             
-            // Wrap in try-catch-like error handling
-            $attach_id = @media_sideload_image( $image_url_to_download, $post_id, $caption, 'id' );
+            // Track image download start time for timeout detection
+            $image_start_time = time();
+            $image_max_time = 10; // Maximum 10 seconds for image download
+            
+            // Wrap in try-catch-like error handling with timeout protection
+            $attach_id = null;
+            try {
+                // Use wp_remote_head first to quickly check if image is accessible (with short timeout)
+                $image_check = wp_remote_head( $image_url_to_download, array(
+                    'timeout' => 5,
+                    'sslverify' => false,
+                ) );
+                
+                if ( ! is_wp_error( $image_check ) && wp_remote_retrieve_response_code( $image_check ) === 200 ) {
+                    // Image is accessible, now download it
+                    $attach_id = @media_sideload_image( $image_url_to_download, $post_id, $caption, 'id' );
+                } else {
+                    yatco_log( "Image download skipped for vessel {$vessel_id}: Image not accessible or timeout", 'warning' );
+                }
+            } catch ( Exception $e ) {
+                yatco_log( "Image download exception for vessel {$vessel_id}: " . $e->getMessage(), 'warning' );
+            }
+            
+            // Check if image download took too long
+            $image_elapsed = time() - $image_start_time;
+            if ( $image_elapsed > $image_max_time && $attach_id === null ) {
+                yatco_log( "Image download for vessel {$vessel_id} exceeded time limit ({$image_elapsed}s), skipping", 'warning' );
+            }
             
             // Restore original timeout
             ini_set( 'default_socket_timeout', $old_timeout );

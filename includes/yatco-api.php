@@ -88,7 +88,8 @@ function yatco_fetch_fullspecs( $token, $vessel_id ) {
                 'Authorization' => 'Basic ' . $token,
                 'Accept'        => 'application/json',
             ),
-            'timeout' => 30,
+            'timeout' => 20, // Reduced from 30 to 20 seconds to prevent hanging
+            'connect_timeout' => 10, // Connection timeout
         )
     );
     
