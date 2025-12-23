@@ -52,6 +52,18 @@ add_action( 'yatco_full_import_hook', function() {
     }
 } );
 
+// Register daily sync hook
+add_action( 'yatco_daily_sync_hook', function() {
+    yatco_log( 'Daily Sync: Hook triggered via WP-Cron', 'info' );
+    $token = yatco_get_token();
+    if ( ! empty( $token ) ) {
+        yatco_log( 'Daily Sync: Token found, calling sync function', 'info' );
+        yatco_daily_sync_check( $token );
+    } else {
+        yatco_log( 'Daily Sync: Hook triggered but no token found', 'error' );
+    }
+} );
+
 // AJAX handler to run Full Import directly (for when WP-Cron isn't working)
 add_action( 'wp_ajax_yatco_run_full_import_direct', 'yatco_ajax_run_full_import_direct' );
 function yatco_ajax_run_full_import_direct() {

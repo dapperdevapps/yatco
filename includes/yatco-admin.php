@@ -1225,14 +1225,24 @@ function yatco_options_page() {
     
     echo '<h3>Real Cron Setup (If WP-Cron Disabled)</h3>';
     echo '<div style="background: #fff; border: 1px solid #ddd; padding: 15px; margin: 10px 0;">';
-    echo '<p>If WP-Cron is disabled on your server, you can set up a real cron job to trigger the cache warming automatically.</p>';
-    echo '<p><strong>Option 1: Using curl</strong></p>';
-    echo '<pre style="background: #f5f5f5; padding: 10px; border: 1px solid #ddd; overflow-x: auto;">*/15 * * * * curl -s ' . esc_url( site_url( 'wp-cron.php?doing_wp_cron' ) ) . ' > /dev/null 2>&1</pre>';
+    echo '<p>If WP-Cron is disabled on your server, you can set up a real cron job to trigger WP-Cron automatically. <strong>This is the recommended approach for production sites.</strong></p>';
+    
+    echo '<p style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px; margin: 15px 0;"><strong>⚠️ Important:</strong> If you\'re using WP-CLI (<code>wp cron event run --due-now</code>), make sure WP-CLI is installed and accessible from your cron job. If the test above failed, try using <code>curl</code> or <code>wget</code> instead.</p>';
+    
+    echo '<p><strong>Option 1: Using curl (RECOMMENDED)</strong></p>';
+    echo '<pre style="background: #f5f5f5; padding: 10px; border: 1px solid #ddd; overflow-x: auto;">*/5 * * * * curl -s ' . esc_url( site_url( 'wp-cron.php?doing_wp_cron' ) ) . ' > /dev/null 2>&1</pre>';
+    echo '<p style="font-size: 12px; color: #666; margin: 5px 0;">This runs every 5 minutes. Change <code>*/5</code> to <code>*/15</code> for every 15 minutes, or <code>0 2 * * *</code> for daily at 2 AM.</p>';
+    
     echo '<p><strong>Option 2: Using wget</strong></p>';
-    echo '<pre style="background: #f5f5f5; padding: 10px; border: 1px solid #ddd; overflow-x: auto;">*/15 * * * * wget -q -O - ' . esc_url( site_url( 'wp-cron.php?doing_wp_cron' ) ) . ' > /dev/null 2>&1</pre>';
-    echo '<p><strong>Option 3: Using wp-cli (if available)</strong></p>';
-    echo '<pre style="background: #f5f5f5; padding: 10px; border: 1px solid #ddd; overflow-x: auto;">*/15 * * * * cd ' . esc_html( ABSPATH ) . ' && wp cron event run --due-now</pre>';
-    echo '<p style="font-size: 12px; color: #666; margin-top: 10px;">Note: Replace <code>*/15</code> with your desired frequency (e.g., <code>*/5</code> for every 5 minutes). Add this to your server\'s crontab using <code>crontab -e</code>.</p>';
+    echo '<pre style="background: #f5f5f5; padding: 10px; border: 1px solid #ddd; overflow-x: auto;">*/5 * * * * wget -q -O - ' . esc_url( site_url( 'wp-cron.php?doing_wp_cron' ) ) . ' > /dev/null 2>&1</pre>';
+    
+    echo '<p><strong>Option 3: Using wp-cli (if available and working)</strong></p>';
+    echo '<pre style="background: #f5f5f5; padding: 10px; border: 1px solid #ddd; overflow-x: auto;">*/5 * * * * cd ' . esc_html( ABSPATH ) . ' && /usr/local/bin/wp cron event run --due-now > /dev/null 2>&1</pre>';
+    echo '<p style="font-size: 12px; color: #666; margin: 5px 0;">Note: You may need to specify the full path to <code>wp</code> (e.g., <code>/usr/local/bin/wp</code> or <code>/usr/bin/wp</code>). Check with your hosting provider.</p>';
+    
+    echo '<p style="background: #e7f3ff; border-left: 4px solid #2271b1; padding: 10px; margin: 15px 0;"><strong>💡 Tip:</strong> After setting up the cron job, wait a few minutes and check the "Last Status" above to see if WP-Cron is running. You can also check your server\'s cron logs to verify the job is executing.</p>';
+    
+    echo '<p style="font-size: 12px; color: #666; margin-top: 10px;">Add this to your server\'s crontab using <code>crontab -e</code> (SSH) or through your hosting control panel (cPanel, Plesk, etc.).</p>';
     echo '</div>';
     echo '</div>';
     echo '</div>'; // Close troubleshooting section
