@@ -24,6 +24,7 @@ define( 'YATCO_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 require_once YATCO_PLUGIN_DIR . 'includes/yatco-cpt.php';
 require_once YATCO_PLUGIN_DIR . 'includes/yatco-api.php';
 require_once YATCO_PLUGIN_DIR . 'includes/yatco-helpers.php';
+require_once YATCO_PLUGIN_DIR . 'includes/yatco-admin-helper.php';
 require_once YATCO_PLUGIN_DIR . 'includes/yatco-admin.php';
 require_once YATCO_PLUGIN_DIR . 'includes/yatco-shortcode.php';
 require_once YATCO_PLUGIN_DIR . 'includes/yatco-cache.php';

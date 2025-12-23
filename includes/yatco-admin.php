@@ -143,6 +143,14 @@ function yatco_options_page() {
     // Import Tab
     if ( $current_tab === 'import' ) {
         echo '<div class="yatco-import-section">';
+        
+        // Display Import Status & Progress at the top
+        yatco_display_import_status_section();
+        
+        // Display Import Activity Log
+        yatco_display_import_logs();
+        
+        echo '<hr style="margin: 30px 0;" />';
         echo '<h2>Import Vessels to CPT</h2>';
         echo '<p>Import all vessels into the Yacht Custom Post Type (CPT) for faster queries, better SEO, and individual vessel pages. This may take several minutes for 7000+ vessels.</p>';
         echo '<p><strong>Benefits of CPT import:</strong> Better performance with WP_Query, individual pages per vessel, improved SEO, easier management via WordPress admin.</p>';
