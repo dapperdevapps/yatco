@@ -271,6 +271,7 @@ function yatco_heartbeat_settings( $settings ) {
 // AJAX handler to get import logs
 add_action( 'wp_ajax_yatco_get_import_logs', 'yatco_ajax_get_import_logs' );
 function yatco_ajax_get_import_logs() {
+    // We still check user capability for security
     if ( isset( $_POST['_ajax_nonce'] ) ) {
         check_ajax_referer( 'yatco_get_import_logs_nonce', '_ajax_nonce', false );
     }
@@ -280,12 +281,14 @@ function yatco_ajax_get_import_logs() {
         return;
     }
     
+    // Bypass cache to get fresh logs
+    wp_cache_delete( 'yatco_import_logs', 'options' );
     $logs = get_option( 'yatco_import_logs', array() );
     
     // Return last 50 log entries
     $recent_logs = array_slice( $logs, -50 );
     
-    // Format logs for JSON response
+    // Format logs for JSON response (reverse order so newest is last)
     $formatted_logs = array();
     foreach ( $recent_logs as $log_entry ) {
         $formatted_logs[] = array(
@@ -295,7 +298,7 @@ function yatco_ajax_get_import_logs() {
         );
     }
     
-    wp_send_json_success( array( 'logs' => $formatted_logs ) );
+    wp_send_json_success( array( 'logs' => $formatted_logs, 'count' => count( $formatted_logs ) ) );
 }
 
 // AJAX handler to stop import

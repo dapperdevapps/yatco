@@ -543,13 +543,18 @@ function yatco_full_import( $token ) {
         // Check if connection was aborted (browser closed, timeout, etc.)
         if ( connection_aborted() ) {
             if ( $progress !== false && is_array( $progress ) ) {
-                $processed = isset( $progress['processed'] ) ? $progress['processed'] : 0;
-                $total = isset( $progress['total'] ) ? $progress['total'] : 0;
+                $processed = isset( $progress['processed'] ) ? intval( $progress['processed'] ) : ( isset( $progress['last_processed'] ) ? intval( $progress['last_processed'] ) : 0 );
+                $total = isset( $progress['total'] ) ? intval( $progress['total'] ) : 0;
                 $last_vessel = isset( $progress['last_vessel_id'] ) ? $progress['last_vessel_id'] : 'unknown';
-                yatco_log( "Full Import: CONNECTION ABORTED - Stopped unexpectedly at {$processed}/{$total} vessels (last vessel: {$last_vessel})", 'error' );
+                yatco_log( "Full Import: CONNECTION ABORTED (shutdown handler) - Stopped unexpectedly at {$processed}/{$total} vessels (last vessel: {$last_vessel})", 'error' );
+                
+                // Ensure auto-resume is enabled
+                update_option( 'yatco_import_auto_resume', time(), false );
                 set_transient( 'yatco_cache_warming_status', "Full Import: Connection aborted/lost. Stopped at {$processed}/{$total} vessels (last: {$last_vessel}). Auto-resume enabled.", 600 );
+                yatco_log( "Full Import: Auto-resume flag set due to connection abort", 'info' );
             } else {
-                yatco_log( 'Full Import: CONNECTION ABORTED - Stopped unexpectedly (no progress data available)', 'error' );
+                yatco_log( 'Full Import: CONNECTION ABORTED (shutdown handler) - Stopped unexpectedly (no progress data available)', 'error' );
+                update_option( 'yatco_import_auto_resume', time(), false );
                 set_transient( 'yatco_cache_warming_status', 'Full Import: Connection aborted/lost. Auto-resume enabled.', 600 );
             }
             return;
@@ -868,12 +873,18 @@ function yatco_full_import( $token ) {
                     $percent = $total_to_process > 0 ? round( ( $processed / $total_to_process ) * 100, 1 ) : 0;
                     $progress_data = array(
                         'last_processed' => $current_position,
-                        'total'         => $total_to_process,
-                        'timestamp'     => time(),
-                        'percent'       => $percent,
+                        'processed'      => $processed, // Include processed count for proper resume
+                        'total'          => $total_to_process,
+                        'timestamp'      => time(),
+                        'percent'        => $percent,
+                        'last_vessel_id' => $vessel_id, // Save last vessel ID for debugging
                     );
+                    delete_transient( 'yatco_import_progress' );
                     set_transient( 'yatco_import_progress', $progress_data, 3600 );
-                    set_transient( 'yatco_cache_warming_status', "Full Import: Connection lost. Processed {$processed} of {$total_to_process} vessels ({$percent}%). Progress saved - you can resume.", 600 );
+                    wp_cache_flush(); // Force immediate write
+                    set_transient( 'yatco_cache_warming_status', "Full Import: Connection lost. Processed {$processed} of {$total_to_process} vessels ({$percent}%). Progress saved - auto-resume enabled.", 600 );
+                    yatco_log( "Full Import: Progress saved before connection abort: position {$current_position}, processed {$processed}, last vessel {$vessel_id}", 'info' );
+                    update_option( 'yatco_import_auto_resume', time(), false ); // Enable auto-resume
                     return;
                 }
             } catch ( Exception $e ) {
