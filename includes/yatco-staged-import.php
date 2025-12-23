@@ -513,19 +513,100 @@ function yatco_full_import( $token ) {
     @ini_set( 'max_execution_time', 0 );
     @ini_set( 'memory_limit', '512M' );
     
-    // Register shutdown handler to detect fatal errors
+    // Register shutdown handler to detect fatal errors, timeouts, and other stop conditions
     register_shutdown_function( function() {
         $error = error_get_last();
+        $progress = get_transient( 'yatco_import_progress' );
+        $stop_flag = get_option( 'yatco_import_stop_flag', false );
+        
+        // Check if this was a user-initiated stop
+        if ( $stop_flag !== false ) {
+            return; // User stopped it, don't log as error
+        }
+        
+        // Check for fatal PHP errors
         if ( $error !== null && in_array( $error['type'], array( E_ERROR, E_CORE_ERROR, E_COMPILE_ERROR, E_PARSE ) ) ) {
             $error_msg = $error['message'] . ' in ' . $error['file'] . ' on line ' . $error['line'];
-            yatco_log( 'Full Import: Fatal error occurred: ' . $error_msg, 'error' );
+            yatco_log( 'Full Import: FATAL ERROR - ' . $error_msg, 'error' );
             
-            // Try to save progress before dying
-            $progress = get_transient( 'yatco_import_progress' );
-            if ( $progress !== false ) {
-                set_transient( 'yatco_cache_warming_status', 'Full Import Error: ' . $error['message'] . ' - Progress saved, can resume.', 300 );
+            if ( $progress !== false && is_array( $progress ) ) {
+                $processed = isset( $progress['processed'] ) ? $progress['processed'] : 0;
+                $total = isset( $progress['total'] ) ? $progress['total'] : 0;
+                yatco_log( "Full Import: Stopped due to fatal error at {$processed}/{$total} vessels", 'error' );
+                set_transient( 'yatco_cache_warming_status', 'Full Import FATAL ERROR: ' . $error['message'] . ' - Stopped at ' . $processed . '/' . $total . ' vessels. Progress saved, auto-resume enabled.', 600 );
             } else {
-                set_transient( 'yatco_cache_warming_status', 'Full Import Error: ' . $error['message'], 300 );
+                set_transient( 'yatco_cache_warming_status', 'Full Import FATAL ERROR: ' . $error['message'], 600 );
+            }
+            return;
+        }
+        
+        // Check if connection was aborted (browser closed, timeout, etc.)
+        if ( connection_aborted() ) {
+            if ( $progress !== false && is_array( $progress ) ) {
+                $processed = isset( $progress['processed'] ) ? $progress['processed'] : 0;
+                $total = isset( $progress['total'] ) ? $progress['total'] : 0;
+                $last_vessel = isset( $progress['last_vessel_id'] ) ? $progress['last_vessel_id'] : 'unknown';
+                yatco_log( "Full Import: CONNECTION ABORTED - Stopped unexpectedly at {$processed}/{$total} vessels (last vessel: {$last_vessel})", 'error' );
+                set_transient( 'yatco_cache_warming_status', "Full Import: Connection aborted/lost. Stopped at {$processed}/{$total} vessels (last: {$last_vessel}). Auto-resume enabled.", 600 );
+            } else {
+                yatco_log( 'Full Import: CONNECTION ABORTED - Stopped unexpectedly (no progress data available)', 'error' );
+                set_transient( 'yatco_cache_warming_status', 'Full Import: Connection aborted/lost. Auto-resume enabled.', 600 );
+            }
+            return;
+        }
+        
+        // Check if we hit execution time limit
+        $max_execution_time = ini_get( 'max_execution_time' );
+        if ( $max_execution_time > 0 ) {
+            $time_elapsed = time() - $_SERVER['REQUEST_TIME'];
+            if ( $time_elapsed >= ( $max_execution_time - 1 ) ) {
+                if ( $progress !== false && is_array( $progress ) ) {
+                    $processed = isset( $progress['processed'] ) ? $progress['processed'] : 0;
+                    $total = isset( $progress['total'] ) ? $progress['total'] : 0;
+                    $last_vessel = isset( $progress['last_vessel_id'] ) ? $progress['last_vessel_id'] : 'unknown';
+                    yatco_log( "Full Import: EXECUTION TIME LIMIT REACHED - Max execution time ({$max_execution_time}s) exceeded. Stopped at {$processed}/{$total} vessels (last vessel: {$last_vessel})", 'error' );
+                    set_transient( 'yatco_cache_warming_status', "Full Import: Execution time limit ({$max_execution_time}s) reached. Stopped at {$processed}/{$total} vessels (last: {$last_vessel}). Auto-resume enabled.", 600 );
+                } else {
+                    yatco_log( "Full Import: EXECUTION TIME LIMIT REACHED - Max execution time ({$max_execution_time}s) exceeded", 'error' );
+                    set_transient( 'yatco_cache_warming_status', "Full Import: Execution time limit ({$max_execution_time}s) reached. Auto-resume enabled.", 600 );
+                }
+                return;
+            }
+        }
+        
+        // Check memory usage
+        if ( function_exists( 'memory_get_usage' ) && function_exists( 'memory_get_peak_usage' ) ) {
+            $memory_limit = ini_get( 'memory_limit' );
+            $current_memory = memory_get_usage( true );
+            $peak_memory = memory_get_peak_usage( true );
+            
+            // Convert memory_limit to bytes for comparison
+            $memory_limit_bytes = wp_convert_hr_to_bytes( $memory_limit );
+            
+            if ( $peak_memory > ( $memory_limit_bytes * 0.9 ) ) {
+                $memory_mb = round( $peak_memory / 1024 / 1024, 2 );
+                $limit_mb = round( $memory_limit_bytes / 1024 / 1024, 2 );
+                if ( $progress !== false && is_array( $progress ) ) {
+                    $processed = isset( $progress['processed'] ) ? $progress['processed'] : 0;
+                    $total = isset( $progress['total'] ) ? $progress['total'] : 0;
+                    yatco_log( "Full Import: HIGH MEMORY USAGE - Peak memory: {$memory_mb}MB / {$limit_mb}MB limit. Stopped at {$processed}/{$total} vessels", 'error' );
+                    set_transient( 'yatco_cache_warming_status', "Full Import: High memory usage ({$memory_mb}MB/{$limit_mb}MB). Stopped at {$processed}/{$total} vessels. Auto-resume enabled.", 600 );
+                } else {
+                    yatco_log( "Full Import: HIGH MEMORY USAGE - Peak memory: {$memory_mb}MB / {$limit_mb}MB limit", 'error' );
+                    set_transient( 'yatco_cache_warming_status', "Full Import: High memory usage ({$memory_mb}MB/{$limit_mb}MB). Auto-resume enabled.", 600 );
+                }
+                return;
+            }
+        }
+        
+        // If we get here and progress exists but import is incomplete, log it as unexpected stop
+        if ( $progress !== false && is_array( $progress ) ) {
+            $processed = isset( $progress['processed'] ) ? $progress['processed'] : 0;
+            $total = isset( $progress['total'] ) ? $progress['total'] : 0;
+            if ( $total > 0 && $processed < $total ) {
+                $last_vessel = isset( $progress['last_vessel_id'] ) ? $progress['last_vessel_id'] : 'unknown';
+                yatco_log( "Full Import: UNEXPECTED STOP - Import stopped unexpectedly at {$processed}/{$total} vessels (last vessel: {$last_vessel}). No error detected, but import incomplete.", 'warning' );
+                set_transient( 'yatco_cache_warming_status', "Full Import: Unexpected stop at {$processed}/{$total} vessels (last: {$last_vessel}). Auto-resume enabled.", 600 );
             }
         }
     } );
@@ -990,9 +1071,23 @@ function yatco_full_import( $token ) {
         delete_option( 'yatco_import_auto_resume' );
     } else {
         // Import incomplete - save progress and set auto-resume flag
-        yatco_log( "Full Import: Incomplete - {$processed}/{$total_to_process} vessels processed. Auto-resume enabled.", 'warning' );
+        $last_vessel_id = isset( $progress_data['last_vessel_id'] ) ? $progress_data['last_vessel_id'] : 'unknown';
+        yatco_log( "Full Import: INCOMPLETE - Stopped at {$processed}/{$total_to_process} vessels (last vessel: {$last_vessel_id}). Auto-resume enabled.", 'warning' );
+        
+        // Log system information for debugging
+        if ( function_exists( 'memory_get_peak_usage' ) ) {
+            $peak_memory_mb = round( memory_get_peak_usage( true ) / 1024 / 1024, 2 );
+            $memory_limit = ini_get( 'memory_limit' );
+            yatco_log( "Full Import: Memory at stop - Peak: {$peak_memory_mb}MB, Limit: {$memory_limit}", 'info' );
+        }
+        
+        $max_exec_time = ini_get( 'max_execution_time' );
+        if ( $max_exec_time > 0 ) {
+            yatco_log( "Full Import: Execution time limit: {$max_exec_time} seconds", 'info' );
+        }
+        
         update_option( 'yatco_import_auto_resume', time(), false );
-        set_transient( 'yatco_cache_warming_status', "Full Import paused: Processed {$processed} of {$total_to_process} vessels. Auto-resuming...", 600 );
+        set_transient( 'yatco_cache_warming_status', "Full Import paused: Processed {$processed} of {$total_to_process} vessels (last: {$last_vessel_id}). Auto-resuming...", 600 );
     }
 }
 

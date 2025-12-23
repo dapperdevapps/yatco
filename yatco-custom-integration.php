@@ -187,14 +187,28 @@ function yatco_heartbeat_received( $response, $data ) {
             if ( $total > 0 && $processed < $total ) {
                 $stop_flag = get_option( 'yatco_import_stop_flag', false );
                 if ( $stop_flag === false ) {
-                    // Schedule resume via wp-cron (non-blocking)
-                    wp_schedule_single_event( time() + 2, 'yatco_full_import_hook' );
-                    spawn_cron();
-                    $response['yatco_auto_resume'] = true;
+                    // Check when auto-resume was last triggered to avoid spam
+                    $last_resume = get_option( 'yatco_last_auto_resume_time', 0 );
+                    $time_since_last_resume = time() - $last_resume;
+                    
+                    // Only trigger resume if it's been at least 5 seconds since last attempt
+                    if ( $time_since_last_resume >= 5 ) {
+                        $last_vessel = isset( $import_progress['last_vessel_id'] ) ? $import_progress['last_vessel_id'] : 'unknown';
+                        yatco_log( "Full Import: AUTO-RESUME TRIGGERED - Import incomplete ({$processed}/{$total} vessels, last: {$last_vessel}). Scheduling resume...", 'info' );
+                        
+                        // Schedule resume via wp-cron (non-blocking)
+                        wp_schedule_single_event( time() + 2, 'yatco_full_import_hook' );
+                        spawn_cron();
+                        $response['yatco_auto_resume'] = true;
+                        
+                        // Update last resume time
+                        update_option( 'yatco_last_auto_resume_time', time(), false );
+                    }
                 }
             } else {
                 // Import complete, clear auto-resume
                 delete_option( 'yatco_import_auto_resume' );
+                delete_option( 'yatco_last_auto_resume_time' );
             }
         }
     }
@@ -210,7 +224,7 @@ function yatco_heartbeat_received( $response, $data ) {
         $total = isset( $import_progress['total'] ) ? intval( $import_progress['total'] ) : 0;
         $percent = isset( $import_progress['percent'] ) ? floatval( $import_progress['percent'] ) : ( $total > 0 ? round( ( $current / $total ) * 100, 1 ) : 0 );
         
-        $response['yatco_import_progress'] = array(
+        $progress_data = array(
             'active' => true,
             'current' => $current,
             'total' => $total,
@@ -218,6 +232,21 @@ function yatco_heartbeat_received( $response, $data ) {
             'remaining' => $total - $current,
             'status' => $cache_status !== false ? $cache_status : null,
         );
+        
+        // Calculate ETA
+        if ( isset( $import_progress['timestamp'] ) && $current > 0 && $total > $current ) {
+            $time_elapsed = time() - intval( $import_progress['timestamp'] );
+            if ( $time_elapsed > 0 && $current > 0 ) {
+                $rate = $current / $time_elapsed; // items per second
+                $remaining = $total - $current;
+                if ( $rate > 0 ) {
+                    $eta_seconds = $remaining / $rate;
+                    $progress_data['eta_minutes'] = round( $eta_seconds / 60, 1 );
+                }
+            }
+        }
+        
+        $response['yatco_import_progress'] = $progress_data;
     }
     
     return $response;
