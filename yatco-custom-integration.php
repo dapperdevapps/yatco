@@ -172,6 +172,67 @@ function yatco_ajax_get_import_status() {
     wp_send_json_success( $response_data );
 }
 
+// Add auto-resume functionality - check on heartbeat if import needs to continue
+add_filter( 'heartbeat_received', 'yatco_heartbeat_received', 10, 2 );
+function yatco_heartbeat_received( $response, $data ) {
+    // Check if auto-resume is enabled and import is incomplete
+    $auto_resume = get_option( 'yatco_import_auto_resume', false );
+    if ( $auto_resume !== false ) {
+        $import_progress = get_transient( 'yatco_import_progress' );
+        if ( $import_progress !== false && is_array( $import_progress ) ) {
+            $processed = isset( $import_progress['processed'] ) ? intval( $import_progress['processed'] ) : 0;
+            $total = isset( $import_progress['total'] ) ? intval( $import_progress['total'] ) : 0;
+            
+            // If import is incomplete, trigger resume
+            if ( $total > 0 && $processed < $total ) {
+                $stop_flag = get_option( 'yatco_import_stop_flag', false );
+                if ( $stop_flag === false ) {
+                    // Schedule resume via wp-cron (non-blocking)
+                    wp_schedule_single_event( time() + 2, 'yatco_full_import_hook' );
+                    spawn_cron();
+                    $response['yatco_auto_resume'] = true;
+                }
+            } else {
+                // Import complete, clear auto-resume
+                delete_option( 'yatco_import_auto_resume' );
+            }
+        }
+    }
+    
+    // Add progress data to heartbeat response for real-time updates
+    wp_cache_delete( 'yatco_import_progress', 'transient' );
+    wp_cache_delete( 'yatco_cache_warming_status', 'transient' );
+    $import_progress = get_transient( 'yatco_import_progress' );
+    $cache_status = get_transient( 'yatco_cache_warming_status' );
+    
+    if ( $import_progress !== false && is_array( $import_progress ) ) {
+        $current = isset( $import_progress['processed'] ) ? intval( $import_progress['processed'] ) : ( isset( $import_progress['last_processed'] ) ? intval( $import_progress['last_processed'] ) : 0 );
+        $total = isset( $import_progress['total'] ) ? intval( $import_progress['total'] ) : 0;
+        $percent = isset( $import_progress['percent'] ) ? floatval( $import_progress['percent'] ) : ( $total > 0 ? round( ( $current / $total ) * 100, 1 ) : 0 );
+        
+        $response['yatco_import_progress'] = array(
+            'active' => true,
+            'current' => $current,
+            'total' => $total,
+            'percent' => $percent,
+            'remaining' => $total - $current,
+            'status' => $cache_status !== false ? $cache_status : null,
+        );
+    }
+    
+    return $response;
+}
+
+// Increase heartbeat frequency for real-time updates
+add_filter( 'heartbeat_settings', 'yatco_heartbeat_settings' );
+function yatco_heartbeat_settings( $settings ) {
+    // Increase heartbeat frequency to 2 seconds for real-time updates (when on admin pages)
+    if ( is_admin() ) {
+        $settings['interval'] = 2;
+    }
+    return $settings;
+}
+
 // AJAX handler to stop import
 add_action( 'wp_ajax_yatco_stop_import', 'yatco_ajax_stop_import' );
 function yatco_ajax_stop_import() {

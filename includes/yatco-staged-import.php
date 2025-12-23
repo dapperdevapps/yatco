@@ -547,6 +547,13 @@ function yatco_full_import( $token ) {
     set_transient( 'yatco_cache_warming_status', 'Full Import: Fetching vessel IDs...', 600 );
     yatco_log( 'Full Import: Fetching all active vessel IDs', 'info' );
     
+    // Enable auto-resume if not already set (for fresh imports)
+    $auto_resume = get_option( 'yatco_import_auto_resume', false );
+    if ( $auto_resume === false ) {
+        set_option( 'yatco_import_auto_resume', time(), false );
+        yatco_log( 'Full Import: Auto-resume enabled', 'info' );
+    }
+    
     // Fetch all active vessel IDs
     $vessel_ids = yatco_get_active_vessel_ids( $token, 0 );
     
@@ -966,15 +973,26 @@ function yatco_full_import( $token ) {
         }
     }
     
-    // Clear progress
-    delete_transient( 'yatco_import_progress' );
-    set_transient( 'yatco_cache_warming_status', "Full Import Complete: Processed {$processed} of {$total_to_process} vessels.", 300 );
-    yatco_log( "Full Import Complete: Processed {$processed} of {$total_to_process} vessels.", 'info' );
-    
-    // Log final memory usage for debugging
-    if ( function_exists( 'memory_get_peak_usage' ) ) {
-        $peak_memory = round( memory_get_peak_usage( true ) / 1024 / 1024, 2 );
-        yatco_log( "Full Import: Peak memory usage: {$peak_memory} MB", 'info' );
+    // Check if we've completed all vessels
+    if ( $processed >= $total_to_process ) {
+        // Clear progress
+        delete_transient( 'yatco_import_progress' );
+        set_transient( 'yatco_cache_warming_status', "Full Import Complete: Processed {$processed} of {$total_to_process} vessels.", 300 );
+        yatco_log( "Full Import Complete: Processed {$processed} of {$total_to_process} vessels.", 'info' );
+        
+        // Log final memory usage for debugging
+        if ( function_exists( 'memory_get_peak_usage' ) ) {
+            $peak_memory = round( memory_get_peak_usage( true ) / 1024 / 1024, 2 );
+            yatco_log( "Full Import: Peak memory usage: {$peak_memory} MB", 'info' );
+        }
+        
+        // Clear auto-resume flag
+        delete_option( 'yatco_import_auto_resume' );
+    } else {
+        // Import incomplete - save progress and set auto-resume flag
+        yatco_log( "Full Import: Incomplete - {$processed}/{$total_to_process} vessels processed. Auto-resume enabled.", 'warning' );
+        set_option( 'yatco_import_auto_resume', time(), false );
+        set_transient( 'yatco_cache_warming_status', "Full Import paused: Processed {$processed} of {$total_to_process} vessels. Auto-resuming...", 600 );
     }
 }
 
