@@ -550,7 +550,7 @@ function yatco_full_import( $token ) {
     // Enable auto-resume if not already set (for fresh imports)
     $auto_resume = get_option( 'yatco_import_auto_resume', false );
     if ( $auto_resume === false ) {
-        set_option( 'yatco_import_auto_resume', time(), false );
+        update_option( 'yatco_import_auto_resume', time(), false );
         yatco_log( 'Full Import: Auto-resume enabled', 'info' );
     }
     
@@ -991,7 +991,7 @@ function yatco_full_import( $token ) {
     } else {
         // Import incomplete - save progress and set auto-resume flag
         yatco_log( "Full Import: Incomplete - {$processed}/{$total_to_process} vessels processed. Auto-resume enabled.", 'warning' );
-        set_option( 'yatco_import_auto_resume', time(), false );
+        update_option( 'yatco_import_auto_resume', time(), false );
         set_transient( 'yatco_cache_warming_status', "Full Import paused: Processed {$processed} of {$total_to_process} vessels. Auto-resuming...", 600 );
     }
 }

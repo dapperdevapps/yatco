@@ -233,7 +233,7 @@ function yatco_options_page() {
                 delete_option( 'yatco_import_stop_flag' );
                 
                 // Enable auto-resume for direct runs (will automatically continue if it times out)
-                set_option( 'yatco_import_auto_resume', time(), false );
+                update_option( 'yatco_import_auto_resume', time(), false );
                 
                 // Initialize progress immediately
                 set_transient( 'yatco_cache_warming_status', 'Full Import: Starting direct import (auto-resume enabled)...', 600 );
