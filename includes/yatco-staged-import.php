@@ -988,8 +988,13 @@ function yatco_full_import( $token ) {
             delete_transient( 'yatco_cache_warming_status' );
             set_transient( 'yatco_cache_warming_status', "Full Import: Processed {$processed} of {$total_to_process} vessels ({$percent}%) - Last vessel: {$vessel_id}", 600 );
             
-            // Force database write - bypass all caches
+            // Force database write immediately - bypass all caches
             wp_cache_flush();
+            
+            // Also flush WordPress object cache if available
+            if ( function_exists( 'wp_cache_flush_group' ) ) {
+                wp_cache_flush_group( 'transient' );
+            }
             
             // Log progress save for debugging
             if ( $processed % 10 == 0 || $processed <= 5 ) {

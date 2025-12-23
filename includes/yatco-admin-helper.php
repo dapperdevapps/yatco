@@ -119,16 +119,88 @@ function yatco_display_import_status_section() {
     }
     
     echo '</div>';
+    
+    // Real-time progress bar update script - using BOTH Heartbeat API AND AJAX polling
+    echo '<script type="text/javascript">';
+    echo 'jQuery(document).ready(function($) {';
+    echo '    var pollInterval = null;';
+    echo '    ';
+    echo '    function updateProgressBar(progressData) {';
+    echo '        if (!progressData) {';
+    echo '            return;';
+    echo '        }';
+    echo '        ';
+    echo '        var percent = progressData.percent || 0;';
+    echo '        var progressBar = $("#yatco-progress-bar");';
+    echo '        if (progressBar.length) {';
+    echo '            var currentWidth = parseFloat(progressBar.css("width").replace("%", "")) || 0;';
+    echo '            if (Math.abs(currentWidth - percent) > 0.01) {';
+    echo '                progressBar.css("width", percent + "%");';
+    echo '                progressBar.text(percent.toFixed(1) + "%");';
+    echo '            }';
+    echo '        }';
+    echo '        ';
+    echo '        // Update status text';
+    echo '        if (progressData.status && $("#yatco-status-text").length) {';
+    echo '            $("#yatco-status-text").html("<strong>Status:</strong> " + progressData.status);';
+    echo '        }';
+    echo '        ';
+    echo '        // Update counts';
+    echo '        if (progressData.current !== undefined && $("#yatco-processed-count").length) {';
+    echo '            $("#yatco-processed-count").text(progressData.current.toLocaleString() + " / " + progressData.total.toLocaleString());';
+    echo '        }';
+    echo '        if (progressData.remaining !== undefined && $("#yatco-remaining-count").length) {';
+    echo '            $("#yatco-remaining-count").text(progressData.remaining.toLocaleString());';
+    echo '        }';
+    echo '        ';
+    echo '        // Update ETA';
+    echo '        if (progressData.eta_minutes !== undefined && $("#yatco-eta-text").length) {';
+    echo '            $("#yatco-eta-text").text(progressData.eta_minutes + " minutes");';
+    echo '        }';
+    echo '    }';
+    echo '    ';
+    echo '    function fetchProgress() {';
+    echo '        $.ajax({';
+    echo '            url: ajaxurl,';
+    echo '            type: "POST",';
+    echo '            data: {';
+    echo '                action: "yatco_get_import_status",';
+    echo '                _ajax_nonce: ' . json_encode( wp_create_nonce( 'yatco_get_import_status_nonce' ) ) . '';
+    echo '            },';
+    echo '            cache: false,';
+    echo '            success: function(response) {';
+    echo '                if (response && response.success && response.data && response.data.progress) {';
+    echo '                    updateProgressBar(response.data.progress);';
+    echo '                }';
+    echo '            }';
+    echo '        });';
+    echo '    }';
+    echo '    ';
+    echo '    // Listen to heartbeat tick (primary method)';
+    echo '    $(document).on("heartbeat-tick", function(event, data) {';
+    echo '        if (data.yatco_import_progress) {';
+    echo '            updateProgressBar(data.yatco_import_progress);';
+    echo '        }';
+    echo '    });';
+    echo '    ';
+    echo '    // Also poll via AJAX every 1 second as backup';
+    echo '    fetchProgress(); // Initial fetch';
+    echo '    pollInterval = setInterval(fetchProgress, 1000); // Poll every 1 second';
+    echo '    ';
+    echo '    console.log("YATCO Status Section: Progress updates enabled (Heartbeat + AJAX polling every 1s)");';
+    echo '});';
+    echo '</script>';
 }
 
 /**
- * Display Import Log Viewer section
+ * Display Import Log Viewer section with real-time updates
  */
 function yatco_display_import_logs() {
     $logs = get_option( 'yatco_import_logs', array() );
     
     echo '<h2>Import Activity Log</h2>';
-    echo '<div id="yatco-import-logs" style="background: #1e1e1e; color: #d4d4d4; border: 2px solid #3c3c3c; border-radius: 4px; padding: 15px; margin: 20px 0; max-height: 500px; overflow-y: auto; font-family: "Courier New", monospace; font-size: 12px; line-height: 1.6;">';
+    echo '<div id="yatco-import-logs-container" style="background: #fff; border: 2px solid #2271b1; border-radius: 4px; padding: 20px; margin: 20px 0;">';
+    echo '<div id="yatco-import-logs" style="background: #1e1e1e; color: #d4d4d4; border: 1px solid #3c3c3c; border-radius: 4px; padding: 15px; max-height: 400px; overflow-y: auto; font-family: "Courier New", monospace; font-size: 12px; line-height: 1.6;">';
     
     if ( ! empty( $logs ) ) {
         // Show last 50 log entries
@@ -150,7 +222,7 @@ function yatco_display_import_logs() {
                 $color = '#808080';
             }
             
-            echo '<div class="yatco-log-entry" style="margin-bottom: 5px; color: ' . esc_attr( $color ) . ';">';
+            echo '<div class="yatco-log-entry" data-timestamp="' . esc_attr( $timestamp ) . '" style="margin-bottom: 5px; color: ' . esc_attr( $color ) . ';">';
             echo '<span style="color: #808080;">[' . esc_html( $timestamp ) . ']</span> ';
             echo '<strong style="color: ' . esc_attr( $color ) . ';">[' . esc_html( $level ) . ']</strong> ';
             echo esc_html( $message );
@@ -161,6 +233,70 @@ function yatco_display_import_logs() {
     }
     
     echo '</div>';
-    echo '<p style="font-size: 12px; color: #666; margin-top: -10px;">Showing last 50 log entries. Logs are automatically cleared when they exceed 100 entries.</p>';
+    echo '<p style="font-size: 12px; color: #666; margin-top: 10px;">Showing last 50 log entries. Logs update automatically every 2 seconds. Logs are cleared when they exceed 100 entries.</p>';
+    echo '</div>';
+    
+    // Real-time log update script
+    echo '<script type="text/javascript">';
+    echo 'jQuery(document).ready(function($) {';
+    echo '    var lastLogCount = 0;';
+    echo '    var logUpdateInterval = null;';
+    echo '    ';
+    echo '    function updateLogs() {';
+    echo '        $.ajax({';
+    echo '            url: ajaxurl,';
+    echo '            type: "POST",';
+    echo '            data: {';
+    echo '                action: "yatco_get_import_logs",';
+    echo '                _ajax_nonce: ' . json_encode( wp_create_nonce( 'yatco_get_import_logs_nonce' ) ) . '';
+    echo '            },';
+    echo '            cache: false,';
+    echo '            success: function(response) {';
+    echo '                if (response && response.success && response.data && response.data.logs) {';
+    echo '                    var logs = response.data.logs;';
+    echo '                    if (logs.length !== lastLogCount) {';
+    echo '                        var logHtml = "";';
+    echo '                        var levelColors = {';
+    echo '                            "ERROR": "#f48771",';
+    echo '                            "CRITICAL": "#f48771",';
+    echo '                            "WARNING": "#dcdcaa",';
+    echo '                            "INFO": "#4ec9b0",';
+    echo '                            "DEBUG": "#808080"';
+    echo '                        };';
+    echo '                        ';
+    echo '                        $.each(logs, function(i, log) {';
+    echo '                            var level = log.level ? log.level.toUpperCase() : "INFO";';
+    echo '                            var color = levelColors[level] || "#d4d4d4";';
+    echo '                            logHtml += "<div class=\\"yatco-log-entry\\" style=\\"margin-bottom: 5px; color: " + color + ";\\">";';
+    echo '                            logHtml += "<span style=\\"color: #808080;\\">[" + log.timestamp + "]</span> ";';
+    echo '                            logHtml += "<strong style=\\"color: " + color + ";\\">[" + level + "]</strong> ";';
+    echo '                            logHtml += $("<div>").text(log.message).html();';
+    echo '                            logHtml += "</div>";';
+    echo '                        });';
+    echo '                        ';
+    echo '                        $("#yatco-import-logs").html(logHtml);';
+    echo '                        lastLogCount = logs.length;';
+    echo '                        ';
+    echo '                        // Auto-scroll to bottom if near bottom';
+    echo '                        var container = $("#yatco-import-logs");';
+    echo '                        var scrollDiff = container[0].scrollHeight - container.scrollTop() - container.height();';
+    echo '                        if (scrollDiff < 100) {';
+    echo '                            container.scrollTop(container[0].scrollHeight);';
+    echo '                        }';
+    echo '                    }';
+    echo '                }';
+    echo '            }';
+    echo '        });';
+    echo '    }';
+    echo '    ';
+    echo '    // Initial count';
+    echo '    lastLogCount = $(".yatco-log-entry").length;';
+    echo '    ';
+    echo '    // Update logs every 2 seconds';
+    echo '    logUpdateInterval = setInterval(updateLogs, 2000);';
+    echo '    ';
+    echo '    console.log("YATCO: Log viewer updates enabled (polling every 2s)");';
+    echo '});';
+    echo '</script>';
 }
 

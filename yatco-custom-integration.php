@@ -139,8 +139,13 @@ function yatco_ajax_get_import_status() {
             'remaining' => $total - $current,
         );
         
+        // Always include status message in progress object
+        if ( $cache_status !== false ) {
+            $response_data['progress']['status'] = $cache_status;
+        }
+        
         // Calculate ETA
-        if ( isset( $active_progress['timestamp'] ) && $current > 0 ) {
+        if ( isset( $active_progress['timestamp'] ) && $current > 0 && $total > $current ) {
             $time_elapsed = time() - intval( $active_progress['timestamp'] );
             if ( $time_elapsed > 0 && $current > 0 ) {
                 $rate = $current / $time_elapsed; // items per second
@@ -256,11 +261,41 @@ function yatco_heartbeat_received( $response, $data ) {
 // Increase heartbeat frequency for real-time updates
 add_filter( 'heartbeat_settings', 'yatco_heartbeat_settings' );
 function yatco_heartbeat_settings( $settings ) {
-    // Increase heartbeat frequency to 2 seconds for real-time updates (when on admin pages)
+    // Increase heartbeat frequency to 1 second for real-time updates (when on admin pages)
     if ( is_admin() ) {
-        $settings['interval'] = 2;
+        $settings['interval'] = 1; // Update every 1 second for real-time progress
     }
     return $settings;
+}
+
+// AJAX handler to get import logs
+add_action( 'wp_ajax_yatco_get_import_logs', 'yatco_ajax_get_import_logs' );
+function yatco_ajax_get_import_logs() {
+    if ( isset( $_POST['_ajax_nonce'] ) ) {
+        check_ajax_referer( 'yatco_get_import_logs_nonce', '_ajax_nonce', false );
+    }
+    
+    if ( ! current_user_can( 'manage_options' ) ) {
+        wp_send_json_error( array( 'message' => 'Unauthorized' ) );
+        return;
+    }
+    
+    $logs = get_option( 'yatco_import_logs', array() );
+    
+    // Return last 50 log entries
+    $recent_logs = array_slice( $logs, -50 );
+    
+    // Format logs for JSON response
+    $formatted_logs = array();
+    foreach ( $recent_logs as $log_entry ) {
+        $formatted_logs[] = array(
+            'timestamp' => isset( $log_entry['timestamp'] ) ? $log_entry['timestamp'] : '',
+            'level' => isset( $log_entry['level'] ) ? $log_entry['level'] : 'info',
+            'message' => isset( $log_entry['message'] ) ? $log_entry['message'] : '',
+        );
+    }
+    
+    wp_send_json_success( array( 'logs' => $formatted_logs ) );
 }
 
 // AJAX handler to stop import
