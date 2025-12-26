@@ -166,47 +166,11 @@ function yatco_options_page() {
         
         // Full Import Button
         echo '<div style="background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 20px; margin: 20px 0;">';
-        echo '<h3>Full Import: Import All Vessels</h3>';
-        echo '<p>Fetches all active vessels with complete data (names, images, descriptions, specs, etc.).</p>';
-        
-        // Explanation of import methods
-        echo '<div style="background: #f0f6fc; border: 1px solid #2271b1; border-radius: 4px; padding: 15px; margin: 15px 0;">';
-        echo '<h4 style="margin-top: 0; color: #2271b1;">📋 How Imports Work:</h4>';
-        echo '<table style="width: 100%; border-collapse: collapse; margin: 10px 0;">';
-        echo '<tr style="background: #fff;">';
-        echo '<th style="border: 1px solid #ddd; padding: 10px; text-align: left; width: 30%;">Method</th>';
-        echo '<th style="border: 1px solid #ddd; padding: 10px; text-align: left; width: 40%;">How It Works</th>';
-        echo '<th style="border: 1px solid #ddd; padding: 10px; text-align: left; width: 30%;">When to Use</th>';
-        echo '</tr>';
-        echo '<tr style="background: #f9f9f9;">';
-        echo '<td style="border: 1px solid #ddd; padding: 10px;"><strong>Direct Run</strong><br /><span style="color: #666; font-size: 11px;">"Run Full Import" button</span></td>';
-        echo '<td style="border: 1px solid #ddd; padding: 10px; font-size: 13px;">1. Calls <code>yatco_full_import()</code> <strong>directly</strong> (synchronously)<br />2. Runs immediately in the same request<br />3. <strong>Blocks the page</strong> until complete or timeout<br />4. Has auto-resume enabled (will continue if times out)<br />5. Sets unlimited execution time if possible</td>';
-        echo '<td style="border: 1px solid #ddd; padding: 10px; font-size: 13px;"><strong>Use this</strong> to start imports. <strong>Keep the page open</strong> to monitor progress. Will auto-resume via heartbeat if it times out.</td>';
-        echo '</tr>';
-        echo '<tr>';
-        echo '<td style="border: 1px solid #ddd; padding: 10px;"><strong>Server Cron</strong><br /><span style="color: #666; font-size: 11px;">Real cron job on server</span></td>';
-        echo '<td style="border: 1px solid #ddd; padding: 10px; font-size: 13px;">1. A real cron job on your server (e.g., <code>*/5 * * * * /usr/bin/php -q /path/to/wp-cron.php</code>)<br />2. Runs automatically on schedule (e.g., every 5 minutes)<br />3. Executes <code>wp-cron.php</code>, which runs scheduled events<br />4. Can resume incomplete imports (if auto-resume enabled)<br />5. Can run cache warming (if enabled in settings)</td>';
-        echo '<td style="border: 1px solid #ddd; padding: 10px; font-size: 13px;"><strong>Set up once</strong> on your server. Helps with auto-resume and cache warming. <strong>Does NOT start new imports automatically</strong> - you must click the button to start imports.</td>';
-        echo '</tr>';
-        echo '</table>';
-        echo '<div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px; margin-top: 10px;">';
-        echo '<p style="margin: 5px 0; font-size: 13px;"><strong>Key Point:</strong> Server cron does NOT automatically start imports. It only helps resume incomplete imports (if auto-resume is enabled) and run cache warming (if enabled). You must manually click "Run Full Import" or "Run Daily Sync" to start an import.</p>';
-        echo '</div>';
-        echo '<div style="background: #f0f0f0; padding: 10px; margin-top: 10px; border-radius: 4px;">';
-        echo '<p style="margin: 5px 0; font-size: 12px; font-weight: bold;">📊 How They Work Together:</p>';
-        echo '<p style="margin: 5px 0; font-size: 12px;">• <strong>Direct Run Button:</strong> You click → Import runs immediately → Blocks page until done (or times out)</p>';
-        echo '<p style="margin: 5px 0; font-size: 12px;">• <strong>Server Cron:</strong> Runs every 5 min → Executes wp-cron.php → Can resume incomplete imports (auto-resume) or run cache warming</p>';
-        echo '</div>';
-        echo '</div>';
-        
-        echo '<div style="background: #e7f3ff; border-left: 4px solid #2271b1; padding: 10px; margin: 10px 0;">';
-        echo '<p style="margin: 5px 0; font-weight: bold;">ℹ️ Important: Imports are NOT automatic</p>';
-        echo '<p style="margin: 5px 0; font-size: 13px;">You must manually click "Run Full Import" or "Run Daily Sync" to trigger imports. The server cron job (if configured) only helps with resuming incomplete imports (auto-resume) and cache warming. It does NOT start new imports automatically.</p>';
-        echo '</div>';
-        echo '<div style="margin-top: 15px;">';
+        echo '<h3 style="margin-top: 0;">Full Import</h3>';
+        echo '<p style="color: #666; margin-bottom: 20px;">Import all vessels from YATCO. Keep this page open to monitor progress.</p>';
         echo '<form method="post" style="margin: 0;">';
         wp_nonce_field( 'yatco_full_import_direct', 'yatco_full_import_direct_nonce' );
-        submit_button( 'Run Full Import', 'primary large', 'yatco_full_import_direct', false, array( 'style' => 'font-size: 14px; padding: 8px 16px; height: auto;' ) );
+        submit_button( 'Run Full Import', 'primary large', 'yatco_full_import_direct', false, array( 'style' => 'font-size: 14px; padding: 10px 20px; height: auto;' ) );
         echo '</form>';
         echo '</div>';
 
@@ -268,36 +232,19 @@ function yatco_options_page() {
         
         // Daily Sync Button
         echo '<div style="background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 20px; margin: 20px 0;">';
-        echo '<h3>Daily Sync: Check for Changes</h3>';
-        echo '<p>Checks for new vessels (imports them), removed vessels (marks as draft), and updates prices and days on market for existing vessels. This can run daily.</p>';
-        $last_sync = get_option( 'yatco_daily_sync_last_run', 0 );
-        if ( $last_sync > 0 ) {
-            echo '<p style="color: #666; font-size: 13px;">Last run: ' . date( 'Y-m-d H:i:s', $last_sync ) . '</p>';
-            $sync_results = get_option( 'yatco_daily_sync_results', array() );
-            if ( ! empty( $sync_results ) ) {
-                $removed = isset( $sync_results['removed'] ) ? intval( $sync_results['removed'] ) : 0;
-                $new = isset( $sync_results['new'] ) ? intval( $sync_results['new'] ) : 0;
-                $price_updates = isset( $sync_results['price_updates'] ) ? intval( $sync_results['price_updates'] ) : 0;
-                $days_updates = isset( $sync_results['days_on_market_updates'] ) ? intval( $sync_results['days_on_market_updates'] ) : 0;
-                echo '<p style="color: #666; font-size: 13px;">Last results: ' . 
-                     $removed . ' removed, ' . 
-                     $new . ' new, ' . 
-                     $price_updates . ' price updates, ' . 
-                     $days_updates . ' days on market updates.</p>';
-            }
-        }
-        echo '<form method="post" style="margin-top: 15px;">';
+        echo '<h3 style="margin-top: 0;">Daily Sync</h3>';
+        echo '<p style="color: #666; margin-bottom: 20px;">Check for new, removed, or updated vessels.</p>';
+        echo '<form method="post" style="margin: 0;">';
         wp_nonce_field( 'yatco_daily_sync', 'yatco_daily_sync_nonce' );
-        submit_button( 'Run Daily Sync', 'secondary', 'yatco_daily_sync', false );
+        submit_button( 'Run Daily Sync', 'secondary', 'yatco_daily_sync', false, array( 'style' => 'font-size: 14px; padding: 10px 20px; height: auto;' ) );
         echo '</form>';
         
         if ( isset( $_POST['yatco_daily_sync'] ) && check_admin_referer( 'yatco_daily_sync', 'yatco_daily_sync_nonce' ) ) {
             if ( empty( $token ) ) {
-                echo '<div class="notice notice-error"><p>Missing token. Please configure your API token first.</p></div>';
+                echo '<div class="notice notice-error" style="margin-top: 15px;"><p>Missing token. Please configure your API token first.</p></div>';
             } else {
-                // Run Daily Sync directly (it's fast)
                 yatco_daily_sync_check( $token );
-                echo '<div class="notice notice-success"><p><strong>Daily Sync completed!</strong> Check status below for results.</p></div>';
+                echo '<div class="notice notice-success" style="margin-top: 15px;"><p><strong>Daily Sync completed!</strong></p></div>';
             }
         }
         echo '</div>';
@@ -450,73 +397,41 @@ function yatco_options_page() {
                 $stage_name = 'Full Import';
             }
             
-            echo '<h3 style="margin-top: 0; color: #2271b1;">📊 ' . esc_html( $stage_name ) . ' Progress</h3>';
+            echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">';
+            echo '<h3 style="margin: 0; color: #2271b1;">' . esc_html( $stage_name ) . '</h3>';
+            echo '<form method="post" id="yatco-stop-import-form" style="margin: 0;">';
+            wp_nonce_field( 'yatco_stop_import', 'yatco_stop_import_nonce' );
+            echo '<button type="submit" name="yatco_stop_import" class="button" style="background: #dc3232; border-color: #dc3232; color: #fff; font-weight: bold; padding: 6px 12px;">Stop</button>';
+            echo '</form>';
+            echo '</div>';
             
-            if ( $cache_status !== false ) {
-                echo '<p id="yatco-status-text" style="margin: 10px 0; font-size: 14px; color: #666;"><strong>Status:</strong> ' . esc_html( $cache_status ) . '</p>';
-            } else {
-                echo '<p id="yatco-status-text" style="margin: 10px 0; font-size: 14px; color: #666;"><strong>Status:</strong> <span>Starting...</span></p>';
-            }
-            
-            echo '<div style="background: #f0f0f0; border-radius: 10px; height: 30px; margin: 15px 0; position: relative; overflow: hidden;">';
-            echo '<div id="yatco-progress-bar" style="background: linear-gradient(90deg, #2271b1 0%, #46b450 100%); height: 100%; width: ' . esc_attr( $percent ) . '%; transition: width 0.5s ease-in-out; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: bold; font-size: 12px;">';
-            echo esc_html( $percent ) . '%';
+            echo '<div style="background: #f0f0f0; border-radius: 10px; height: 32px; margin: 15px 0; position: relative; overflow: hidden;">';
+            echo '<div id="yatco-progress-bar" style="background: linear-gradient(90deg, #2271b1 0%, #46b450 100%); height: 100%; width: ' . esc_attr( $percent ) . '%; transition: width 0.5s ease-in-out; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: bold; font-size: 13px;">';
+            echo esc_html( number_format( $percent, 1 ) ) . '%';
             echo '</div>';
             echo '</div>';
             
-            echo '<div style="display: flex; justify-content: space-between; margin-top: 10px; font-size: 13px; color: #666;">';
-            echo '<span><strong>Processed:</strong> <span id="yatco-processed-count">' . number_format( $current ) . ' / ' . number_format( $total ) . '</span></span>';
-            echo '<span><strong>Remaining:</strong> <span id="yatco-remaining-count">' . number_format( $total - $current ) . '</span></span>';
-            echo '</div>';
-            
-            // Show daily sync details
-            if ( $active_stage === 'daily_sync' ) {
-                $removed = isset( $active_progress['removed'] ) ? intval( $active_progress['removed'] ) : 0;
-                $new = isset( $active_progress['new'] ) ? intval( $active_progress['new'] ) : 0;
-                $price_updates = isset( $active_progress['price_updates'] ) ? intval( $active_progress['price_updates'] ) : 0;
-                $days_updates = isset( $active_progress['days_on_market_updates'] ) ? intval( $active_progress['days_on_market_updates'] ) : 0;
-                echo '<div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e0e0e0; font-size: 13px; color: #666;">';
-                echo '<p style="margin: 5px 0;"><strong>Removed:</strong> ' . number_format( $removed ) . '</p>';
-                echo '<p style="margin: 5px 0;"><strong>New:</strong> ' . number_format( $new ) . '</p>';
-                echo '<p style="margin: 5px 0;"><strong>Price Updates:</strong> ' . number_format( $price_updates ) . '</p>';
-                echo '<p style="margin: 5px 0;"><strong>Days on Market Updates:</strong> ' . number_format( $days_updates ) . '</p>';
-                echo '</div>';
-            }
-            
-            // Estimated time remaining
+            echo '<div style="display: flex; justify-content: space-between; margin-top: 10px; font-size: 14px; color: #666;">';
+            echo '<span id="yatco-processed-count">' . number_format( $current ) . ' / ' . number_format( $total ) . '</span>';
             if ( isset( $active_progress['timestamp'] ) && $current > 0 ) {
                 $time_elapsed = time() - intval( $active_progress['timestamp'] );
                 if ( $time_elapsed > 0 && $current > 0 ) {
-                    $rate = $current / $time_elapsed; // items per second
+                    $rate = $current / $time_elapsed;
                     $remaining = $total - $current;
                     if ( $rate > 0 ) {
                         $eta_seconds = $remaining / $rate;
                         $eta_minutes = round( $eta_seconds / 60, 1 );
-                        echo '<p style="margin: 10px 0 0 0; font-size: 12px; color: #666;"><strong>Estimated time remaining:</strong> <span id="yatco-eta-text">' . esc_html( $eta_minutes ) . ' minutes</span></p>';
-                    } else {
-                        echo '<p style="margin: 10px 0 0 0; font-size: 12px; color: #666;"><strong>Estimated time remaining:</strong> <span id="yatco-eta-text">calculating...</span></p>';
+                        echo '<span id="yatco-eta-text">' . esc_html( $eta_minutes ) . ' min remaining</span>';
                     }
-                } else {
-                    echo '<p style="margin: 10px 0 0 0; font-size: 12px; color: #666;"><strong>Estimated time remaining:</strong> <span id="yatco-eta-text">calculating...</span></p>';
                 }
-            } else {
-                echo '<p style="margin: 10px 0 0 0; font-size: 12px; color: #666;"><strong>Estimated time remaining:</strong> <span id="yatco-eta-text">calculating...</span></p>';
             }
-            
-            // Stop button
-            echo '<div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #e0e0e0;">';
-            echo '<form method="post" id="yatco-stop-import-form" style="display: inline-block;">';
-            wp_nonce_field( 'yatco_stop_import', 'yatco_stop_import_nonce' );
-            echo '<button type="submit" name="yatco_stop_import" class="button button-secondary" style="background: #dc3232; border-color: #dc3232; color: #fff; font-weight: bold; padding: 8px 16px;">🛑 Stop Import</button>';
-            echo '</form>';
-            echo '<p style="margin: 8px 0 0 0; font-size: 12px; color: #666;">Click to cancel the current import. The import will stop at the next checkpoint.</p>';
             echo '</div>';
         } elseif ( $cache_status !== false ) {
             echo '<div class="notice notice-info" style="margin: 0;">';
             echo '<p><strong>Status:</strong> ' . esc_html( $cache_status ) . '</p>';
             echo '</div>';
         } else {
-            echo '<p style="margin: 0; color: #666;">No active import. Start a full import or daily sync in the Import tab to see progress.</p>';
+            echo '<p style="margin: 0; color: #999; text-align: center; padding: 40px 0;">No active import</p>';
         }
         
         echo '</div>';
@@ -524,53 +439,24 @@ function yatco_options_page() {
         // Handle stop import form submission
         if ( isset( $_POST['yatco_stop_import'] ) && check_admin_referer( 'yatco_stop_import', 'yatco_stop_import_nonce' ) ) {
             yatco_log( 'Import: Stop button clicked (form submission)', 'info' );
+            
             // Set stop flag using WordPress option (more reliable for direct runs)
             update_option( 'yatco_import_stop_flag', time(), false );
-            // Also set as transient for backwards compatibility
             set_transient( 'yatco_cache_warming_stop', time(), 900 );
             
             // Disable auto-resume to prevent import from restarting
             update_option( 'yatco_import_auto_resume', false, false );
             delete_option( 'yatco_last_auto_resume_time' );
             
-            // Release import lock and process ID to allow stopping all running imports
+            // Release import lock and process ID
             delete_option( 'yatco_import_lock' );
             delete_option( 'yatco_import_process_id' );
             
-            // Cancel ALL scheduled cron jobs (more aggressive)
-            $scheduled_full = wp_next_scheduled( 'yatco_full_import_hook' );
-            $scheduled_warm = wp_next_scheduled( 'yatco_warm_cache_hook' );
-            
-            if ( $scheduled_full ) {
-                wp_unschedule_event( $scheduled_full, 'yatco_full_import_hook' );
-                yatco_log( 'Import: Cancelled scheduled Full Import event', 'info' );
-            }
-            if ( $scheduled_warm ) {
-                wp_unschedule_event( $scheduled_warm, 'yatco_warm_cache_hook' );
-                yatco_log( 'Import: Cancelled scheduled warm cache event', 'info' );
-            }
-            
-            // Clear ALL scheduled hooks (more aggressive)
+            // Cancel ALL scheduled cron jobs
             wp_clear_scheduled_hook( 'yatco_full_import_hook' );
             wp_clear_scheduled_hook( 'yatco_warm_cache_hook' );
             
-            // Get all scheduled events and unschedule them
-            $cron = _get_cron_array();
-            if ( $cron ) {
-                foreach ( $cron as $timestamp => $cronhooks ) {
-                    foreach ( $cronhooks as $hook => $keys ) {
-                        if ( $hook === 'yatco_full_import_hook' || $hook === 'yatco_warm_cache_hook' ) {
-                            foreach ( $keys as $key => $data ) {
-                                wp_unschedule_event( $timestamp, $hook, $data['args'] );
-                                yatco_log( "Import: Cancelled scheduled {$hook} event at timestamp {$timestamp}", 'info' );
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Clear progress and status (but KEEP the stop flag so running import can detect it!)
-            // Force clear from cache and database
+            // Force clear progress immediately from cache and database
             wp_cache_delete( 'yatco_import_progress', 'transient' );
             wp_cache_delete( 'yatco_cache_warming_status', 'transient' );
             wp_cache_delete( 'yatco_daily_sync_progress', 'transient' );
@@ -579,11 +465,16 @@ function yatco_options_page() {
             delete_transient( 'yatco_daily_sync_progress' );
             wp_cache_flush();
             
-            // Set status message
-            set_transient( 'yatco_cache_warming_status', 'Import stopped by user. All running imports will stop at next checkpoint.', 60 );
-            yatco_log( 'Import: Stop signal sent, progress cleared, lock released, all scheduled jobs cancelled, and auto-resume disabled', 'info' );
+            yatco_log( 'Import: Stop signal sent, progress cleared, lock released, all scheduled jobs cancelled', 'info' );
             
-            echo '<div class="notice notice-success" style="margin-top: 15px;"><p><strong>Stop signal sent!</strong> The import will stop at the next checkpoint (within a few seconds). Progress has been reset, import lock released, all scheduled jobs cancelled, and auto-resume has been disabled.</p></div>';
+            // Redirect to clear the form and refresh the page
+            wp_redirect( add_query_arg( array( 'page' => 'yatco_import', 'tab' => 'status', 'stopped' => '1' ), admin_url( 'edit.php?post_type=yacht' ) ) );
+            exit;
+        }
+        
+        // Show success message if redirected after stop
+        if ( isset( $_GET['stopped'] ) && $_GET['stopped'] == '1' ) {
+            echo '<div class="notice notice-success" style="margin-bottom: 20px;"><p><strong>Import stopped.</strong> The import will stop at the next checkpoint.</p></div>';
         }
         
         // Status tab - real-time updates using WordPress Heartbeat API

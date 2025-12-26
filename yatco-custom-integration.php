@@ -395,17 +395,30 @@ function yatco_ajax_stop_import() {
     wp_clear_scheduled_hook( 'yatco_stage3_import_hook' );
     wp_clear_scheduled_hook( 'yatco_warm_cache_hook' );
     
-    // Clear progress and status
+    // Disable auto-resume
+    update_option( 'yatco_import_auto_resume', false, false );
+    delete_option( 'yatco_last_auto_resume_time' );
+    
+    // Release import lock
+    delete_option( 'yatco_import_lock' );
+    delete_option( 'yatco_import_process_id' );
+    
+    // Clear progress and status immediately
+    wp_cache_delete( 'yatco_import_progress', 'transient' );
+    wp_cache_delete( 'yatco_cache_warming_status', 'transient' );
+    wp_cache_delete( 'yatco_daily_sync_progress', 'transient' );
+    delete_transient( 'yatco_import_progress' );
+    delete_transient( 'yatco_daily_sync_progress' );
     delete_transient( 'yatco_stage1_progress' );
     delete_transient( 'yatco_stage2_progress' );
     delete_transient( 'yatco_stage3_progress' );
     delete_transient( 'yatco_cache_warming_progress' );
     delete_transient( 'yatco_cache_warming_status' );
+    wp_cache_flush();
     
-    set_transient( 'yatco_cache_warming_status', 'Import stopped by user.', 60 );
     yatco_log( 'Import: Stop signal sent and progress cleared', 'info' );
     
-    wp_send_json_success( array( 'message' => 'Stop signal sent. Import will stop at next checkpoint.' ) );
+    wp_send_json_success( array( 'message' => 'Import stopped. Progress cleared.' ) );
 }
 
 // Schedule periodic cache refresh if enabled
