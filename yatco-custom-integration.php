@@ -126,7 +126,9 @@ function yatco_ajax_get_import_status() {
     
     // Check if import was stopped - if so, don't return progress data
     $stop_flag = get_option( 'yatco_import_stop_flag', false );
+    yatco_log( "AJAX Status Check: Stop flag = " . ( $stop_flag !== false ? 'SET (value: ' . $stop_flag . ')' : 'NOT SET' ), 'debug' );
     if ( $stop_flag !== false ) {
+        yatco_log( 'AJAX Status Check: Stop flag detected, returning inactive status', 'warning' );
         // Import was stopped - clear any stale progress and return stopped status
         delete_transient( 'yatco_import_progress' );
         delete_transient( 'yatco_daily_sync_progress' );
@@ -139,6 +141,7 @@ function yatco_ajax_get_import_status() {
             'status' => 'Import stopped by user.',
             'progress' => null,
         );
+        yatco_log( 'AJAX Status Check: Sending response with active=false', 'debug' );
         wp_send_json_success( $response_data );
         return;
     }
@@ -150,15 +153,22 @@ function yatco_ajax_get_import_status() {
     $daily_sync_progress = get_transient( 'yatco_daily_sync_progress' );
     $cache_status = get_transient( 'yatco_cache_warming_status' );
     
+    yatco_log( 'AJAX Status Check: Import progress = ' . ( $import_progress !== false ? 'EXISTS' : 'NOT FOUND' ), 'debug' );
+    yatco_log( 'AJAX Status Check: Daily sync progress = ' . ( $daily_sync_progress !== false ? 'EXISTS' : 'NOT FOUND' ), 'debug' );
+    
     // Determine if import is active
     $active_stage = 0;
     $active_progress = null;
     if ( $import_progress !== false && is_array( $import_progress ) ) {
         $active_stage = 'full';
         $active_progress = $import_progress;
+        yatco_log( 'AJAX Status Check: Active stage = full, progress data: ' . json_encode( $active_progress ), 'debug' );
     } elseif ( $daily_sync_progress !== false && is_array( $daily_sync_progress ) ) {
         $active_stage = 'daily_sync';
         $active_progress = $daily_sync_progress;
+        yatco_log( 'AJAX Status Check: Active stage = daily_sync', 'debug' );
+    } else {
+        yatco_log( 'AJAX Status Check: No active stage found', 'debug' );
     }
     
     // Return structured data for real-time updates instead of HTML
@@ -221,6 +231,7 @@ function yatco_ajax_get_import_status() {
         );
     }
     
+    yatco_log( 'AJAX Status Check: Sending response - active=' . ( $response_data['active'] ? 'true' : 'false' ) . ', stage=' . ( $response_data['stage'] ?: 'null' ), 'debug' );
     wp_send_json_success( $response_data );
 }
 
@@ -278,7 +289,9 @@ function yatco_heartbeat_received( $response, $data ) {
     
     // Check stop flag first
     $stop_flag = get_option( 'yatco_import_stop_flag', false );
+    yatco_log( "Heartbeat: Stop flag = " . ( $stop_flag !== false ? 'SET (value: ' . $stop_flag . ')' : 'NOT SET' ), 'debug' );
     if ( $stop_flag !== false ) {
+        yatco_log( 'Heartbeat: Stop flag detected, returning inactive status', 'warning' );
         // Import was stopped - return inactive status
         $response['yatco_import_progress'] = array(
             'active' => false,
