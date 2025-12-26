@@ -48,13 +48,16 @@ function yatco_log( $message, $level = 'info' ) {
 function yatco_stage1_import_ids_and_names( $token ) {
     yatco_log( 'Stage 1: Function started', 'info' );
     
-    // Check stop flag
-    $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+    // Check stop flag - check both option and transient (consistent with full import)
+    $stop_flag = get_option( 'yatco_import_stop_flag', false );
+    if ( $stop_flag === false ) {
+        $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+    }
     if ( $stop_flag !== false ) {
-        yatco_log( 'Stage 1: Stop flag detected, cancelling', 'warning' );
-        delete_transient( 'yatco_cache_warming_stop' );
+        yatco_log( '🛑 Stage 1: Stop flag detected, cancelling', 'warning' );
         delete_transient( 'yatco_stage1_progress' );
         set_transient( 'yatco_cache_warming_status', 'Stage 1 cancelled.', 60 );
+        // DON'T delete stop flag - keep it so it can be checked again
         return;
     }
     
@@ -101,22 +104,29 @@ function yatco_stage1_import_ids_and_names( $token ) {
         $batch_num++;
         yatco_log( "Stage 1: Processing batch {$batch_num} with " . count( $batch ) . " vessels", 'info' );
         
-        // Check stop flag
-        $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+        // Check stop flag - check both option and transient
+        $stop_flag = get_option( 'yatco_import_stop_flag', false );
+        if ( $stop_flag === false ) {
+            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+        }
         if ( $stop_flag !== false ) {
-            yatco_log( 'Stage 1: Stop flag detected in batch, cancelling', 'warning' );
-            delete_transient( 'yatco_cache_warming_stop' );
+            yatco_log( '🛑 Stage 1: Stop flag detected in batch, cancelling', 'warning' );
             delete_transient( 'yatco_stage1_progress' );
             set_transient( 'yatco_cache_warming_status', 'Stage 1 stopped by user.', 60 );
+            // DON'T delete stop flag - keep it so it can be checked again
             return;
         }
         
         foreach ( $batch as $vessel_id ) {
-            // Check stop flag
-            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            // Check stop flag - check both option and transient
+            $stop_flag = get_option( 'yatco_import_stop_flag', false );
+            if ( $stop_flag === false ) {
+                $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            }
             if ( $stop_flag !== false ) {
-                delete_transient( 'yatco_cache_warming_stop' );
+                yatco_log( '🛑 Stage 1: Stop flag detected, cancelling', 'warning' );
                 set_transient( 'yatco_cache_warming_status', 'Stage 1 stopped by user.', 60 );
+                // DON'T delete stop flag - keep it so it can be checked again
                 return;
             }
             
@@ -125,13 +135,16 @@ function yatco_stage1_import_ids_and_names( $token ) {
                 usleep( $delay_between_items * 1000000 ); // Convert to microseconds
             }
             
-            // Check stop flag before API call (in case it was set during delay)
-            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            // Check stop flag before API call - check both option and transient
+            $stop_flag = get_option( 'yatco_import_stop_flag', false );
+            if ( $stop_flag === false ) {
+                $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            }
             if ( $stop_flag !== false ) {
-                yatco_log( 'Stage 1: Stop flag detected before API call, cancelling', 'warning' );
-                delete_transient( 'yatco_cache_warming_stop' );
+                yatco_log( '🛑 Stage 1: Stop flag detected before API call, cancelling', 'warning' );
                 delete_transient( 'yatco_stage1_progress' );
                 set_transient( 'yatco_cache_warming_status', 'Stage 1 stopped by user.', 60 );
+                // DON'T delete stop flag - keep it so it can be checked again
                 return;
             }
             
@@ -149,13 +162,16 @@ function yatco_stage1_import_ids_and_names( $token ) {
                 )
             );
             
-            // Check stop flag after API call (in case it was set during the request)
-            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            // Check stop flag after API call - check both option and transient
+            $stop_flag = get_option( 'yatco_import_stop_flag', false );
+            if ( $stop_flag === false ) {
+                $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            }
             if ( $stop_flag !== false ) {
-                yatco_log( 'Stage 1: Stop flag detected after API call, cancelling', 'warning' );
-                delete_transient( 'yatco_cache_warming_stop' );
+                yatco_log( '🛑 Stage 1: Stop flag detected after API call, cancelling', 'warning' );
                 delete_transient( 'yatco_stage1_progress' );
                 set_transient( 'yatco_cache_warming_status', 'Stage 1 stopped by user.', 60 );
+                // DON'T delete stop flag - keep it so it can be checked again
                 return;
             }
             
@@ -247,12 +263,16 @@ function yatco_stage1_import_ids_and_names( $token ) {
  * Stage 2: Fetch images for vessels from Stage 1.
  */
 function yatco_stage2_import_images( $token ) {
-    // Check stop flag
-    $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+    // Check stop flag - check both option and transient (consistent with full import)
+    $stop_flag = get_option( 'yatco_import_stop_flag', false );
+    if ( $stop_flag === false ) {
+        $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+    }
     if ( $stop_flag !== false ) {
-        delete_transient( 'yatco_cache_warming_stop' );
+        yatco_log( '🛑 Stage 2: Stop flag detected, cancelling', 'warning' );
         delete_transient( 'yatco_stage2_progress' );
         set_transient( 'yatco_cache_warming_status', 'Stage 2 cancelled.', 60 );
+        // DON'T delete stop flag - keep it so it can be checked again
         return;
     }
     
@@ -284,22 +304,29 @@ function yatco_stage2_import_images( $token ) {
     $delay_between_items = 0.2; // 200ms delay between individual items
     
     foreach ( array_chunk( $vessel_ids, $batch_size ) as $batch ) {
-        // Check stop flag
-        $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+        // Check stop flag - check both option and transient
+        $stop_flag = get_option( 'yatco_import_stop_flag', false );
+        if ( $stop_flag === false ) {
+            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+        }
         if ( $stop_flag !== false ) {
-            yatco_log( 'Stage 2: Stop flag detected in batch, cancelling', 'warning' );
-            delete_transient( 'yatco_cache_warming_stop' );
+            yatco_log( '🛑 Stage 2: Stop flag detected in batch, cancelling', 'warning' );
             delete_transient( 'yatco_stage2_progress' );
             set_transient( 'yatco_cache_warming_status', 'Stage 2 stopped by user.', 60 );
+            // DON'T delete stop flag - keep it so it can be checked again
             return;
         }
         
         foreach ( $batch as $vessel_id ) {
-            // Check stop flag
-            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            // Check stop flag - check both option and transient
+            $stop_flag = get_option( 'yatco_import_stop_flag', false );
+            if ( $stop_flag === false ) {
+                $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            }
             if ( $stop_flag !== false ) {
-                delete_transient( 'yatco_cache_warming_stop' );
+                yatco_log( '🛑 Stage 2: Stop flag detected, cancelling', 'warning' );
                 set_transient( 'yatco_cache_warming_status', 'Stage 2 stopped by user.', 60 );
+                // DON'T delete stop flag - keep it so it can be checked again
                 return;
             }
             
@@ -379,12 +406,16 @@ function yatco_stage2_import_images( $token ) {
  * Stage 3: Fetch full data (descriptions, specs, etc.) for vessels.
  */
 function yatco_stage3_import_full_data( $token ) {
-    // Check stop flag
-    $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+    // Check stop flag - check both option and transient (consistent with full import)
+    $stop_flag = get_option( 'yatco_import_stop_flag', false );
+    if ( $stop_flag === false ) {
+        $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+    }
     if ( $stop_flag !== false ) {
-        delete_transient( 'yatco_cache_warming_stop' );
+        yatco_log( '🛑 Stage 3: Stop flag detected, cancelling', 'warning' );
         delete_transient( 'yatco_stage3_progress' );
         set_transient( 'yatco_cache_warming_status', 'Stage 3 cancelled.', 60 );
+        // DON'T delete stop flag - keep it so it can be checked again
         return;
     }
     
@@ -416,22 +447,29 @@ function yatco_stage3_import_full_data( $token ) {
     $delay_between_items = 0.5; // 500ms delay between individual items
     
     foreach ( array_chunk( $vessel_ids, $batch_size ) as $batch ) {
-        // Check stop flag
-        $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+        // Check stop flag - check both option and transient
+        $stop_flag = get_option( 'yatco_import_stop_flag', false );
+        if ( $stop_flag === false ) {
+            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+        }
         if ( $stop_flag !== false ) {
-            yatco_log( 'Stage 3: Stop flag detected in batch, cancelling', 'warning' );
-            delete_transient( 'yatco_cache_warming_stop' );
+            yatco_log( '🛑 Stage 3: Stop flag detected in batch, cancelling', 'warning' );
             delete_transient( 'yatco_stage3_progress' );
             set_transient( 'yatco_cache_warming_status', 'Stage 3 stopped by user.', 60 );
+            // DON'T delete stop flag - keep it so it can be checked again
             return;
         }
         
         foreach ( $batch as $vessel_id ) {
-            // Check stop flag
-            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            // Check stop flag - check both option and transient
+            $stop_flag = get_option( 'yatco_import_stop_flag', false );
+            if ( $stop_flag === false ) {
+                $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            }
             if ( $stop_flag !== false ) {
-                delete_transient( 'yatco_cache_warming_stop' );
+                yatco_log( '🛑 Stage 3: Stop flag detected, cancelling', 'warning' );
                 set_transient( 'yatco_cache_warming_status', 'Stage 3 stopped by user.', 60 );
+                // DON'T delete stop flag - keep it so it can be checked again
                 return;
             }
             
@@ -440,26 +478,32 @@ function yatco_stage3_import_full_data( $token ) {
                 usleep( $delay_between_items * 1000000 ); // Convert to microseconds
             }
             
-            // Check stop flag before calling import function
-            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            // Check stop flag before calling import function - check both option and transient
+            $stop_flag = get_option( 'yatco_import_stop_flag', false );
+            if ( $stop_flag === false ) {
+                $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            }
             if ( $stop_flag !== false ) {
-                yatco_log( 'Stage 3: Stop flag detected before import, cancelling', 'warning' );
-                delete_transient( 'yatco_cache_warming_stop' );
+                yatco_log( '🛑 Stage 3: Stop flag detected before import, cancelling', 'warning' );
                 delete_transient( 'yatco_stage3_progress' );
                 set_transient( 'yatco_cache_warming_status', 'Stage 3 stopped by user.', 60 );
+                // DON'T delete stop flag - keep it so it can be checked again
                 return;
             }
             
             // Use existing import function for full data
             $import_result = yatco_import_single_vessel( $token, $vessel_id );
             
-            // Check stop flag after import (in case it was set during the import)
-            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            // Check stop flag after import - check both option and transient
+            $stop_flag = get_option( 'yatco_import_stop_flag', false );
+            if ( $stop_flag === false ) {
+                $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            }
             if ( $stop_flag !== false ) {
-                yatco_log( 'Stage 3: Stop flag detected after import, cancelling', 'warning' );
-                delete_transient( 'yatco_cache_warming_stop' );
+                yatco_log( '🛑 Stage 3: Stop flag detected after import, cancelling', 'warning' );
                 delete_transient( 'yatco_stage3_progress' );
                 set_transient( 'yatco_cache_warming_status', 'Stage 3 stopped by user.', 60 );
+                // DON'T delete stop flag - keep it so it can be checked again
                 return;
             }
             
@@ -469,10 +513,10 @@ function yatco_stage3_import_full_data( $token ) {
                 $processed++;
             } elseif ( $import_result->get_error_code() === 'import_stopped' ) {
                 // Import was stopped, exit immediately
-                yatco_log( 'Stage 3: Import stopped during vessel processing', 'warning' );
-                delete_transient( 'yatco_cache_warming_stop' );
+                yatco_log( '🛑 Stage 3: Import stopped during vessel processing', 'warning' );
                 delete_transient( 'yatco_stage3_progress' );
                 set_transient( 'yatco_cache_warming_status', 'Stage 3 stopped by user.', 60 );
+                // DON'T delete stop flag - keep it so it can be checked again
                 return;
             }
         }
@@ -1133,13 +1177,13 @@ function yatco_full_import( $token ) {
                     $stop_flag = get_transient( 'yatco_cache_warming_stop' );
                 }
                 if ( $stop_flag !== false ) {
-                    yatco_log( 'Full Import: Stop flag detected during batch delay, cancelling', 'warning' );
-                    delete_option( 'yatco_import_stop_flag' );
-                    delete_transient( 'yatco_cache_warming_stop' );
+                    yatco_log( '🛑 Full Import: Stop flag detected during batch delay, cancelling', 'warning' );
                     delete_transient( 'yatco_import_progress' );
+                    wp_cache_delete( 'yatco_import_progress', 'transient' );
                     delete_option( 'yatco_import_lock' ); // Release lock
                     delete_option( 'yatco_import_process_id' ); // Release process ID
                     set_transient( 'yatco_cache_warming_status', 'Full Import stopped by user.', 60 );
+                    // DON'T delete stop flag here - it's handled by the stop handler
                     return;
                 }
             }
@@ -1148,8 +1192,12 @@ function yatco_full_import( $token ) {
     
     // Check if we've completed all vessels
     if ( $processed >= $total_to_process ) {
-        // Clear progress
+        // Clear progress and stop flags (import completed successfully)
         delete_transient( 'yatco_import_progress' );
+        wp_cache_delete( 'yatco_import_progress', 'transient' );
+        delete_option( 'yatco_import_stop_flag' );
+        delete_transient( 'yatco_cache_warming_stop' );
+        delete_option( 'yatco_import_auto_resume' );
         set_transient( 'yatco_cache_warming_status', "Full Import Complete: Processed {$processed} of {$total_to_process} vessels.", 300 );
         yatco_log( "Full Import Complete: Processed {$processed} of {$total_to_process} vessels.", 'info' );
         
@@ -1158,9 +1206,6 @@ function yatco_full_import( $token ) {
             $peak_memory = round( memory_get_peak_usage( true ) / 1024 / 1024, 2 );
             yatco_log( "Full Import: Peak memory usage: {$peak_memory} MB", 'info' );
         }
-        
-        // Clear auto-resume flag
-        delete_option( 'yatco_import_auto_resume' );
         
         // Release import lock and process ID
         delete_option( 'yatco_import_lock' );
@@ -1243,6 +1288,19 @@ function yatco_daily_sync_check( $token ) {
     $removed_count = 0;
     $processed = 0;
     foreach ( $removed_ids as $vessel_id ) {
+        // Check stop flag - check both option and transient
+        $stop_flag = get_option( 'yatco_import_stop_flag', false );
+        if ( $stop_flag === false ) {
+            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+        }
+        if ( $stop_flag !== false ) {
+            yatco_log( '🛑 Daily Sync: Stop flag detected, cancelling', 'warning' );
+            delete_transient( 'yatco_daily_sync_progress' );
+            set_transient( 'yatco_cache_warming_status', 'Daily Sync stopped by user.', 60 );
+            // DON'T delete stop flag - keep it so it can be checked again
+            return;
+        }
+        
         $post_id = yatco_find_vessel_post_by_id( $vessel_id );
         if ( $post_id ) {
             wp_update_post( array(
@@ -1266,6 +1324,19 @@ function yatco_daily_sync_check( $token ) {
         yatco_log( "Daily Sync: Found " . count( $new_ids ) . " new vessels to import", 'info' );
         set_transient( 'yatco_cache_warming_status', "Daily Sync: Importing " . count( $new_ids ) . " new vessels...", 600 );
         foreach ( $new_ids as $vessel_id ) {
+            // Check stop flag - check both option and transient
+            $stop_flag = get_option( 'yatco_import_stop_flag', false );
+            if ( $stop_flag === false ) {
+                $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            }
+            if ( $stop_flag !== false ) {
+                yatco_log( '🛑 Daily Sync: Stop flag detected, cancelling', 'warning' );
+                delete_transient( 'yatco_daily_sync_progress' );
+                set_transient( 'yatco_cache_warming_status', 'Daily Sync stopped by user.', 60 );
+                // DON'T delete stop flag - keep it so it can be checked again
+                return;
+            }
+            
             $import_result = yatco_import_single_vessel( $token, $vessel_id );
             if ( ! is_wp_error( $import_result ) ) {
                 $new_count++;
@@ -1294,14 +1365,32 @@ function yatco_daily_sync_check( $token ) {
         $existing_processed = 0;
         
         foreach ( array_chunk( $existing_ids, $batch_size ) as $batch ) {
-            // Check stop flag
-            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            // Check stop flag - check both option and transient
+            $stop_flag = get_option( 'yatco_import_stop_flag', false );
+            if ( $stop_flag === false ) {
+                $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            }
             if ( $stop_flag !== false ) {
-                yatco_log( 'Daily Sync: Stop flag detected, cancelling', 'warning' );
-                break;
+                yatco_log( '🛑 Daily Sync: Stop flag detected in batch, cancelling', 'warning' );
+                delete_transient( 'yatco_daily_sync_progress' );
+                set_transient( 'yatco_cache_warming_status', 'Daily Sync stopped by user.', 60 );
+                // DON'T delete stop flag - keep it so it can be checked again
+                return;
             }
             
             foreach ( $batch as $vessel_id ) {
+                // Check stop flag for each vessel - check both option and transient
+                $stop_flag = get_option( 'yatco_import_stop_flag', false );
+                if ( $stop_flag === false ) {
+                    $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+                }
+                if ( $stop_flag !== false ) {
+                    yatco_log( '🛑 Daily Sync: Stop flag detected, cancelling', 'warning' );
+                    delete_transient( 'yatco_daily_sync_progress' );
+                    set_transient( 'yatco_cache_warming_status', 'Daily Sync stopped by user.', 60 );
+                    // DON'T delete stop flag - keep it so it can be checked again
+                    return;
+                }
                 $post_id = yatco_find_vessel_post_by_id( $vessel_id );
                 if ( ! $post_id ) {
                     continue;
