@@ -842,32 +842,32 @@ function yatco_full_import( $token ) {
         
         yatco_log( "Full Import: Starting batch {$batch_number} (" . count( $batch ) . " vessels)", 'info' );
         
-        // Check stop flag (check both option and transient)
-        $stop_flag = get_option( 'yatco_import_stop_flag', false );
-        if ( $stop_flag === false ) {
-            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
-        }
-        if ( $stop_flag !== false ) {
-            yatco_log( 'Full Import: Stop flag detected in batch, cancelling', 'warning' );
-            delete_option( 'yatco_import_stop_flag' );
-            delete_transient( 'yatco_cache_warming_stop' );
-            delete_transient( 'yatco_import_progress' );
-            set_transient( 'yatco_cache_warming_status', 'Full Import stopped by user.', 60 );
-            return;
-        }
-        
-        foreach ( $batch as $vessel_id ) {
-            // Check stop flag (check both option and transient)
+            // Check stop flag (check both option and transient) - DON'T DELETE IT, keep it so it persists
             $stop_flag = get_option( 'yatco_import_stop_flag', false );
             if ( $stop_flag === false ) {
                 $stop_flag = get_transient( 'yatco_cache_warming_stop' );
             }
             if ( $stop_flag !== false ) {
-                yatco_log( 'Full Import: Stop flag detected, cancelling', 'warning' );
-                delete_option( 'yatco_import_stop_flag' );
-                delete_transient( 'yatco_cache_warming_stop' );
+                yatco_log( '🛑 Full Import: Stop flag detected in batch, cancelling immediately', 'warning' );
                 delete_transient( 'yatco_import_progress' );
+                wp_cache_delete( 'yatco_import_progress', 'transient' );
                 set_transient( 'yatco_cache_warming_status', 'Full Import stopped by user.', 60 );
+                // DON'T delete stop flag - keep it so it can be checked again if import continues
+                return;
+            }
+        
+        foreach ( $batch as $vessel_id ) {
+            // Check stop flag (check both option and transient) - DON'T DELETE IT
+            $stop_flag = get_option( 'yatco_import_stop_flag', false );
+            if ( $stop_flag === false ) {
+                $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            }
+            if ( $stop_flag !== false ) {
+                yatco_log( '🛑 Full Import: Stop flag detected before vessel import, cancelling immediately', 'warning' );
+                delete_transient( 'yatco_import_progress' );
+                wp_cache_delete( 'yatco_import_progress', 'transient' );
+                set_transient( 'yatco_cache_warming_status', 'Full Import stopped by user.', 60 );
+                // DON'T delete stop flag - keep it so it can be checked again
                 return;
             }
             
@@ -890,11 +890,11 @@ function yatco_full_import( $token ) {
                         $stop_flag = get_transient( 'yatco_cache_warming_stop' );
                     }
                     if ( $stop_flag !== false ) {
-                        yatco_log( 'Full Import: Stop flag detected during delay, cancelling', 'warning' );
-                        delete_option( 'yatco_import_stop_flag' );
-                        delete_transient( 'yatco_cache_warming_stop' );
+                        yatco_log( '🛑 Full Import: Stop flag detected during delay, cancelling immediately', 'warning' );
                         delete_transient( 'yatco_import_progress' );
+                        wp_cache_delete( 'yatco_import_progress', 'transient' );
                         set_transient( 'yatco_cache_warming_status', 'Full Import stopped by user.', 60 );
+                        // DON'T delete stop flag - keep it so it can be checked again
                         return;
                     }
                 }
@@ -1004,17 +1004,17 @@ function yatco_full_import( $token ) {
                 wp_cache_flush();
             }
             
-            // Check stop flag after import (check both option and transient)
+            // Check stop flag after import (check both option and transient) - DON'T DELETE IT
             $stop_flag = get_option( 'yatco_import_stop_flag', false );
             if ( $stop_flag === false ) {
                 $stop_flag = get_transient( 'yatco_cache_warming_stop' );
             }
             if ( $stop_flag !== false ) {
-                yatco_log( 'Full Import: Stop flag detected after import, cancelling', 'warning' );
-                delete_option( 'yatco_import_stop_flag' );
-                delete_transient( 'yatco_cache_warming_stop' );
+                yatco_log( '🛑 Full Import: Stop flag detected after vessel import, cancelling immediately', 'warning' );
                 delete_transient( 'yatco_import_progress' );
+                wp_cache_delete( 'yatco_import_progress', 'transient' );
                 set_transient( 'yatco_cache_warming_status', 'Full Import stopped by user.', 60 );
+                // DON'T delete stop flag - keep it so it can be checked again
                 return;
             }
             
@@ -1028,11 +1028,11 @@ function yatco_full_import( $token ) {
                 $processed++;
                 yatco_log( "Full Import: Successfully imported vessel {$vessel_id}", 'debug' );
             } elseif ( $import_result->get_error_code() === 'import_stopped' ) {
-                yatco_log( 'Full Import: Import stopped during vessel processing', 'warning' );
-                delete_option( 'yatco_import_stop_flag' );
-                delete_transient( 'yatco_cache_warming_stop' );
+                yatco_log( '🛑 Full Import: Import stopped during vessel processing (stop flag detected in import function)', 'warning' );
                 delete_transient( 'yatco_import_progress' );
+                wp_cache_delete( 'yatco_import_progress', 'transient' );
                 set_transient( 'yatco_cache_warming_status', 'Full Import stopped by user.', 60 );
+                // DON'T delete stop flag here - it's already been handled in the import function
                 return;
             } else {
                 yatco_log( "Full Import: Error importing vessel {$vessel_id}: " . $import_result->get_error_message(), 'error' );
