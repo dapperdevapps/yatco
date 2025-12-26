@@ -43,6 +43,8 @@ function yatco_display_import_status_section() {
             $stage_name = 'Daily Sync';
         } else {
             // Full import progress display
+            // Use 'processed' (actual successful count) instead of 'last_processed' (array position)
+            // 'last_processed' is the position/index, 'processed' is the actual count of successful imports
             $current = isset( $active_progress['processed'] ) ? intval( $active_progress['processed'] ) : ( isset( $active_progress['last_processed'] ) ? intval( $active_progress['last_processed'] ) : 0 );
             $total = isset( $active_progress['total'] ) ? intval( $active_progress['total'] ) : 0;
             $percent = isset( $active_progress['percent'] ) ? floatval( $active_progress['percent'] ) : ( $total > 0 ? round( ( $current / $total ) * 100, 1 ) : 0 );
