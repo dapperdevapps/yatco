@@ -1138,7 +1138,10 @@ function yatco_options_page() {
             echo '⚠️ wp-cron.php request failed: ' . esc_html( $response->get_error_message() ) . '<br />';
         } else {
             $response_code = wp_remote_retrieve_response_code( $response );
-            if ( $response_code == 404 ) {
+            if ( empty( $response_code ) ) {
+                echo '⚠️ wp-cron.php request sent (non-blocking - response code not available)<br />';
+                echo '<p style="font-size: 12px; color: #666; margin: 5px 0;">Note: Non-blocking requests may not return a status code immediately.</p>';
+            } elseif ( $response_code == 404 ) {
                 echo '❌ <strong>404 Error:</strong> wp-cron.php not found at <code>' . esc_url( site_url( 'wp-cron.php?doing_wp_cron' ) ) . '</code><br />';
                 echo '<div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px; margin: 10px 0;">';
                 echo '<p style="margin: 5px 0;"><strong>This is likely a subdomain document root issue.</strong></p>';
@@ -1174,9 +1177,17 @@ function yatco_options_page() {
             echo '<span style="color: #46b450; font-weight: bold; font-size: 14px;">✅ SUCCESS! WP-Cron is working! The test hook ran successfully.</span><br />';
             echo '<p style="margin: 5px 0; color: #666; font-size: 12px;">Your WP-Cron is functioning correctly. The cache warming should work with the "Warm Cache" button.</p>';
         } elseif ( $test_result === false ) {
-            echo '<span style="color: #dc3232; font-weight: bold; font-size: 14px;">❌ FAILED! WP-Cron did not run. The test hook did not execute.</span><br />';
-            echo '<p style="margin: 5px 0; color: #666; font-size: 12px;">This means WP-Cron is likely disabled or not working on your server. You should use the "Run Directly" button or "Run Cache Warming Function NOW (Direct)" instead.</p>';
-            echo '<p style="margin: 5px 0; color: #666; font-size: 12px;"><strong>Solution:</strong> Set up a real cron job on your server to call <code>wp-cron.php</code> every 5-15 minutes, or use the "Run Directly" button for manual imports.</p>';
+            echo '<span style="color: #dc3232; font-weight: bold; font-size: 14px;">❌ HTTP Test Failed: The test hook did not execute via HTTP request.</span><br />';
+            echo '<div style="background: #e7f3ff; border-left: 4px solid #2271b1; padding: 10px; margin: 10px 0;">';
+            echo '<p style="margin: 5px 0; font-weight: bold;">ℹ️ Important Information:</p>';
+            echo '<ul style="margin: 5px 0 0 20px; padding-left: 10px;">';
+            echo '<li><strong>If vessels are importing successfully,</strong> your server cron job IS working correctly!</li>';
+            echo '<li>This HTTP test failure only means <code>wp-cron.php</code> is not accessible via HTTP (common with subdomains or URL rewriting).</li>';
+            echo '<li>Your server cron job (using direct PHP execution) will continue to work regardless of this test result.</li>';
+            echo '<li>This test is only for diagnostic purposes - it does not affect your actual cron functionality.</li>';
+            echo '</ul>';
+            echo '</div>';
+            echo '<p style="margin: 5px 0; color: #666; font-size: 12px;">If you need to fix the HTTP test (optional), see the "Subdomain Document Root Issue" section below. Otherwise, your server cron is working fine!</p>';
         }
         
         echo '</div>';
