@@ -1229,17 +1229,20 @@ function yatco_options_page() {
     
     echo '<p style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px; margin: 15px 0;"><strong>⚠️ Important:</strong> If you\'re using WP-CLI (<code>wp cron event run --due-now</code>), make sure WP-CLI is installed and accessible from your cron job. If the test above failed, try using <code>curl</code> or <code>wget</code> instead.</p>';
     
-    echo '<p><strong>Option 1: Using curl (RECOMMENDED)</strong></p>';
-    echo '<pre style="background: #f5f5f5; padding: 10px; border: 1px solid #ddd; overflow-x: auto;">*/5 * * * * curl -s ' . esc_url( site_url( 'wp-cron.php?doing_wp_cron' ) ) . ' > /dev/null 2>&1</pre>';
+    echo '<p style="background: #dc3232; border-left: 4px solid #dc3232; padding: 10px; margin: 10px 0;"><strong>⚠️ IMPORTANT:</strong> If <code>wp-cron.php</code> returns a 404 error (URL rewriting blocking access), you <strong>MUST</strong> use WP-CLI (Option 3) instead of curl/wget.</p>';
+    
+    echo '<p><strong>Option 1: Using WP-CLI (RECOMMENDED if wp-cron.php returns 404)</strong></p>';
+    echo '<pre style="background: #f5f5f5; padding: 10px; border: 1px solid #ddd; overflow-x: auto;">*/5 * * * * cd ' . esc_html( ABSPATH ) . ' && /usr/local/bin/wp cron event run --due-now > /dev/null 2>&1</pre>';
     echo '<p style="font-size: 12px; color: #666; margin: 5px 0;">This runs every 5 minutes. Change <code>*/5</code> to <code>*/15</code> for every 15 minutes, or <code>0 2 * * *</code> for daily at 2 AM.</p>';
+    echo '<p style="font-size: 12px; color: #666; margin: 5px 0;">Common WP-CLI paths: <code>/usr/local/bin/wp</code>, <code>/usr/bin/wp</code>, <code>/opt/cpanel/ea-php81/root/usr/bin/wp</code>, or <code>wp</code> (if in PATH)</p>';
+    echo '<p style="font-size: 12px; color: #666; margin: 5px 0;">To find WP-CLI path, run: <code>which wp</code> or <code>whereis wp</code></p>';
+    
+    echo '<p><strong>Option 2: Using curl (Only if wp-cron.php is accessible)</strong></p>';
+    echo '<pre style="background: #f5f5f5; padding: 10px; border: 1px solid #ddd; overflow-x: auto;">*/5 * * * * curl -s ' . esc_url( site_url( 'wp-cron.php?doing_wp_cron' ) ) . ' > /dev/null 2>&1</pre>';
     echo '<p style="font-size: 12px; color: #666; margin: 5px 0;"><strong>If curl doesn\'t work, try with full path:</strong> <code>*/5 * * * * /usr/bin/curl -s ' . esc_url( site_url( 'wp-cron.php?doing_wp_cron' ) ) . ' > /dev/null 2>&1</code></p>';
     
-    echo '<p><strong>Option 2: Using wget</strong></p>';
+    echo '<p><strong>Option 3: Using wget (Only if wp-cron.php is accessible)</strong></p>';
     echo '<pre style="background: #f5f5f5; padding: 10px; border: 1px solid #ddd; overflow-x: auto;">*/5 * * * * wget -q -O - ' . esc_url( site_url( 'wp-cron.php?doing_wp_cron' ) ) . ' > /dev/null 2>&1</pre>';
-    
-    echo '<p><strong>Option 3: Using wp-cli (if available and working)</strong></p>';
-    echo '<pre style="background: #f5f5f5; padding: 10px; border: 1px solid #ddd; overflow-x: auto;">*/5 * * * * cd ' . esc_html( ABSPATH ) . ' && /usr/local/bin/wp cron event run --due-now > /dev/null 2>&1</pre>';
-    echo '<p style="font-size: 12px; color: #666; margin: 5px 0;">Note: You may need to specify the full path to <code>wp</code> (e.g., <code>/usr/local/bin/wp</code> or <code>/usr/bin/wp</code>). Check with your hosting provider.</p>';
     
     echo '<p style="background: #e7f3ff; border-left: 4px solid #2271b1; padding: 10px; margin: 15px 0;"><strong>💡 Tip:</strong> After setting up the cron job, wait a few minutes and check the "Last Status" above to see if WP-Cron is running. You can also check your server\'s cron logs to verify the job is executing.</p>';
     
@@ -1261,6 +1264,14 @@ function yatco_options_page() {
     echo '<code style="background: #f5f5f5; padding: 2px 5px;">systemctl status cron</code> (systemd) or <code>service crond status</code> (init.d)</li>';
     echo '<li><strong>Alternative with full path:</strong> If curl path is unknown, use wget instead:<br />';
     echo '<code style="background: #f5f5f5; padding: 2px 5px;">*/5 * * * * /usr/bin/wget -q -O - ' . esc_url( site_url( 'wp-cron.php?doing_wp_cron' ) ) . ' > /dev/null 2>&1</code></li>';
+    echo '<li><strong>Getting 404 Error?</strong> If <code>wp-cron.php</code> returns a 404 page, this means URL rewriting is blocking direct access. <strong>Use WP-CLI instead:</strong><br />';
+    echo '<ul style="margin-top: 5px; margin-left: 20px;">';
+    echo '<li><strong>Best Solution:</strong> Use WP-CLI: <code style="background: #f5f5f5; padding: 2px 5px;">*/5 * * * * cd ' . esc_html( ABSPATH ) . ' && /usr/local/bin/wp cron event run --due-now > /dev/null 2>&1</code></li>';
+    echo '<li>Find WP-CLI path: Run <code>which wp</code> or <code>whereis wp</code> on your server</li>';
+    echo '<li>If WP-CLI not installed, install it: <code>curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar && chmod +x wp-cli.phar && sudo mv wp-cli.phar /usr/local/bin/wp</code></li>';
+    echo '<li>Alternative: Try using <code>home_url()</code> instead: <code style="background: #f5f5f5; padding: 2px 5px;">*/5 * * * * curl -s ' . esc_url( home_url( 'wp-cron.php?doing_wp_cron' ) ) . ' > /dev/null 2>&1</code></li>';
+    echo '<li>Verify file exists: SSH and check <code>ls -la ' . esc_html( ABSPATH ) . 'wp-cron.php</code></li>';
+    echo '</ul></li>';
     echo '</ol>';
     echo '</div>';
     
