@@ -1232,6 +1232,7 @@ function yatco_options_page() {
     echo '<p><strong>Option 1: Using curl (RECOMMENDED)</strong></p>';
     echo '<pre style="background: #f5f5f5; padding: 10px; border: 1px solid #ddd; overflow-x: auto;">*/5 * * * * curl -s ' . esc_url( site_url( 'wp-cron.php?doing_wp_cron' ) ) . ' > /dev/null 2>&1</pre>';
     echo '<p style="font-size: 12px; color: #666; margin: 5px 0;">This runs every 5 minutes. Change <code>*/5</code> to <code>*/15</code> for every 15 minutes, or <code>0 2 * * *</code> for daily at 2 AM.</p>';
+    echo '<p style="font-size: 12px; color: #666; margin: 5px 0;"><strong>If curl doesn\'t work, try with full path:</strong> <code>*/5 * * * * /usr/bin/curl -s ' . esc_url( site_url( 'wp-cron.php?doing_wp_cron' ) ) . ' > /dev/null 2>&1</code></p>';
     
     echo '<p><strong>Option 2: Using wget</strong></p>';
     echo '<pre style="background: #f5f5f5; padding: 10px; border: 1px solid #ddd; overflow-x: auto;">*/5 * * * * wget -q -O - ' . esc_url( site_url( 'wp-cron.php?doing_wp_cron' ) ) . ' > /dev/null 2>&1</pre>';
@@ -1241,6 +1242,27 @@ function yatco_options_page() {
     echo '<p style="font-size: 12px; color: #666; margin: 5px 0;">Note: You may need to specify the full path to <code>wp</code> (e.g., <code>/usr/local/bin/wp</code> or <code>/usr/bin/wp</code>). Check with your hosting provider.</p>';
     
     echo '<p style="background: #e7f3ff; border-left: 4px solid #2271b1; padding: 10px; margin: 15px 0;"><strong>💡 Tip:</strong> After setting up the cron job, wait a few minutes and check the "Last Status" above to see if WP-Cron is running. You can also check your server\'s cron logs to verify the job is executing.</p>';
+    
+    echo '<h4 style="margin-top: 20px; margin-bottom: 10px;">🔧 Troubleshooting Cron Issues</h4>';
+    echo '<div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px; margin: 10px 0;">';
+    echo '<p><strong>Common Issues:</strong></p>';
+    echo '<ol style="margin-left: 20px; padding-left: 10px;">';
+    echo '<li><strong>Use SPACES, not TABS:</strong> Crontab requires spaces between fields. Your entry should look like:<br />';
+    echo '<code style="background: #f5f5f5; padding: 2px 5px;">*/5 * * * * curl -s ...</code> (spaces between each field)</li>';
+    echo '<li><strong>Use full path to curl:</strong> If <code>curl</code> doesn\'t work, try using the full path:<br />';
+    echo '<code style="background: #f5f5f5; padding: 2px 5px;">*/5 * * * * /usr/bin/curl -s ' . esc_url( site_url( 'wp-cron.php?doing_wp_cron' ) ) . ' > /dev/null 2>&1</code><br />';
+    echo 'Common paths: <code>/usr/bin/curl</code>, <code>/usr/local/bin/curl</code>, or <code>/bin/curl</code></li>';
+    echo '<li><strong>Test the command manually:</strong> SSH into your server and run:<br />';
+    echo '<code style="background: #f5f5f5; padding: 2px 5px;">curl -s ' . esc_url( site_url( 'wp-cron.php?doing_wp_cron' ) ) . '</code><br />';
+    echo 'If this works, the issue is with the cron format or cron service.</li>';
+    echo '<li><strong>Check cron logs:</strong> View cron execution logs with:<br />';
+    echo '<code style="background: #f5f5f5; padding: 2px 5px;">grep CRON /var/log/syslog</code> (Linux) or check your hosting control panel\'s cron logs</li>';
+    echo '<li><strong>Verify cron is running:</strong> Check if cron service is active:<br />';
+    echo '<code style="background: #f5f5f5; padding: 2px 5px;">systemctl status cron</code> (systemd) or <code>service crond status</code> (init.d)</li>';
+    echo '<li><strong>Alternative with full path:</strong> If curl path is unknown, use wget instead:<br />';
+    echo '<code style="background: #f5f5f5; padding: 2px 5px;">*/5 * * * * /usr/bin/wget -q -O - ' . esc_url( site_url( 'wp-cron.php?doing_wp_cron' ) ) . ' > /dev/null 2>&1</code></li>';
+    echo '</ol>';
+    echo '</div>';
     
     echo '<p style="font-size: 12px; color: #666; margin-top: 10px;">Add this to your server\'s crontab using <code>crontab -e</code> (SSH) or through your hosting control panel (cPanel, Plesk, etc.).</p>';
     echo '</div>';
