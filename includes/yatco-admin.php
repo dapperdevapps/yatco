@@ -299,12 +299,18 @@ function yatco_options_page() {
         echo '            type: "POST",';
         echo '            data: {';
         echo '                action: "yatco_get_import_status",';
-        echo '                _ajax_nonce: ' . json_encode( wp_create_nonce( 'yatco_get_import_status_nonce' ) ) . '';
+        echo '                _ajax_nonce: ' . json_encode( wp_create_nonce( 'yatco_get_import_status_nonce' ) );
         echo '            },';
         echo '            cache: false,';
         echo '            success: function(response) {';
-        echo '                if (response && response.success && response.data && response.data.progress) {';
-        echo '                    updateProgressBar(response.data.progress);';
+        echo '                if (response && response.success && response.data) {';
+        echo '                    if (response.data.active && response.data.progress) {';
+        echo '                        updateProgressBar(response.data.progress);';
+        echo '                    } else {';
+        echo '                        // Import stopped or completed, hide progress';
+        echo '                        $("#yatco-import-status-display").html("<p style=\\"margin: 0; color: #999; text-align: center; padding: 40px 0;\\">No active import</p>");';
+        echo '                        if (pollInterval) clearInterval(pollInterval);';
+        echo '                    }';
         echo '                }';
         echo '            },';
         echo '            error: function() {';
@@ -315,8 +321,12 @@ function yatco_options_page() {
         echo '    ';
         echo '    // Listen to heartbeat tick (primary method)';
         echo '    $(document).on("heartbeat-tick", function(event, data) {';
-        echo '        if (data.yatco_import_progress) {';
+        echo '        if (data.yatco_import_progress && data.yatco_import_progress.active) {';
         echo '            updateProgressBar(data.yatco_import_progress);';
+        echo '        } else if (data.yatco_import_progress && !data.yatco_import_progress.active) {';
+        echo '            // Import stopped or completed';
+        echo '            $("#yatco-import-status-display").html("<p style=\\"margin: 0; color: #999; text-align: center; padding: 40px 0;\\">No active import</p>");';
+        echo '            if (pollInterval) clearInterval(pollInterval);';
         echo '        }';
         echo '        if (data.yatco_auto_resume) {';
         echo '            console.log("YATCO: Auto-resuming import...");';
@@ -353,7 +363,11 @@ function yatco_options_page() {
         echo '<div class="yatco-status-section">';
         echo '<h2>Import Status & Progress</h2>';
         
-        // Check if import was stopped - if so, don't show progress
+        // Get all progress data first
+        $import_progress = get_transient( 'yatco_import_progress' );
+        $cache_status = get_transient( 'yatco_cache_warming_status' );
+        
+        // Check if import was stopped - if so, clear progress and don't show it
         $stop_flag = get_option( 'yatco_import_stop_flag', false );
         if ( $stop_flag !== false ) {
             // Import was stopped - clear any stale progress
@@ -363,16 +377,12 @@ function yatco_options_page() {
             wp_cache_delete( 'yatco_daily_sync_progress', 'transient' );
             $import_progress = false;
             $cache_status = 'Import stopped by user.';
-        } else {
-            // Get all progress data
-            $import_progress = get_transient( 'yatco_import_progress' );
-            $cache_status = get_transient( 'yatco_cache_warming_status' );
         }
         
         // Determine if import is active
         $active_stage = 0;
         $active_progress = null;
-        if ( $import_progress !== false && is_array( $import_progress ) ) {
+        if ( $import_progress !== false && is_array( $import_progress ) && $stop_flag === false ) {
             $active_stage = 'full';
             $active_progress = $import_progress;
         }
@@ -438,23 +448,48 @@ function yatco_options_page() {
         
         // Handle stop import form submission
         if ( isset( $_POST['yatco_stop_import'] ) && check_admin_referer( 'yatco_stop_import', 'yatco_stop_import_nonce' ) ) {
-            yatco_log( 'Import: Stop button clicked (form submission)', 'info' );
+            yatco_log( '🛑 IMPORT STOP REQUESTED: Stop button clicked by user', 'warning' );
+            
+            // Get current progress before clearing
+            $current_progress = get_transient( 'yatco_import_progress' );
+            $processed = 0;
+            $total = 0;
+            if ( $current_progress !== false && is_array( $current_progress ) ) {
+                $processed = isset( $current_progress['processed'] ) ? intval( $current_progress['processed'] ) : ( isset( $current_progress['last_processed'] ) ? intval( $current_progress['last_processed'] ) : 0 );
+                $total = isset( $current_progress['total'] ) ? intval( $current_progress['total'] ) : 0;
+            }
+            
+            yatco_log( "🛑 IMPORT STOP: Current progress was {$processed}/{$total} vessels", 'warning' );
             
             // Set stop flag using WordPress option (more reliable for direct runs)
             update_option( 'yatco_import_stop_flag', time(), false );
             set_transient( 'yatco_cache_warming_stop', time(), 900 );
+            yatco_log( '🛑 IMPORT STOP: Stop flag set in database', 'warning' );
             
             // Disable auto-resume to prevent import from restarting
             update_option( 'yatco_import_auto_resume', false, false );
             delete_option( 'yatco_last_auto_resume_time' );
+            yatco_log( '🛑 IMPORT STOP: Auto-resume disabled', 'warning' );
             
             // Release import lock and process ID
+            $had_lock = get_option( 'yatco_import_lock', false );
             delete_option( 'yatco_import_lock' );
             delete_option( 'yatco_import_process_id' );
+            if ( $had_lock !== false ) {
+                yatco_log( '🛑 IMPORT STOP: Import lock released', 'warning' );
+            }
             
             // Cancel ALL scheduled cron jobs
+            $scheduled_full = wp_next_scheduled( 'yatco_full_import_hook' );
+            $scheduled_warm = wp_next_scheduled( 'yatco_warm_cache_hook' );
             wp_clear_scheduled_hook( 'yatco_full_import_hook' );
             wp_clear_scheduled_hook( 'yatco_warm_cache_hook' );
+            if ( $scheduled_full !== false ) {
+                yatco_log( '🛑 IMPORT STOP: Cancelled scheduled Full Import event', 'warning' );
+            }
+            if ( $scheduled_warm !== false ) {
+                yatco_log( '🛑 IMPORT STOP: Cancelled scheduled warm cache event', 'warning' );
+            }
             
             // Force clear progress immediately from cache and database
             wp_cache_delete( 'yatco_import_progress', 'transient' );
@@ -464,8 +499,9 @@ function yatco_options_page() {
             delete_transient( 'yatco_cache_warming_status' );
             delete_transient( 'yatco_daily_sync_progress' );
             wp_cache_flush();
+            yatco_log( '🛑 IMPORT STOP: Progress cleared from cache and database', 'warning' );
             
-            yatco_log( 'Import: Stop signal sent, progress cleared, lock released, all scheduled jobs cancelled', 'info' );
+            yatco_log( '🛑 IMPORT STOP COMPLETE: All stop actions completed. Import will stop at next checkpoint.', 'warning' );
             
             // Redirect to clear the form and refresh the page
             wp_redirect( add_query_arg( array( 'page' => 'yatco_import', 'tab' => 'status', 'stopped' => '1' ), admin_url( 'edit.php?post_type=yacht' ) ) );
@@ -482,6 +518,8 @@ function yatco_options_page() {
         echo 'jQuery(document).ready(function($) {';
         echo '    function updateStatusProgress(progressData) {';
         echo '        if (!progressData || !progressData.active) {';
+        echo '            // Import stopped or completed, hide progress';
+        echo '            $("#yatco-import-status-display").html("<p style=\\"margin: 0; color: #999; text-align: center; padding: 40px 0;\\">No active import</p>");';
         echo '            return;';
         echo '        }';
         echo '        ';
@@ -492,26 +530,14 @@ function yatco_options_page() {
         echo '            progressBar.text(percent.toFixed(1) + "%");';
         echo '        }';
         echo '        ';
-        echo '        // Update status text';
-        echo '        if (progressData.status && $("#yatco-status-text").length) {';
-        echo '            $("#yatco-status-text").html("<strong>Status:</strong> " + progressData.status);';
-        echo '        }';
-        echo '        ';
         echo '        // Update counts';
         echo '        if (progressData.current !== undefined && $("#yatco-processed-count").length) {';
         echo '            $("#yatco-processed-count").text(progressData.current.toLocaleString() + " / " + progressData.total.toLocaleString());';
         echo '        }';
-        echo '        if (progressData.remaining !== undefined && $("#yatco-remaining-count").length) {';
-        echo '            $("#yatco-remaining-count").text(progressData.remaining.toLocaleString());';
-        echo '        }';
         echo '        ';
         echo '        // Update ETA';
         echo '        if (progressData.eta_minutes !== undefined && $("#yatco-eta-text").length) {';
-        echo '            $("#yatco-eta-text").text(progressData.eta_minutes + " minutes");';
-        echo '        }';
-        echo '        ';
-        echo '        if (window.yatcoDebug) {';
-        echo '            console.log("YATCO Status Tab Progress Update (Heartbeat):", progressData);';
+        echo '            $("#yatco-eta-text").text(progressData.eta_minutes + " min remaining");';
         echo '        }';
         echo '    }';
         echo '    ';
@@ -520,12 +546,29 @@ function yatco_options_page() {
         echo '        if (data.yatco_import_progress) {';
         echo '            updateStatusProgress(data.yatco_import_progress);';
         echo '        }';
-        echo '        if (data.yatco_auto_resume) {';
-        echo '            console.log("YATCO: Auto-resuming import...");';
-        echo '        }';
         echo '    });';
         echo '    ';
-        echo '    console.log("YATCO Status Tab: Heartbeat-based progress updates enabled");';
+        echo '    // Also poll via AJAX to check for stop';
+        echo '    var statusPollInterval = setInterval(function() {';
+        echo '        $.ajax({';
+        echo '            url: ajaxurl,';
+        echo '            type: "POST",';
+        echo '            data: {';
+        echo '                action: "yatco_get_import_status",';
+        echo '                _ajax_nonce: ' . json_encode( wp_create_nonce( 'yatco_get_import_status_nonce' ) );
+        echo '            },';
+        echo '            success: function(response) {';
+        echo '                if (response && response.success && response.data) {';
+        echo '                    if (!response.data.active) {';
+        echo '                        $("#yatco-import-status-display").html("<p style=\\"margin: 0; color: #999; text-align: center; padding: 40px 0;\\">No active import</p>");';
+        echo '                        clearInterval(statusPollInterval);';
+        echo '                    } else if (response.data.progress) {';
+        echo '                        updateStatusProgress(response.data.progress);';
+        echo '                    }';
+        echo '                }';
+        echo '            }';
+        echo '        });';
+        echo '    }, 2000);';
         echo '});';
         echo '</script>';
         
