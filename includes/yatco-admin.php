@@ -1307,9 +1307,7 @@ function yatco_options_page() {
     echo '<p style="font-size: 12px; color: #666; margin: 5px 0;">This allows <code>' . esc_url( site_url( 'wp-cron.php' ) ) . '</code> to execute the real file.</p>';
     echo '<p><strong>Solution 2 (Fallback):</strong> If you cannot change the document root, create a bridge file at the subdomain\'s document root:</p>';
     echo '<p style="font-size: 12px; color: #666; margin: 5px 0;">Create: <code>/path/to/subdomain/document/root/wp-cron.php</code></p>';
-    echo '<pre style="background: #f5f5f5; padding: 10px; border: 1px solid #ddd; overflow-x: auto;">&lt;?php
-require_once \'' . esc_html( ABSPATH ) . 'wp-cron.php\';
-</pre>';
+    echo '<pre style="background: #f5f5f5; padding: 10px; border: 1px solid #ddd; overflow-x: auto;">&lt;?php' . "\n" . 'require_once \'' . esc_html( ABSPATH ) . 'wp-cron.php\';' . "\n" . '</pre>';
     echo '<p style="font-size: 12px; color: #666; margin: 5px 0;"><strong>Note:</strong> Replace <code>/path/to/subdomain/document/root/</code> with your actual subdomain document root path. This forwards HTTP cron calls to the real WordPress cron file.</p>';
     echo '<p style="font-size: 12px; color: #666; margin: 5px 0;"><strong>Important:</strong> Do NOT remove your existing server cron job. The bridge file only fixes HTTP-based tests.</p>';
     echo '</div>';
