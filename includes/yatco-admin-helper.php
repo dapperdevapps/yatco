@@ -13,10 +13,23 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Display Import Status & Progress section (reusable)
  */
 function yatco_display_import_status_section() {
-    // Get all progress data
-    $import_progress = get_transient( 'yatco_import_progress' );
-    $daily_sync_progress = get_transient( 'yatco_daily_sync_progress' );
-    $cache_status = get_transient( 'yatco_cache_warming_status' );
+    // Check if import was stopped - if so, don't show progress
+    $stop_flag = get_option( 'yatco_import_stop_flag', false );
+    if ( $stop_flag !== false ) {
+        // Import was stopped - clear any stale progress
+        delete_transient( 'yatco_import_progress' );
+        delete_transient( 'yatco_daily_sync_progress' );
+        wp_cache_delete( 'yatco_import_progress', 'transient' );
+        wp_cache_delete( 'yatco_daily_sync_progress', 'transient' );
+        $import_progress = false;
+        $daily_sync_progress = false;
+        $cache_status = 'Import stopped by user.';
+    } else {
+        // Get all progress data
+        $import_progress = get_transient( 'yatco_import_progress' );
+        $daily_sync_progress = get_transient( 'yatco_daily_sync_progress' );
+        $cache_status = get_transient( 'yatco_cache_warming_status' );
+    }
     
     // Determine if import is active
     $active_stage = 0;

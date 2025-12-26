@@ -42,6 +42,21 @@ add_action( 'yatco_warm_cache_hook', 'yatco_warm_cache_function' );
 
 // Register import hooks
 add_action( 'yatco_full_import_hook', function() {
+    // Check import lock BEFORE starting - prevent multiple imports
+    $import_lock = get_option( 'yatco_import_lock', false );
+    if ( $import_lock !== false ) {
+        $lock_time = intval( $import_lock );
+        $lock_age = time() - $lock_time;
+        // If lock is older than 10 minutes, assume the import process died and release the lock
+        if ( $lock_age > 600 ) {
+            yatco_log( "Full Import: Hook triggered but lock expired (age: {$lock_age}s), releasing lock and continuing", 'warning' );
+            delete_option( 'yatco_import_lock' );
+        } else {
+            yatco_log( "Full Import: Hook triggered but import already running (lock age: {$lock_age}s), skipping to prevent duplicate imports", 'info' );
+            return; // Another import is already running, don't start a new one
+        }
+    }
+    
     yatco_log( 'Full Import: Hook triggered via WP-Cron', 'info' );
     $token = yatco_get_token();
     if ( ! empty( $token ) ) {
@@ -106,6 +121,25 @@ function yatco_ajax_get_import_status() {
     
     if ( ! current_user_can( 'manage_options' ) ) {
         wp_send_json_error( array( 'message' => 'Unauthorized' ) );
+        return;
+    }
+    
+    // Check if import was stopped - if so, don't return progress data
+    $stop_flag = get_option( 'yatco_import_stop_flag', false );
+    if ( $stop_flag !== false ) {
+        // Import was stopped - clear any stale progress and return stopped status
+        delete_transient( 'yatco_import_progress' );
+        delete_transient( 'yatco_daily_sync_progress' );
+        wp_cache_delete( 'yatco_import_progress', 'transient' );
+        wp_cache_delete( 'yatco_daily_sync_progress', 'transient' );
+        
+        $response_data = array(
+            'active' => false,
+            'stage' => null,
+            'status' => 'Import stopped by user.',
+            'progress' => null,
+        );
+        wp_send_json_success( $response_data );
         return;
     }
     
@@ -204,6 +238,17 @@ function yatco_heartbeat_received( $response, $data ) {
             // If import is incomplete, trigger resume
             if ( $total > 0 && $processed < $total ) {
                 $stop_flag = get_option( 'yatco_import_stop_flag', false );
+                $import_lock = get_option( 'yatco_import_lock', false );
+                
+                // Don't trigger resume if import is already running (lock exists and is recent)
+                if ( $import_lock !== false ) {
+                    $lock_age = time() - intval( $import_lock );
+                    if ( $lock_age < 600 ) { // Lock is less than 10 minutes old
+                        // Import is already running, don't trigger another one
+                        return $response;
+                    }
+                }
+                
                 if ( $stop_flag === false ) {
                     // Check when auto-resume was last triggered to avoid spam
                     $last_resume = get_option( 'yatco_last_auto_resume_time', 0 );
