@@ -90,7 +90,7 @@ function yatco_auto_refresh_cache_render() {
     $enabled = isset( $options['yatco_auto_refresh_cache'] ) ? $options['yatco_auto_refresh_cache'] : 'no';
     echo '<input type="checkbox" name="yatco_api_settings[yatco_auto_refresh_cache]" value="yes" ' . checked( $enabled, 'yes', false ) . ' />';
     echo '<label>Automatically refresh cache every 6 hours</label>';
-    echo '<p class="description">Enable this to automatically pre-load the cache every 6 hours via WP-Cron.</p>';
+    echo '<p class="description">Enable this to automatically pre-load the cache every 6 hours. Requires a server cron job to be configured (see Troubleshooting tab).</p>';
 }
 
 /**
@@ -168,65 +168,48 @@ function yatco_options_page() {
         echo '<div style="background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 20px; margin: 20px 0;">';
         echo '<h3>Full Import: Import All Vessels</h3>';
         echo '<p>Fetches all active vessels with complete data (names, images, descriptions, specs, etc.).</p>';
-        echo '<div style="display: flex; gap: 10px; margin-top: 15px;">';
-        echo '<form method="post" style="margin: 0;">';
-        wp_nonce_field( 'yatco_full_import', 'yatco_full_import_nonce' );
-        submit_button( 'Run Full Import (WP-Cron)', 'primary', 'yatco_full_import', false );
-        echo '</form>';
+        
+        // Explanation of import methods
+        echo '<div style="background: #f0f6fc; border: 1px solid #2271b1; border-radius: 4px; padding: 15px; margin: 15px 0;">';
+        echo '<h4 style="margin-top: 0; color: #2271b1;">📋 How Imports Work:</h4>';
+        echo '<table style="width: 100%; border-collapse: collapse; margin: 10px 0;">';
+        echo '<tr style="background: #fff;">';
+        echo '<th style="border: 1px solid #ddd; padding: 10px; text-align: left; width: 30%;">Method</th>';
+        echo '<th style="border: 1px solid #ddd; padding: 10px; text-align: left; width: 40%;">How It Works</th>';
+        echo '<th style="border: 1px solid #ddd; padding: 10px; text-align: left; width: 30%;">When to Use</th>';
+        echo '</tr>';
+        echo '<tr style="background: #f9f9f9;">';
+        echo '<td style="border: 1px solid #ddd; padding: 10px;"><strong>Direct Run</strong><br /><span style="color: #666; font-size: 11px;">"Run Full Import" button</span></td>';
+        echo '<td style="border: 1px solid #ddd; padding: 10px; font-size: 13px;">1. Calls <code>yatco_full_import()</code> <strong>directly</strong> (synchronously)<br />2. Runs immediately in the same request<br />3. <strong>Blocks the page</strong> until complete or timeout<br />4. Has auto-resume enabled (will continue if times out)<br />5. Sets unlimited execution time if possible</td>';
+        echo '<td style="border: 1px solid #ddd; padding: 10px; font-size: 13px;"><strong>Use this</strong> to start imports. <strong>Keep the page open</strong> to monitor progress. Will auto-resume via heartbeat if it times out.</td>';
+        echo '</tr>';
+        echo '<tr>';
+        echo '<td style="border: 1px solid #ddd; padding: 10px;"><strong>Server Cron</strong><br /><span style="color: #666; font-size: 11px;">Real cron job on server</span></td>';
+        echo '<td style="border: 1px solid #ddd; padding: 10px; font-size: 13px;">1. A real cron job on your server (e.g., <code>*/5 * * * * /usr/bin/php -q /path/to/wp-cron.php</code>)<br />2. Runs automatically on schedule (e.g., every 5 minutes)<br />3. Executes <code>wp-cron.php</code>, which runs scheduled events<br />4. Can resume incomplete imports (if auto-resume enabled)<br />5. Can run cache warming (if enabled in settings)</td>';
+        echo '<td style="border: 1px solid #ddd; padding: 10px; font-size: 13px;"><strong>Set up once</strong> on your server. Helps with auto-resume and cache warming. <strong>Does NOT start new imports automatically</strong> - you must click the button to start imports.</td>';
+        echo '</tr>';
+        echo '</table>';
+        echo '<div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px; margin-top: 10px;">';
+        echo '<p style="margin: 5px 0; font-size: 13px;"><strong>Key Point:</strong> Server cron does NOT automatically start imports. It only helps resume incomplete imports (if auto-resume is enabled) and run cache warming (if enabled). You must manually click "Run Full Import" or "Run Daily Sync" to start an import.</p>';
+        echo '</div>';
+        echo '<div style="background: #f0f0f0; padding: 10px; margin-top: 10px; border-radius: 4px;">';
+        echo '<p style="margin: 5px 0; font-size: 12px; font-weight: bold;">📊 How They Work Together:</p>';
+        echo '<p style="margin: 5px 0; font-size: 12px;">• <strong>Direct Run Button:</strong> You click → Import runs immediately → Blocks page until done (or times out)</p>';
+        echo '<p style="margin: 5px 0; font-size: 12px;">• <strong>Server Cron:</strong> Runs every 5 min → Executes wp-cron.php → Can resume incomplete imports (auto-resume) or run cache warming</p>';
+        echo '</div>';
+        echo '</div>';
+        
+        echo '<div style="background: #e7f3ff; border-left: 4px solid #2271b1; padding: 10px; margin: 10px 0;">';
+        echo '<p style="margin: 5px 0; font-weight: bold;">ℹ️ Important: Imports are NOT automatic</p>';
+        echo '<p style="margin: 5px 0; font-size: 13px;">You must manually click "Run Full Import" or "Run Daily Sync" to trigger imports. The server cron job (if configured) only helps with resuming incomplete imports (auto-resume) and cache warming. It does NOT start new imports automatically.</p>';
+        echo '</div>';
+        echo '<div style="margin-top: 15px;">';
         echo '<form method="post" style="margin: 0;">';
         wp_nonce_field( 'yatco_full_import_direct', 'yatco_full_import_direct_nonce' );
-        submit_button( 'Run Full Import Directly (If WP-Cron Not Working)', 'secondary', 'yatco_full_import_direct', false );
+        submit_button( 'Run Full Import', 'primary large', 'yatco_full_import_direct', false, array( 'style' => 'font-size: 14px; padding: 8px 16px; height: auto;' ) );
         echo '</form>';
         echo '</div>';
 
-        if ( isset( $_POST['yatco_full_import'] ) && check_admin_referer( 'yatco_full_import', 'yatco_full_import_nonce' ) ) {
-            if ( empty( $token ) ) {
-                yatco_log( 'Full Import: Import attempt failed - missing token', 'error' );
-                echo '<div class="notice notice-error"><p>Missing token. Please configure your API token first.</p></div>';
-            } else {
-                yatco_log( 'Full Import: Import triggered via WP-Cron button', 'info' );
-                
-                // Clear any existing progress
-                delete_transient( 'yatco_import_progress' );
-                delete_transient( 'yatco_cache_warming_stop' );
-                
-                // Initialize progress immediately so status bar appears
-                set_transient( 'yatco_cache_warming_status', 'Full Import: Starting import...', 600 );
-                set_transient( 'yatco_import_progress', array(
-                    'last_processed' => 0,
-                    'total' => 0,
-                    'timestamp' => time(),
-                    'percent' => 0,
-                ), 3600 );
-                
-                // Schedule and trigger immediately
-                $scheduled = wp_schedule_single_event( time(), 'yatco_full_import_hook' );
-                yatco_log( 'Full Import: Scheduled WP-Cron event. Result: ' . ( $scheduled === false ? 'Failed' : 'Success' ), 'info' );
-                
-                // Force WP-Cron to run immediately
-                yatco_log( 'Full Import: Calling spawn_cron()', 'info' );
-                spawn_cron();
-                
-                // Also trigger wp-cron.php directly (non-blocking)
-                yatco_log( 'Full Import: Triggering wp-cron.php directly', 'info' );
-                $cron_response = wp_remote_post( 
-                    site_url( 'wp-cron.php?doing_wp_cron' ),
-                    array(
-                        'blocking'  => false,
-                        'timeout'   => 0.01,
-                        'sslverify' => false,
-                    )
-                );
-                if ( is_wp_error( $cron_response ) ) {
-                    yatco_log( 'Full Import: wp-cron.php request failed: ' . $cron_response->get_error_message(), 'error' );
-                } else {
-                    yatco_log( 'Full Import: wp-cron.php request sent (non-blocking)', 'info' );
-                }
-                
-                echo '<div class="notice notice-info"><p><strong>Full Import started!</strong> This will run in the background. Check the Status tab to see progress.</p></div>';
-            }
-        }
-        
         // Direct run handler
         if ( isset( $_POST['yatco_full_import_direct'] ) && check_admin_referer( 'yatco_full_import_direct', 'yatco_full_import_direct_nonce' ) ) {
             if ( empty( $token ) ) {
@@ -1006,26 +989,9 @@ function yatco_options_page() {
         echo '<p>This section contains diagnostic tools and information to help troubleshoot issues.</p>';
     echo '<div style="background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; padding: 20px; margin: 20px 0;">';
     
-    $cron_disabled = defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON;
-    echo '<h3>WP-Cron Status</h3>';
+    echo '<h3>System Status</h3>';
     echo '<table class="widefat" style="margin-bottom: 20px;">';
     echo '<tr><th style="text-align: left; width: 250px;">Check</th><th style="text-align: left;">Status</th></tr>';
-    
-    echo '<tr><td><strong>WP-Cron Enabled:</strong></td><td>';
-    if ( $cron_disabled ) {
-        echo '<span style="color: #dc3232;">❌ DISABLED</span>';
-    } else {
-        echo '<span style="color: #46b450;">✔ ENABLED</span>';
-    }
-    echo '</td></tr>';
-    
-    echo '<tr><td><strong>spawn_cron() Available:</strong></td><td>';
-    if ( function_exists( 'spawn_cron' ) ) {
-        echo '<span style="color: #46b450;">✔ Available</span>';
-    } else {
-        echo '<span style="color: #dc3232;">❌ Not Available</span>';
-    }
-    echo '</td></tr>';
     
     echo '<tr><td><strong>Cache Warming Function:</strong></td><td>';
     if ( function_exists( 'yatco_warm_cache_function' ) ) {
@@ -1141,104 +1107,6 @@ function yatco_options_page() {
         }
     }
     
-    echo '<form method="post" style="margin-bottom: 15px;">';
-    wp_nonce_field( 'yatco_test_cron', 'yatco_test_cron_nonce' );
-    submit_button( 'Test WP-Cron', 'secondary', 'yatco_test_cron' );
-    echo '</form>';
-    
-    if ( isset( $_POST['yatco_test_cron'] ) && check_admin_referer( 'yatco_test_cron', 'yatco_test_cron_nonce' ) ) {
-        $test_key = 'yatco_test_cron_' . time();
-        set_transient( $test_key, 'not_run', 60 );
-        
-        wp_schedule_single_event( time(), 'yatco_test_cron_hook' );
-        
-        add_action( 'yatco_test_cron_hook', function() use ( $test_key ) {
-            set_transient( $test_key, 'ran_successfully', 60 );
-        } );
-        
-        echo '<p>Testing WP-Cron...</p>';
-        echo '<div style="background: #fff; border: 1px solid #ddd; padding: 10px; font-family: monospace; font-size: 12px;">';
-        
-        if ( function_exists( 'spawn_cron' ) ) {
-            echo '✅ spawn_cron() Available<br />';
-            spawn_cron();
-            echo '✅ spawn_cron() called<br />';
-        } else {
-            echo '❌ spawn_cron() NOT Available<br />';
-        }
-        
-        echo '🔄 Attempting to trigger wp-cron.php directly...<br />';
-        
-        $response = wp_remote_post(
-            site_url( 'wp-cron.php?doing_wp_cron' ),
-            array(
-                'timeout'   => 0.01,
-                'blocking'  => false,
-                'sslverify' => false,
-            )
-        );
-        
-        if ( is_wp_error( $response ) ) {
-            echo '⚠️ wp-cron.php request failed: ' . esc_html( $response->get_error_message() ) . '<br />';
-        } else {
-            $response_code = wp_remote_retrieve_response_code( $response );
-            if ( empty( $response_code ) ) {
-                echo '⚠️ wp-cron.php request sent (non-blocking - response code not available)<br />';
-                echo '<p style="font-size: 12px; color: #666; margin: 5px 0;">Note: Non-blocking requests may not return a status code immediately.</p>';
-            } elseif ( $response_code == 404 ) {
-                echo '❌ <strong>404 Error:</strong> wp-cron.php not found at <code>' . esc_url( site_url( 'wp-cron.php?doing_wp_cron' ) ) . '</code><br />';
-                echo '<div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px; margin: 10px 0;">';
-                echo '<p style="margin: 5px 0;"><strong>This is likely a subdomain document root issue.</strong></p>';
-                echo '<p style="margin: 5px 0;">If you\'re using a subdomain, the document root may not point to your WordPress installation. See the "Subdomain Document Root Issue" section below for solutions.</p>';
-                echo '<p style="margin: 5px 0;"><strong>Note:</strong> Your server cron job (using direct PHP) will still work fine. This only affects HTTP-based tests.</p>';
-                echo '</div>';
-            } elseif ( $response_code >= 200 && $response_code < 300 ) {
-                echo '✅ wp-cron.php request sent successfully (HTTP ' . esc_html( $response_code ) . ')<br />';
-            } else {
-                echo '⚠️ wp-cron.php request returned HTTP ' . esc_html( $response_code ) . '<br />';
-            }
-        }
-        
-        echo '<br />⏳ Checking if cron ran (waiting up to 8 seconds)...<br />';
-        $test_result = false;
-        for ( $i = 0; $i < 8; $i++ ) {
-            sleep( 1 );
-            $check = get_transient( $test_key );
-            if ( $check === 'ran_successfully' ) {
-                $test_result = true;
-                echo '✓ Checked at ' . ( $i + 1 ) . ' seconds: <span style="color: #46b450;">CRON RAN!</span><br />';
-                break;
-            } elseif ( $check !== 'not_run' ) {
-                echo '⚠️ Checked at ' . ( $i + 1 ) . ' seconds: Transient changed but value unexpected: ' . esc_html( $check ) . '<br />';
-                break;
-            } else {
-                echo '• Checked at ' . ( $i + 1 ) . ' seconds: Still waiting...<br />';
-            }
-        }
-        
-        echo '<br />';
-        if ( $test_result === true ) {
-            echo '<span style="color: #46b450; font-weight: bold; font-size: 14px;">✅ SUCCESS! WP-Cron is working! The test hook ran successfully.</span><br />';
-            echo '<p style="margin: 5px 0; color: #666; font-size: 12px;">Your WP-Cron is functioning correctly. The cache warming should work with the "Warm Cache" button.</p>';
-        } elseif ( $test_result === false ) {
-            echo '<span style="color: #dc3232; font-weight: bold; font-size: 14px;">❌ HTTP Test Failed: The test hook did not execute via HTTP request.</span><br />';
-            echo '<div style="background: #e7f3ff; border-left: 4px solid #2271b1; padding: 10px; margin: 10px 0;">';
-            echo '<p style="margin: 5px 0; font-weight: bold;">ℹ️ Important Information:</p>';
-            echo '<ul style="margin: 5px 0 0 20px; padding-left: 10px;">';
-            echo '<li><strong>If vessels are importing successfully,</strong> your server cron job IS working correctly!</li>';
-            echo '<li>This HTTP test failure only means <code>wp-cron.php</code> is not accessible via HTTP (common with subdomains or URL rewriting).</li>';
-            echo '<li>Your server cron job (using direct PHP execution) will continue to work regardless of this test result.</li>';
-            echo '<li>This test is only for diagnostic purposes - it does not affect your actual cron functionality.</li>';
-            echo '</ul>';
-            echo '</div>';
-            echo '<p style="margin: 5px 0; color: #666; font-size: 12px;">If you need to fix the HTTP test (optional), see the "Subdomain Document Root Issue" section below. Otherwise, your server cron is working fine!</p>';
-        }
-        
-        echo '</div>';
-        
-        delete_transient( $test_key );
-    }
-    
     echo '<h3>Manual Cache Warming (Direct)</h3>';
     echo '<p>If WP-Cron is not working, you can run the cache warming function directly. This will block until complete.</p>';
     
@@ -1290,11 +1158,21 @@ function yatco_options_page() {
         }
     }
     
-    echo '<h3>Real Cron Setup (If WP-Cron Disabled)</h3>';
+    echo '<h3>Server Cron Setup (Optional but Recommended)</h3>';
     echo '<div style="background: #fff; border: 1px solid #ddd; padding: 15px; margin: 10px 0;">';
-    echo '<p>If WP-Cron is disabled on your server, you can set up a real cron job to trigger WP-Cron automatically. <strong>This is the recommended approach for production sites.</strong></p>';
+    echo '<p>Set up a real cron job on your server to help with auto-resume and cache warming. <strong>This is optional but recommended for production sites.</strong></p>';
+    echo '<div style="background: #e7f3ff; border-left: 4px solid #2271b1; padding: 10px; margin: 15px 0;">';
+    echo '<p style="margin: 5px 0; font-weight: bold;">ℹ️ What the Server Cron Does:</p>';
+    echo '<ul style="margin: 5px 0 0 20px; padding-left: 10px; font-size: 13px;">';
+    echo '<li><strong>Helps with auto-resume</strong> - If an import times out, the server cron can help resume it automatically (if auto-resume is enabled)</li>';
+    echo '<li><strong>Runs cache warming</strong> - If "Auto-Refresh Cache" is enabled in settings, the server cron will run cache warming every 6 hours</li>';
+    echo '<li><strong>Does NOT start new imports</strong> - You must manually click "Run Full Import" or "Run Daily Sync" buttons to start imports</li>';
+    echo '<li><strong>Recommended frequency:</strong> Every 5 minutes (<code>*/5 * * * *</code>) - This ensures scheduled events run promptly</li>';
+    echo '</ul>';
+    echo '<p style="margin: 5px 0; font-size: 13px;"><strong>Note:</strong> The numbers in cron schedules (like <code>*/5</code>, <code>*/15</code>) represent minutes. <code>*/5</code> means every 5 minutes, <code>*/15</code> means every 15 minutes, etc.</p>';
+    echo '</div>';
     
-    echo '<p style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px; margin: 15px 0;"><strong>⚠️ Important:</strong> If you\'re using WP-CLI (<code>wp cron event run --due-now</code>), make sure WP-CLI is installed and accessible from your cron job. If the test above failed, try using <code>curl</code> or <code>wget</code> instead.</p>';
+    echo '<p style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px; margin: 15px 0;"><strong>⚠️ Important:</strong> If you\'re using WP-CLI (<code>wp cron event run --due-now</code>), make sure WP-CLI is installed and accessible from your cron job.</p>';
     
     echo '<p style="background: #dc3232; border-left: 4px solid #dc3232; padding: 10px; margin: 10px 0;"><strong>⚠️ IMPORTANT:</strong> If <code>wp-cron.php</code> returns a 404 error (URL rewriting blocking access), use <strong>Option 1 (Direct PHP)</strong> or <strong>Option 2 (WP-CLI)</strong> instead of curl/wget.</p>';
     
@@ -1317,7 +1195,7 @@ function yatco_options_page() {
     echo '<p><strong>Option 4: Using wget (Only if wp-cron.php is accessible via HTTP)</strong></p>';
     echo '<pre style="background: #f5f5f5; padding: 10px; border: 1px solid #ddd; overflow-x: auto;">*/5 * * * * wget -q -O - ' . esc_url( site_url( 'wp-cron.php?doing_wp_cron' ) ) . ' > /dev/null 2>&1</pre>';
     
-    echo '<p style="background: #e7f3ff; border-left: 4px solid #2271b1; padding: 10px; margin: 15px 0;"><strong>💡 Tip:</strong> After setting up the cron job, wait a few minutes and check the "Last Status" above to see if WP-Cron is running. You can also check your server\'s cron logs to verify the job is executing.</p>';
+    echo '<p style="background: #e7f3ff; border-left: 4px solid #2271b1; padding: 10px; margin: 15px 0;"><strong>💡 Tip:</strong> After setting up the cron job, wait a few minutes and check the "Last Status" above to see if scheduled events are running. You can also check your server\'s cron logs to verify the job is executing.</p>';
     
     echo '<h4 style="margin-top: 20px; margin-bottom: 10px;">🔧 Troubleshooting Cron Issues</h4>';
     echo '<div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px; margin: 10px 0;">';
@@ -1351,7 +1229,7 @@ function yatco_options_page() {
     
     echo '<h4 style="margin-top: 20px; margin-bottom: 10px;">🌐 Subdomain Document Root Issue</h4>';
     echo '<div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 10px 0;">';
-    echo '<p><strong>Problem:</strong> If you\'re using a subdomain (e.g., <code>dev.example.com</code>) and the plugin\'s "Test WP-Cron" button fails with a 404 error, this is likely because:</p>';
+    echo '<p><strong>Problem:</strong> If you\'re using a subdomain (e.g., <code>dev.example.com</code>) and <code>wp-cron.php</code> returns a 404 error when accessed via HTTP, this is likely because:</p>';
     echo '<ul style="margin-left: 20px; padding-left: 10px;">';
     echo '<li>The subdomain\'s document root doesn\'t point to your WordPress installation</li>';
     echo '<li><code>wp-cron.php</code> exists in WordPress, but not accessible via HTTP on the subdomain</li>';
