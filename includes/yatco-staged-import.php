@@ -1494,7 +1494,26 @@ function yatco_daily_sync_check( $token ) {
         'price_updates' => $price_updates,
         'days_on_market_updates' => $days_on_market_updates,
         'timestamp' => time(),
+        'date' => date( 'Y-m-d', time() ),
     );
+    
+    // Store in history (keep last 90 days)
+    $history = get_option( 'yatco_daily_sync_history', array() );
+    if ( ! is_array( $history ) ) {
+        $history = array();
+    }
+    
+    // Add today's results
+    $today = date( 'Y-m-d', time() );
+    $history[ $today ] = $sync_results;
+    
+    // Keep only last 90 days
+    ksort( $history );
+    if ( count( $history ) > 90 ) {
+        $history = array_slice( $history, -90, null, true );
+    }
+    
+    update_option( 'yatco_daily_sync_history', $history, false );
     update_option( 'yatco_daily_sync_results', $sync_results, false );
     update_option( 'yatco_daily_sync_last_run', time(), false );
     

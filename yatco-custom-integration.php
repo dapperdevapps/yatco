@@ -37,6 +37,9 @@ register_activation_hook( __FILE__, 'yatco_create_cpt' );
 // Register shortcode on init
 add_action( 'init', 'yatco_register_shortcode' );
 
+// Schedule Daily Sync on init (if enabled)
+add_action( 'init', 'yatco_schedule_next_daily_sync' );
+
 // Register update all vessels hook
 add_action( 'yatco_warm_cache_hook', 'yatco_warm_cache_function' );
 
@@ -69,15 +72,80 @@ add_action( 'yatco_full_import_hook', function() {
 
 // Register daily sync hook
 add_action( 'yatco_daily_sync_hook', function() {
+    // Check if Daily Sync is enabled
+    $options = get_option( 'yatco_api_settings', array() );
+    $enabled = isset( $options['yatco_daily_sync_enabled'] ) ? $options['yatco_daily_sync_enabled'] : 'no';
+    
+    if ( $enabled !== 'yes' ) {
+        yatco_log( 'Daily Sync: Hook triggered but Daily Sync is disabled in settings', 'info' );
+        return;
+    }
+    
     yatco_log( 'Daily Sync: Hook triggered via server cron', 'info' );
     $token = yatco_get_token();
     if ( ! empty( $token ) ) {
         yatco_log( 'Daily Sync: Token found, calling sync function', 'info' );
         yatco_daily_sync_check( $token );
+        
+        // Schedule next run based on frequency
+        yatco_schedule_next_daily_sync();
     } else {
         yatco_log( 'Daily Sync: Hook triggered but no token found', 'error' );
     }
 } );
+
+/**
+ * Schedule the next Daily Sync based on frequency settings.
+ */
+function yatco_schedule_next_daily_sync() {
+    $options = get_option( 'yatco_api_settings', array() );
+    $enabled = isset( $options['yatco_daily_sync_enabled'] ) ? $options['yatco_daily_sync_enabled'] : 'no';
+    $frequency = isset( $options['yatco_daily_sync_frequency'] ) ? $options['yatco_daily_sync_frequency'] : 'daily';
+    
+    if ( $enabled !== 'yes' ) {
+        // Clear any existing scheduled events if disabled
+        wp_clear_scheduled_hook( 'yatco_daily_sync_hook' );
+        return;
+    }
+    
+    // Calculate next run time based on frequency
+    $next_run = time();
+    switch ( $frequency ) {
+        case 'hourly':
+            $next_run = time() + 3600; // 1 hour
+            break;
+        case '6hours':
+            $next_run = time() + ( 6 * 3600 ); // 6 hours
+            break;
+        case '12hours':
+            $next_run = time() + ( 12 * 3600 ); // 12 hours
+            break;
+        case 'daily':
+            $next_run = time() + ( 24 * 3600 ); // 24 hours
+            break;
+        case '2days':
+            $next_run = time() + ( 2 * 24 * 3600 ); // 2 days
+            break;
+        case 'weekly':
+            $next_run = time() + ( 7 * 24 * 3600 ); // 7 days
+            break;
+        default:
+            $next_run = time() + ( 24 * 3600 ); // Default to daily
+    }
+    
+    // Clear existing scheduled events
+    wp_clear_scheduled_hook( 'yatco_daily_sync_hook' );
+    
+    // Schedule next run
+    wp_schedule_single_event( $next_run, 'yatco_daily_sync_hook' );
+    yatco_log( "Daily Sync: Next run scheduled for " . date( 'Y-m-d H:i:s', $next_run ) . " (frequency: {$frequency})", 'info' );
+}
+
+// Schedule Daily Sync when settings are saved
+add_action( 'update_option_yatco_api_settings', 'yatco_schedule_next_daily_sync_on_save', 10, 2 );
+function yatco_schedule_next_daily_sync_on_save( $old_value, $value ) {
+    yatco_schedule_next_daily_sync();
+}
 
 // AJAX handler to run Full Import directly (alternative to server cron)
 add_action( 'wp_ajax_yatco_run_full_import_direct', 'yatco_ajax_run_full_import_direct' );

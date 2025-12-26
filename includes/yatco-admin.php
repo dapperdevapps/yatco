@@ -65,6 +65,22 @@ function yatco_settings_init() {
         'yatco_api',
         'yatco_api_section'
     );
+
+    add_settings_field(
+        'yatco_daily_sync_enabled',
+        'Daily Sync',
+        'yatco_daily_sync_enabled_render',
+        'yatco_api',
+        'yatco_api_section'
+    );
+
+    add_settings_field(
+        'yatco_daily_sync_frequency',
+        'Daily Sync Frequency',
+        'yatco_daily_sync_frequency_render',
+        'yatco_api',
+        'yatco_api_section'
+    );
 }
 
 function yatco_settings_section_callback() {
@@ -91,6 +107,35 @@ function yatco_auto_refresh_cache_render() {
     echo '<input type="checkbox" name="yatco_api_settings[yatco_auto_refresh_cache]" value="yes" ' . checked( $enabled, 'yes', false ) . ' />';
     echo '<label>Automatically update all vessels every 6 hours</label>';
     echo '<p class="description">Enable this to automatically sync and update all vessels from the YATCO API every 6 hours. Requires a server cron job to be configured (see Troubleshooting tab).</p>';
+}
+
+function yatco_daily_sync_enabled_render() {
+    $options = get_option( 'yatco_api_settings' );
+    $enabled = isset( $options['yatco_daily_sync_enabled'] ) ? $options['yatco_daily_sync_enabled'] : 'no';
+    echo '<input type="checkbox" name="yatco_api_settings[yatco_daily_sync_enabled]" value="yes" ' . checked( $enabled, 'yes', false ) . ' />';
+    echo '<label>Enable automatic Daily Sync</label>';
+    echo '<p class="description">Enable this to automatically check for new, removed, or updated vessels based on the frequency setting below. Requires a server cron job to be configured.</p>';
+}
+
+function yatco_daily_sync_frequency_render() {
+    $options = get_option( 'yatco_api_settings' );
+    $frequency = isset( $options['yatco_daily_sync_frequency'] ) ? $options['yatco_daily_sync_frequency'] : 'daily';
+    
+    $frequencies = array(
+        'hourly' => 'Every Hour',
+        '6hours' => 'Every 6 Hours',
+        '12hours' => 'Every 12 Hours',
+        'daily' => 'Once Daily (Recommended)',
+        '2days' => 'Every 2 Days',
+        'weekly' => 'Once Weekly',
+    );
+    
+    echo '<select name="yatco_api_settings[yatco_daily_sync_frequency]">';
+    foreach ( $frequencies as $value => $label ) {
+        echo '<option value="' . esc_attr( $value ) . '" ' . selected( $frequency, $value, false ) . '>' . esc_html( $label ) . '</option>';
+    }
+    echo '</select>';
+    echo '<p class="description">How often to run Daily Sync. Daily Sync checks for new vessels, removed vessels, and updates prices/days on market for existing vessels.</p>';
 }
 
 /**
@@ -230,13 +275,42 @@ function yatco_options_page() {
         }
         echo '</div>';
         
-        // Daily Sync Button
+        // Daily Sync Section
         echo '<div style="background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 20px; margin: 20px 0;">';
         echo '<h3 style="margin-top: 0;">Daily Sync</h3>';
-        echo '<p style="color: #666; margin-bottom: 20px;">Check for new, removed, or updated vessels.</p>';
+        echo '<p style="color: #666; margin-bottom: 20px;">Check for new, removed, or updated vessels. Configure automatic scheduling in Settings tab.</p>';
+        
+        // Show current settings status
+        $options = get_option( 'yatco_api_settings', array() );
+        $sync_enabled = isset( $options['yatco_daily_sync_enabled'] ) ? $options['yatco_daily_sync_enabled'] : 'no';
+        $sync_frequency = isset( $options['yatco_daily_sync_frequency'] ) ? $options['yatco_daily_sync_frequency'] : 'daily';
+        
+        $frequency_labels = array(
+            'hourly' => 'Every Hour',
+            '6hours' => 'Every 6 Hours',
+            '12hours' => 'Every 12 Hours',
+            'daily' => 'Once Daily',
+            '2days' => 'Every 2 Days',
+            'weekly' => 'Once Weekly',
+        );
+        
+        echo '<div style="background: #f0f6fc; border-left: 4px solid #2271b1; padding: 12px; margin-bottom: 15px;">';
+        echo '<p style="margin: 0;"><strong>Automatic Sync:</strong> ';
+        if ( $sync_enabled === 'yes' ) {
+            echo '<span style="color: #46b450;">✓ Enabled</span> - ' . esc_html( $frequency_labels[ $sync_frequency ] ?? $sync_frequency );
+            $next_scheduled = wp_next_scheduled( 'yatco_daily_sync_hook' );
+            if ( $next_scheduled ) {
+                echo ' (Next run: ' . date( 'Y-m-d H:i:s', $next_scheduled ) . ')';
+            }
+        } else {
+            echo '<span style="color: #dc3232;">✗ Disabled</span>';
+        }
+        echo '</p>';
+        echo '</div>';
+        
         echo '<form method="post" style="margin: 0;">';
         wp_nonce_field( 'yatco_daily_sync', 'yatco_daily_sync_nonce' );
-        submit_button( 'Run Daily Sync', 'secondary', 'yatco_daily_sync', false, array( 'style' => 'font-size: 14px; padding: 10px 20px; height: auto;' ) );
+        submit_button( 'Run Daily Sync Now', 'secondary', 'yatco_daily_sync', false, array( 'style' => 'font-size: 14px; padding: 10px 20px; height: auto;' ) );
         echo '</form>';
         
         if ( isset( $_POST['yatco_daily_sync'] ) && check_admin_referer( 'yatco_daily_sync', 'yatco_daily_sync_nonce' ) ) {
@@ -247,6 +321,59 @@ function yatco_options_page() {
                 echo '<div class="notice notice-success" style="margin-top: 15px;"><p><strong>Daily Sync completed!</strong></p></div>';
             }
         }
+        
+        // Display Daily Sync History
+        $history = get_option( 'yatco_daily_sync_history', array() );
+        if ( ! empty( $history ) && is_array( $history ) ) {
+            echo '<hr style="margin: 30px 0;" />';
+            echo '<h4>Daily Sync History</h4>';
+            echo '<p style="color: #666; font-size: 13px; margin-bottom: 15px;">Last 30 days of Daily Sync results:</p>';
+            
+            // Sort by date (newest first)
+            krsort( $history );
+            $history = array_slice( $history, 0, 30, true ); // Show last 30 days
+            
+            echo '<div style="max-height: 400px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 10px;">';
+            echo '<table class="widefat" style="margin: 0;">';
+            echo '<thead>';
+            echo '<tr>';
+            echo '<th style="text-align: left; padding: 8px;">Date</th>';
+            echo '<th style="text-align: left; padding: 8px;">Time</th>';
+            echo '<th style="text-align: center; padding: 8px;">Removed</th>';
+            echo '<th style="text-align: center; padding: 8px;">New</th>';
+            echo '<th style="text-align: center; padding: 8px;">Price Updates</th>';
+            echo '<th style="text-align: center; padding: 8px;">Days on Market Updates</th>';
+            echo '</tr>';
+            echo '</thead>';
+            echo '<tbody>';
+            
+            foreach ( $history as $date => $result ) {
+                $timestamp = isset( $result['timestamp'] ) ? intval( $result['timestamp'] ) : 0;
+                $time_str = $timestamp > 0 ? date( 'H:i:s', $timestamp ) : 'N/A';
+                $removed = isset( $result['removed'] ) ? intval( $result['removed'] ) : 0;
+                $new = isset( $result['new'] ) ? intval( $result['new'] ) : 0;
+                $price_updates = isset( $result['price_updates'] ) ? intval( $result['price_updates'] ) : 0;
+                $days_updates = isset( $result['days_on_market_updates'] ) ? intval( $result['days_on_market_updates'] ) : 0;
+                
+                echo '<tr>';
+                echo '<td style="padding: 8px;">' . esc_html( $date ) . '</td>';
+                echo '<td style="padding: 8px; color: #666;">' . esc_html( $time_str ) . '</td>';
+                echo '<td style="text-align: center; padding: 8px;">' . ( $removed > 0 ? '<span style="color: #dc3232;">' . number_format( $removed ) . '</span>' : '0' ) . '</td>';
+                echo '<td style="text-align: center; padding: 8px;">' . ( $new > 0 ? '<span style="color: #46b450;">+' . number_format( $new ) . '</span>' : '0' ) . '</td>';
+                echo '<td style="text-align: center; padding: 8px;">' . ( $price_updates > 0 ? '<span style="color: #2271b1;">' . number_format( $price_updates ) . '</span>' : '0' ) . '</td>';
+                echo '<td style="text-align: center; padding: 8px;">' . ( $days_updates > 0 ? '<span style="color: #2271b1;">' . number_format( $days_updates ) . '</span>' : '0' ) . '</td>';
+                echo '</tr>';
+            }
+            
+            echo '</tbody>';
+            echo '</table>';
+            echo '</div>';
+        } else {
+            echo '<hr style="margin: 30px 0;" />';
+            echo '<h4>Daily Sync History</h4>';
+            echo '<p style="color: #666; font-size: 13px;">No sync history yet. Run Daily Sync to start tracking results.</p>';
+        }
+        
         echo '</div>';
         
         echo '<hr style="margin: 30px 0;" />';
