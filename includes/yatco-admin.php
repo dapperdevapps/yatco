@@ -1137,7 +1137,19 @@ function yatco_options_page() {
         if ( is_wp_error( $response ) ) {
             echo '⚠️ wp-cron.php request failed: ' . esc_html( $response->get_error_message() ) . '<br />';
         } else {
-            echo '✅ wp-cron.php request sent (non-blocking)<br />';
+            $response_code = wp_remote_retrieve_response_code( $response );
+            if ( $response_code == 404 ) {
+                echo '❌ <strong>404 Error:</strong> wp-cron.php not found at <code>' . esc_url( site_url( 'wp-cron.php?doing_wp_cron' ) ) . '</code><br />';
+                echo '<div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px; margin: 10px 0;">';
+                echo '<p style="margin: 5px 0;"><strong>This is likely a subdomain document root issue.</strong></p>';
+                echo '<p style="margin: 5px 0;">If you\'re using a subdomain, the document root may not point to your WordPress installation. See the "Subdomain Document Root Issue" section below for solutions.</p>';
+                echo '<p style="margin: 5px 0;"><strong>Note:</strong> Your server cron job (using direct PHP) will still work fine. This only affects HTTP-based tests.</p>';
+                echo '</div>';
+            } elseif ( $response_code >= 200 && $response_code < 300 ) {
+                echo '✅ wp-cron.php request sent successfully (HTTP ' . esc_html( $response_code ) . ')<br />';
+            } else {
+                echo '⚠️ wp-cron.php request returned HTTP ' . esc_html( $response_code ) . '<br />';
+            }
         }
         
         echo '<br />⏳ Checking if cron ran (waiting up to 8 seconds)...<br />';
@@ -1270,16 +1282,36 @@ function yatco_options_page() {
     echo '<code style="background: #f5f5f5; padding: 2px 5px;">systemctl status cron</code> (systemd) or <code>service crond status</code> (init.d)</li>';
     echo '<li><strong>Alternative with full path:</strong> If curl path is unknown, use wget instead:<br />';
     echo '<code style="background: #f5f5f5; padding: 2px 5px;">*/5 * * * * /usr/bin/wget -q -O - ' . esc_url( site_url( 'wp-cron.php?doing_wp_cron' ) ) . ' > /dev/null 2>&1</code></li>';
-    echo '<li><strong>Getting 404 Error?</strong> If <code>wp-cron.php</code> returns a 404 page, this means URL rewriting is blocking direct access. <strong>Use Direct PHP Execution (BEST) or WP-CLI:</strong><br />';
+    echo '<li><strong>Getting 404 Error?</strong> If <code>wp-cron.php</code> returns a 404 page, this could be URL rewriting OR a subdomain document root issue. <strong>Solutions:</strong><br />';
     echo '<ul style="margin-top: 5px; margin-left: 20px;">';
-    echo '<li><strong>Best Solution:</strong> Use Direct PHP Execution: <code style="background: #f5f5f5; padding: 2px 5px;">*/5 * * * * /usr/bin/php -q ' . esc_html( ABSPATH ) . 'wp-cron.php > /dev/null 2>&1</code></li>';
-    echo '<li>Find PHP path: Run <code>which php</code> or <code>whereis php</code> on your server</li>';
+    echo '<li><strong>For Server Cron (Always Works):</strong> Use Direct PHP Execution: <code style="background: #f5f5f5; padding: 2px 5px;">*/5 * * * * /usr/bin/php -q ' . esc_html( ABSPATH ) . 'wp-cron.php > /dev/null 2>&1</code></li>';
+    echo '<li><strong>For Plugin HTTP Test (If 404 on subdomain):</strong> See "Subdomain Document Root Issue" section below</li>';
     echo '<li><strong>Alternative:</strong> Use WP-CLI: <code style="background: #f5f5f5; padding: 2px 5px;">*/5 * * * * cd ' . esc_html( ABSPATH ) . ' && /usr/local/bin/wp cron event run --due-now > /dev/null 2>&1</code></li>';
+    echo '<li>Find PHP path: Run <code>which php</code> or <code>whereis php</code> on your server</li>';
     echo '<li>Find WP-CLI path: Run <code>which wp</code> or <code>whereis wp</code> on your server</li>';
-    echo '<li>If WP-CLI not installed, install it: <code>curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar && chmod +x wp-cli.phar && sudo mv wp-cli.phar /usr/local/bin/wp</code></li>';
     echo '<li>Verify file exists: SSH and check <code>ls -la ' . esc_html( ABSPATH ) . 'wp-cron.php</code></li>';
     echo '</ul></li>';
     echo '</ol>';
+    echo '</div>';
+    
+    echo '<h4 style="margin-top: 20px; margin-bottom: 10px;">🌐 Subdomain Document Root Issue</h4>';
+    echo '<div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 10px 0;">';
+    echo '<p><strong>Problem:</strong> If you\'re using a subdomain (e.g., <code>dev.example.com</code>) and the plugin\'s "Test WP-Cron" button fails with a 404 error, this is likely because:</p>';
+    echo '<ul style="margin-left: 20px; padding-left: 10px;">';
+    echo '<li>The subdomain\'s document root doesn\'t point to your WordPress installation</li>';
+    echo '<li><code>wp-cron.php</code> exists in WordPress, but not accessible via HTTP on the subdomain</li>';
+    echo '<li>Server cron works fine (using direct PHP), but HTTP tests fail</li>';
+    echo '</ul>';
+    echo '<p><strong>Solution 1 (Preferred):</strong> Update the subdomain\'s document root in your web server configuration to point to your WordPress installation directory:</p>';
+    echo '<pre style="background: #f5f5f5; padding: 10px; border: 1px solid #ddd; overflow-x: auto;">DocumentRoot ' . esc_html( ABSPATH ) . '</pre>';
+    echo '<p style="font-size: 12px; color: #666; margin: 5px 0;">This allows <code>' . esc_url( site_url( 'wp-cron.php' ) ) . '</code> to execute the real file.</p>';
+    echo '<p><strong>Solution 2 (Fallback):</strong> If you cannot change the document root, create a bridge file at the subdomain\'s document root:</p>';
+    echo '<p style="font-size: 12px; color: #666; margin: 5px 0;">Create: <code>/path/to/subdomain/document/root/wp-cron.php</code></p>';
+    echo '<pre style="background: #f5f5f5; padding: 10px; border: 1px solid #ddd; overflow-x: auto;">&lt;?php
+require_once \'' . esc_html( ABSPATH ) . 'wp-cron.php\';
+</pre>';
+    echo '<p style="font-size: 12px; color: #666; margin: 5px 0;"><strong>Note:</strong> Replace <code>/path/to/subdomain/document/root/</code> with your actual subdomain document root path. This forwards HTTP cron calls to the real WordPress cron file.</p>';
+    echo '<p style="font-size: 12px; color: #666; margin: 5px 0;"><strong>Important:</strong> Do NOT remove your existing server cron job. The bridge file only fixes HTTP-based tests.</p>';
     echo '</div>';
     
     echo '<p style="font-size: 12px; color: #666; margin-top: 10px;">Add this to your server\'s crontab using <code>crontab -e</code> (SSH) or through your hosting control panel (cPanel, Plesk, etc.).</p>';
