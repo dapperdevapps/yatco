@@ -663,7 +663,7 @@ function yatco_full_import( $token ) {
     }
     
     set_transient( 'yatco_cache_warming_status', 'Full Import: Fetching vessel IDs...', 600 );
-    yatco_log( 'Full Import: Fetching all active vessel IDs', 'info' );
+    yatco_log( "Full Import: Fetching all active vessel IDs (Process ID: {$process_id})", 'info' );
     
     // Enable auto-resume if not already set (for fresh imports)
     $auto_resume = get_option( 'yatco_import_auto_resume', false );
@@ -674,6 +674,15 @@ function yatco_full_import( $token ) {
     
     // Fetch all active vessel IDs
     $vessel_ids = yatco_get_active_vessel_ids( $token, 0 );
+    
+    // After fetching vessel IDs, verify we still own the lock
+    $lock_process_id_after_fetch = get_option( 'yatco_import_process_id', false );
+    if ( $lock_process_id_after_fetch !== false && $lock_process_id_after_fetch !== $process_id ) {
+        yatco_log( "Full Import: Lock ownership changed after fetching vessel IDs ({$lock_process_id_after_fetch} vs {$process_id}), stopping", 'warning' );
+        delete_option( 'yatco_import_lock' );
+        delete_option( 'yatco_import_process_id' );
+        return; // Another process took over, stop this one
+    }
     
     if ( is_wp_error( $vessel_ids ) ) {
         delete_option( 'yatco_import_lock' ); // Release lock
@@ -812,6 +821,21 @@ function yatco_full_import( $token ) {
     $batch_number = 0;
     foreach ( array_chunk( $vessel_ids, $batch_size ) as $batch ) {
         $batch_number++;
+        
+        // CRITICAL: Check if this process still owns the lock before each batch
+        // This prevents multiple imports from running simultaneously
+        $lock_process_id = get_option( 'yatco_import_process_id', false );
+        if ( $lock_process_id !== false && $lock_process_id !== $process_id ) {
+            yatco_log( "Full Import: Lock owned by different process ({$lock_process_id} vs {$process_id}) at batch {$batch_number}, stopping to prevent progress conflicts", 'warning' );
+            return; // Another process owns the lock, stop this one immediately
+        }
+        
+        // Also check if lock still exists (might have been released)
+        $current_lock = get_option( 'yatco_import_lock', false );
+        if ( $current_lock === false ) {
+            yatco_log( "Full Import: Import lock was released at batch {$batch_number}, stopping", 'warning' );
+            return; // Lock was released (probably by stop button), stop this import
+        }
         
         // Reset execution time limit periodically to prevent timeout
         @set_time_limit( 300 ); // Reset to 5 minutes for each batch
