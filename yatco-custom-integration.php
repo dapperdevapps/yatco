@@ -57,7 +57,7 @@ add_action( 'yatco_full_import_hook', function() {
         }
     }
     
-    yatco_log( 'Full Import: Hook triggered via WP-Cron', 'info' );
+    yatco_log( 'Full Import: Hook triggered via server cron', 'info' );
     $token = yatco_get_token();
     if ( ! empty( $token ) ) {
         yatco_log( 'Full Import: Token found, calling import function', 'info' );
@@ -69,7 +69,7 @@ add_action( 'yatco_full_import_hook', function() {
 
 // Register daily sync hook
 add_action( 'yatco_daily_sync_hook', function() {
-    yatco_log( 'Daily Sync: Hook triggered via WP-Cron', 'info' );
+    yatco_log( 'Daily Sync: Hook triggered via server cron', 'info' );
     $token = yatco_get_token();
     if ( ! empty( $token ) ) {
         yatco_log( 'Daily Sync: Token found, calling sync function', 'info' );
@@ -79,7 +79,7 @@ add_action( 'yatco_daily_sync_hook', function() {
     }
 } );
 
-// AJAX handler to run Full Import directly (for when WP-Cron isn't working)
+// AJAX handler to run Full Import directly (alternative to server cron)
 add_action( 'wp_ajax_yatco_run_full_import_direct', 'yatco_ajax_run_full_import_direct' );
 function yatco_ajax_run_full_import_direct() {
     check_ajax_referer( 'yatco_run_full_import', 'nonce' );

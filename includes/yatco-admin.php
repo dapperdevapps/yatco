@@ -1013,19 +1013,37 @@ function yatco_options_page() {
     
     echo '<tr><td><strong>Hooks Registered:</strong></td><td>';
     $hooks_registered = array();
-    if ( isset( $wp_filter['yatco_warm_cache_hook'] ) ) {
-        $hooks_registered[] = 'yatco_warm_cache_hook';
+    global $wp_filter;
+    // Check if hooks are registered using multiple methods for reliability
+    if ( isset( $wp_filter ) && is_object( $wp_filter ) ) {
+        if ( isset( $wp_filter->callbacks['yatco_warm_cache_hook'] ) || isset( $wp_filter['yatco_warm_cache_hook'] ) ) {
+            $hooks_registered[] = 'yatco_warm_cache_hook';
+        }
+        if ( isset( $wp_filter->callbacks['yatco_full_import_hook'] ) || isset( $wp_filter['yatco_full_import_hook'] ) ) {
+            $hooks_registered[] = 'yatco_full_import_hook';
+        }
+        if ( isset( $wp_filter->callbacks['yatco_daily_sync_hook'] ) || isset( $wp_filter['yatco_daily_sync_hook'] ) ) {
+            $hooks_registered[] = 'yatco_daily_sync_hook';
+        }
     }
-    if ( isset( $wp_filter['yatco_full_import_hook'] ) ) {
-        $hooks_registered[] = 'yatco_full_import_hook';
-    }
-    if ( isset( $wp_filter['yatco_daily_sync_hook'] ) ) {
-        $hooks_registered[] = 'yatco_daily_sync_hook';
+    // Alternative check: verify functions exist (hooks are registered in yatco-custom-integration.php)
+    if ( empty( $hooks_registered ) ) {
+        // Check if the hook registration file is loaded by checking if functions exist
+        if ( has_action( 'yatco_warm_cache_hook' ) || function_exists( 'yatco_warm_cache_function' ) ) {
+            $hooks_registered[] = 'yatco_warm_cache_hook';
+        }
+        if ( has_action( 'yatco_full_import_hook' ) ) {
+            $hooks_registered[] = 'yatco_full_import_hook';
+        }
+        if ( has_action( 'yatco_daily_sync_hook' ) ) {
+            $hooks_registered[] = 'yatco_daily_sync_hook';
+        }
     }
     if ( ! empty( $hooks_registered ) ) {
         echo '<span style="color: #46b450;">✔ Registered: ' . esc_html( implode( ', ', $hooks_registered ) ) . '</span>';
     } else {
         echo '<span style="color: #dc3232;">❌ No hooks registered</span>';
+        echo '<br /><span style="color: #666; font-size: 12px;">Note: Hooks are required for server cron to trigger scheduled events. If you see "No hooks registered", check that the plugin files are loaded correctly.</span>';
     }
     echo '</td></tr>';
     
@@ -1118,7 +1136,7 @@ function yatco_options_page() {
     }
     
     echo '<h3>Manual Cache Warming (Direct)</h3>';
-    echo '<p>If WP-Cron is not working, you can run the cache warming function directly. This will block until complete.</p>';
+    echo '<p>You can run the cache warming function directly from this page. This will block until complete.</p>';
     
     echo '<form method="post" style="margin-bottom: 15px;">';
     wp_nonce_field( 'yatco_manual_trigger', 'yatco_manual_trigger_nonce' );
@@ -1168,9 +1186,9 @@ function yatco_options_page() {
         }
     }
     
-    echo '<h3>Server Cron Setup (Optional but Recommended)</h3>';
+    echo '<h3>Server Cron Setup (Required for Auto-Resume & Cache Warming)</h3>';
     echo '<div style="background: #fff; border: 1px solid #ddd; padding: 15px; margin: 10px 0;">';
-    echo '<p>Set up a real cron job on your server to help with auto-resume and cache warming. <strong>This is optional but recommended for production sites.</strong></p>';
+    echo '<p>Set up a server cron job to enable auto-resume and automatic cache warming. <strong>This is required if you want these features to work automatically.</strong></p>';
     echo '<div style="background: #e7f3ff; border-left: 4px solid #2271b1; padding: 10px; margin: 15px 0;">';
     echo '<p style="margin: 5px 0; font-weight: bold;">ℹ️ What the Server Cron Does:</p>';
     echo '<ul style="margin: 5px 0 0 20px; padding-left: 10px; font-size: 13px;">';
@@ -1182,9 +1200,9 @@ function yatco_options_page() {
     echo '<p style="margin: 5px 0; font-size: 13px;"><strong>Note:</strong> The numbers in cron schedules (like <code>*/5</code>, <code>*/15</code>) represent minutes. <code>*/5</code> means every 5 minutes, <code>*/15</code> means every 15 minutes, etc.</p>';
     echo '</div>';
     
-    echo '<p style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px; margin: 15px 0;"><strong>⚠️ Important:</strong> If you\'re using WP-CLI (<code>wp cron event run --due-now</code>), make sure WP-CLI is installed and accessible from your cron job.</p>';
+    echo '<p style="background: #e7f3ff; border-left: 4px solid #2271b1; padding: 10px; margin: 15px 0;"><strong>💡 Recommended:</strong> Use <strong>Option 1 (Direct PHP)</strong> - it\'s the most reliable method and works even if <code>wp-cron.php</code> is not accessible via HTTP.</p>';
     
-    echo '<p style="background: #dc3232; border-left: 4px solid #dc3232; padding: 10px; margin: 10px 0;"><strong>⚠️ IMPORTANT:</strong> If <code>wp-cron.php</code> returns a 404 error (URL rewriting blocking access), use <strong>Option 1 (Direct PHP)</strong> or <strong>Option 2 (WP-CLI)</strong> instead of curl/wget.</p>';
+    echo '<p style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px; margin: 10px 0;"><strong>⚠️ Note:</strong> If you\'re using WP-CLI (<code>wp cron event run --due-now</code>), make sure WP-CLI is installed and accessible from your cron job.</p>';
     
     echo '<p><strong>Option 1: Direct PHP Execution (RECOMMENDED - Works even if wp-cron.php returns 404)</strong></p>';
     echo '<pre style="background: #f5f5f5; padding: 10px; border: 1px solid #ddd; overflow-x: auto;">*/5 * * * * /usr/bin/php -q ' . esc_html( ABSPATH ) . 'wp-cron.php > /dev/null 2>&1</pre>';
@@ -1198,11 +1216,13 @@ function yatco_options_page() {
     echo '<p style="font-size: 12px; color: #666; margin: 5px 0;">Common WP-CLI paths: <code>/usr/local/bin/wp</code>, <code>/usr/bin/wp</code>, <code>/opt/cpanel/ea-php81/root/usr/bin/wp</code>, or <code>wp</code> (if in PATH)</p>';
     echo '<p style="font-size: 12px; color: #666; margin: 5px 0;">To find WP-CLI path, run: <code>which wp</code> or <code>whereis wp</code> on your server</p>';
     
-    echo '<p><strong>Option 3: Using curl (Only if wp-cron.php is accessible via HTTP)</strong></p>';
+    echo '<p><strong>Option 3: Using curl (Only if wp-cron.php is accessible via HTTP - Not Recommended)</strong></p>';
+    echo '<p style="font-size: 12px; color: #dc3232; margin: 5px 0;"><strong>⚠️ Warning:</strong> This method may fail if <code>wp-cron.php</code> is not accessible via HTTP (common with subdomains or URL rewriting). Use Option 1 instead.</p>';
     echo '<pre style="background: #f5f5f5; padding: 10px; border: 1px solid #ddd; overflow-x: auto;">*/5 * * * * curl -s ' . esc_url( site_url( 'wp-cron.php?doing_wp_cron' ) ) . ' > /dev/null 2>&1</pre>';
     echo '<p style="font-size: 12px; color: #666; margin: 5px 0;"><strong>If curl doesn\'t work, try with full path:</strong> <code>*/5 * * * * /usr/bin/curl -s ' . esc_url( site_url( 'wp-cron.php?doing_wp_cron' ) ) . ' > /dev/null 2>&1</code></p>';
     
-    echo '<p><strong>Option 4: Using wget (Only if wp-cron.php is accessible via HTTP)</strong></p>';
+    echo '<p><strong>Option 4: Using wget (Only if wp-cron.php is accessible via HTTP - Not Recommended)</strong></p>';
+    echo '<p style="font-size: 12px; color: #dc3232; margin: 5px 0;"><strong>⚠️ Warning:</strong> This method may fail if <code>wp-cron.php</code> is not accessible via HTTP. Use Option 1 instead.</p>';
     echo '<pre style="background: #f5f5f5; padding: 10px; border: 1px solid #ddd; overflow-x: auto;">*/5 * * * * wget -q -O - ' . esc_url( site_url( 'wp-cron.php?doing_wp_cron' ) ) . ' > /dev/null 2>&1</pre>';
     
     echo '<p style="background: #e7f3ff; border-left: 4px solid #2271b1; padding: 10px; margin: 15px 0;"><strong>💡 Tip:</strong> After setting up the cron job, wait a few minutes and check the "Last Status" above to see if scheduled events are running. You can also check your server\'s cron logs to verify the job is executing.</p>';
@@ -1213,11 +1233,11 @@ function yatco_options_page() {
     echo '<ol style="margin-left: 20px; padding-left: 10px;">';
     echo '<li><strong>Use SPACES, not TABS:</strong> Crontab requires spaces between fields. Your entry should look like:<br />';
     echo '<code style="background: #f5f5f5; padding: 2px 5px;">*/5 * * * * curl -s ...</code> (spaces between each field)</li>';
-    echo '<li><strong>Use full path to curl:</strong> If <code>curl</code> doesn\'t work, try using the full path:<br />';
-    echo '<code style="background: #f5f5f5; padding: 2px 5px;">*/5 * * * * /usr/bin/curl -s ' . esc_url( site_url( 'wp-cron.php?doing_wp_cron' ) ) . ' > /dev/null 2>&1</code><br />';
-    echo 'Common paths: <code>/usr/bin/curl</code>, <code>/usr/local/bin/curl</code>, or <code>/bin/curl</code></li>';
+    echo '<li><strong>Use Direct PHP (Recommended):</strong> Instead of curl/wget, use direct PHP execution which always works:<br />';
+    echo '<code style="background: #f5f5f5; padding: 2px 5px;">*/5 * * * * /usr/bin/php -q ' . esc_html( ABSPATH ) . 'wp-cron.php > /dev/null 2>&1</code><br />';
+    echo 'To find PHP path, run: <code>which php</code> or <code>whereis php</code> on your server</li>';
     echo '<li><strong>Test the command manually:</strong> SSH into your server and run:<br />';
-    echo '<code style="background: #f5f5f5; padding: 2px 5px;">curl -s ' . esc_url( site_url( 'wp-cron.php?doing_wp_cron' ) ) . '</code><br />';
+    echo '<code style="background: #f5f5f5; padding: 2px 5px;">/usr/bin/php -q ' . esc_html( ABSPATH ) . 'wp-cron.php</code><br />';
     echo 'If this works, the issue is with the cron format or cron service.</li>';
     echo '<li><strong>Check cron logs:</strong> View cron execution logs with:<br />';
     echo '<code style="background: #f5f5f5; padding: 2px 5px;">grep CRON /var/log/syslog</code> (Linux) or check your hosting control panel\'s cron logs</li>';
@@ -1225,11 +1245,10 @@ function yatco_options_page() {
     echo '<code style="background: #f5f5f5; padding: 2px 5px;">systemctl status cron</code> (systemd) or <code>service crond status</code> (init.d)</li>';
     echo '<li><strong>Alternative with full path:</strong> If curl path is unknown, use wget instead:<br />';
     echo '<code style="background: #f5f5f5; padding: 2px 5px;">*/5 * * * * /usr/bin/wget -q -O - ' . esc_url( site_url( 'wp-cron.php?doing_wp_cron' ) ) . ' > /dev/null 2>&1</code></li>';
-    echo '<li><strong>Getting 404 Error?</strong> If <code>wp-cron.php</code> returns a 404 page, this could be URL rewriting OR a subdomain document root issue. <strong>Solutions:</strong><br />';
+    echo '<li><strong>Getting 404 Error with curl/wget?</strong> If <code>wp-cron.php</code> returns a 404 page when accessed via HTTP, this is normal for subdomains or URL rewriting. <strong>Solution:</strong><br />';
     echo '<ul style="margin-top: 5px; margin-left: 20px;">';
-    echo '<li><strong>For Server Cron (Always Works):</strong> Use Direct PHP Execution: <code style="background: #f5f5f5; padding: 2px 5px;">*/5 * * * * /usr/bin/php -q ' . esc_html( ABSPATH ) . 'wp-cron.php > /dev/null 2>&1</code></li>';
-    echo '<li><strong>For Plugin HTTP Test (If 404 on subdomain):</strong> See "Subdomain Document Root Issue" section below</li>';
-    echo '<li><strong>Alternative:</strong> Use WP-CLI: <code style="background: #f5f5f5; padding: 2px 5px;">*/5 * * * * cd ' . esc_html( ABSPATH ) . ' && /usr/local/bin/wp cron event run --due-now > /dev/null 2>&1</code></li>';
+    echo '<li><strong>Use Direct PHP Execution (Option 1):</strong> This always works regardless of HTTP access: <code style="background: #f5f5f5; padding: 2px 5px;">*/5 * * * * /usr/bin/php -q ' . esc_html( ABSPATH ) . 'wp-cron.php > /dev/null 2>&1</code></li>';
+    echo '<li><strong>Alternative:</strong> Use WP-CLI (Option 2): <code style="background: #f5f5f5; padding: 2px 5px;">*/5 * * * * cd ' . esc_html( ABSPATH ) . ' && /usr/local/bin/wp cron event run --due-now > /dev/null 2>&1</code></li>';
     echo '<li>Find PHP path: Run <code>which php</code> or <code>whereis php</code> on your server</li>';
     echo '<li>Find WP-CLI path: Run <code>which wp</code> or <code>whereis wp</code> on your server</li>';
     echo '<li>Verify file exists: SSH and check <code>ls -la ' . esc_html( ABSPATH ) . 'wp-cron.php</code></li>';
@@ -1237,22 +1256,16 @@ function yatco_options_page() {
     echo '</ol>';
     echo '</div>';
     
-    echo '<h4 style="margin-top: 20px; margin-bottom: 10px;">🌐 Subdomain Document Root Issue</h4>';
-    echo '<div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 10px 0;">';
-    echo '<p><strong>Problem:</strong> If you\'re using a subdomain (e.g., <code>dev.example.com</code>) and <code>wp-cron.php</code> returns a 404 error when accessed via HTTP, this is likely because:</p>';
+    echo '<h4 style="margin-top: 20px; margin-bottom: 10px;">💡 Why Use Direct PHP Execution?</h4>';
+    echo '<div style="background: #e7f3ff; border-left: 4px solid #2271b1; padding: 15px; margin: 10px 0;">';
+    echo '<p><strong>Direct PHP execution (Option 1) is the recommended method because:</strong></p>';
     echo '<ul style="margin-left: 20px; padding-left: 10px;">';
-    echo '<li>The subdomain\'s document root doesn\'t point to your WordPress installation</li>';
-    echo '<li><code>wp-cron.php</code> exists in WordPress, but not accessible via HTTP on the subdomain</li>';
-    echo '<li>Server cron works fine (using direct PHP), but HTTP tests fail</li>';
+    echo '<li><strong>Always works</strong> - Doesn\'t depend on HTTP access to <code>wp-cron.php</code></li>';
+    echo '<li><strong>Works with subdomains</strong> - No issues with document root configuration</li>';
+    echo '<li><strong>Works with URL rewriting</strong> - Doesn\'t require HTTP access</li>';
+    echo '<li><strong>More reliable</strong> - Direct file execution is faster and more secure</li>';
     echo '</ul>';
-    echo '<p><strong>Solution 1 (Preferred):</strong> Update the subdomain\'s document root in your web server configuration to point to your WordPress installation directory:</p>';
-    echo '<pre style="background: #f5f5f5; padding: 10px; border: 1px solid #ddd; overflow-x: auto;">DocumentRoot ' . esc_html( ABSPATH ) . '</pre>';
-    echo '<p style="font-size: 12px; color: #666; margin: 5px 0;">This allows <code>' . esc_url( site_url( 'wp-cron.php' ) ) . '</code> to execute the real file.</p>';
-    echo '<p><strong>Solution 2 (Fallback):</strong> If you cannot change the document root, create a bridge file at the subdomain\'s document root:</p>';
-    echo '<p style="font-size: 12px; color: #666; margin: 5px 0;">Create: <code>/path/to/subdomain/document/root/wp-cron.php</code></p>';
-    echo '<pre style="background: #f5f5f5; padding: 10px; border: 1px solid #ddd; overflow-x: auto;">&lt;?php' . "\n" . 'require_once \'' . esc_html( ABSPATH ) . 'wp-cron.php\';' . "\n" . '</pre>';
-    echo '<p style="font-size: 12px; color: #666; margin: 5px 0;"><strong>Note:</strong> Replace <code>/path/to/subdomain/document/root/</code> with your actual subdomain document root path. This forwards HTTP cron calls to the real WordPress cron file.</p>';
-    echo '<p style="font-size: 12px; color: #666; margin: 5px 0;"><strong>Important:</strong> Do NOT remove your existing server cron job. The bridge file only fixes HTTP-based tests.</p>';
+    echo '<p style="font-size: 12px; color: #666; margin: 5px 0;"><strong>Note:</strong> If you see 404 errors when testing <code>wp-cron.php</code> via HTTP (curl/wget), this is normal and doesn\'t affect server cron. Just use Option 1 (Direct PHP) for your cron job.</p>';
     echo '</div>';
     
     echo '<p style="font-size: 12px; color: #666; margin-top: 10px;">Add this to your server\'s crontab using <code>crontab -e</code> (SSH) or through your hosting control panel (cPanel, Plesk, etc.).</p>';
