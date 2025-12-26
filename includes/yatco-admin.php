@@ -60,7 +60,7 @@ function yatco_settings_init() {
 
     add_settings_field(
         'yatco_auto_refresh_cache',
-        'Auto-Refresh Cache',
+        'Auto-Update Vessels',
         'yatco_auto_refresh_cache_render',
         'yatco_api',
         'yatco_api_section'
@@ -89,8 +89,8 @@ function yatco_auto_refresh_cache_render() {
     $options = get_option( 'yatco_api_settings' );
     $enabled = isset( $options['yatco_auto_refresh_cache'] ) ? $options['yatco_auto_refresh_cache'] : 'no';
     echo '<input type="checkbox" name="yatco_api_settings[yatco_auto_refresh_cache]" value="yes" ' . checked( $enabled, 'yes', false ) . ' />';
-    echo '<label>Automatically refresh cache every 6 hours</label>';
-    echo '<p class="description">Enable this to automatically pre-load the cache every 6 hours. Requires a server cron job to be configured (see Troubleshooting tab).</p>';
+    echo '<label>Automatically update all vessels every 6 hours</label>';
+    echo '<p class="description">Enable this to automatically sync and update all vessels from the YATCO API every 6 hours. Requires a server cron job to be configured (see Troubleshooting tab).</p>';
 }
 
 /**
@@ -529,7 +529,7 @@ function yatco_options_page() {
                 yatco_log( '🛑 IMPORT STOP: Cancelled scheduled Full Import event', 'warning' );
             }
             if ( $scheduled_warm !== false ) {
-                yatco_log( '🛑 IMPORT STOP: Cancelled scheduled warm cache event', 'warning' );
+                yatco_log( '🛑 IMPORT STOP: Cancelled scheduled update all vessels event', 'warning' );
             }
             
             // Force clear progress immediately from cache and database
@@ -1003,7 +1003,7 @@ function yatco_options_page() {
     echo '<table class="widefat" style="margin-bottom: 20px;">';
     echo '<tr><th style="text-align: left; width: 250px;">Check</th><th style="text-align: left;">Status</th></tr>';
     
-    echo '<tr><td><strong>Cache Warming Function:</strong></td><td>';
+    echo '<tr><td><strong>Update All Vessels Function:</strong></td><td>';
     if ( function_exists( 'yatco_warm_cache_function' ) ) {
         echo '<span style="color: #46b450;">✔ Available</span>';
     } else {
@@ -1059,7 +1059,7 @@ function yatco_options_page() {
         $scheduled_events[] = 'Daily Sync: ' . date( 'Y-m-d H:i:s', $scheduled_sync );
     }
     if ( $scheduled_warm ) {
-        $scheduled_events[] = 'Warm Cache: ' . date( 'Y-m-d H:i:s', $scheduled_warm );
+        $scheduled_events[] = 'Update All Vessels: ' . date( 'Y-m-d H:i:s', $scheduled_warm );
     }
     if ( ! empty( $scheduled_events ) ) {
         echo '<span style="color: #ff9800;">⚠ ' . esc_html( implode( '<br />', $scheduled_events ) ) . '</span>';
@@ -1103,9 +1103,9 @@ function yatco_options_page() {
             echo '<div class="notice notice-error"><p>Missing token.</p></div>';
         } else {
             if ( function_exists( 'yatco_warm_cache_function' ) ) {
-                echo '<div class="notice notice-success"><p>✅ Cache warming function is available.</p></div>';
+                echo '<div class="notice notice-success"><p>✅ Update All Vessels function is available.</p></div>';
             } else {
-                echo '<div class="notice notice-error"><p>❌ Cache warming function is NOT available. Check if yatco-cache.php is loaded.</p></div>';
+                echo '<div class="notice notice-error"><p>❌ Update All Vessels function is NOT available. Check if yatco-cache.php is loaded.</p></div>';
             }
             
             if ( isset( $wp_filter['yatco_warm_cache_hook'] ) ) {
@@ -1135,12 +1135,12 @@ function yatco_options_page() {
         }
     }
     
-    echo '<h3>Manual Cache Warming (Direct)</h3>';
-    echo '<p>You can run the cache warming function directly from this page. This will block until complete.</p>';
+    echo '<h3>Update All Vessels (Manual)</h3>';
+    echo '<p>Update and sync all vessels from the YATCO API. This will fetch the latest data for all active vessels and update existing posts or create new ones. This will block until complete.</p>';
     
     echo '<form method="post" style="margin-bottom: 15px;">';
     wp_nonce_field( 'yatco_manual_trigger', 'yatco_manual_trigger_nonce' );
-    submit_button( 'Run Cache Warming Function NOW (Direct)', 'primary large', 'yatco_manual_trigger', false, array( 'style' => 'font-size: 14px; padding: 8px 16px; height: auto;' ) );
+    submit_button( 'Update All Vessels NOW', 'primary large', 'yatco_manual_trigger', false, array( 'style' => 'font-size: 14px; padding: 8px 16px; height: auto;' ) );
     echo '</form>';
     
     if ( isset( $_POST['yatco_manual_trigger'] ) && check_admin_referer( 'yatco_manual_trigger', 'yatco_manual_trigger_nonce' ) ) {
@@ -1151,12 +1151,12 @@ function yatco_options_page() {
                 require_once YATCO_PLUGIN_DIR . 'includes/yatco-cache.php';
             }
             
-            set_transient( 'yatco_cache_warming_status', 'Starting direct cache warm-up...', 600 );
+            set_transient( 'yatco_cache_warming_status', 'Starting vessel update...', 600 );
             set_transient( 'yatco_cache_warming_progress', array( 'last_processed' => 0, 'total' => 0, 'timestamp' => time() ), 600 );
             
             echo '<div class="notice notice-info">';
-            echo '<p><strong>Starting direct cache warming...</strong></p>';
-            echo '<p>This will run synchronously (blocking) and may take several minutes. <strong>Do not close this page.</strong></p>';
+            echo '<p><strong>Starting vessel update...</strong></p>';
+            echo '<p>This will fetch and update all vessels from the YATCO API. This will run synchronously (blocking) and may take several minutes. <strong>Do not close this page.</strong></p>';
             echo '</div>';
             
             ob_flush();
@@ -1175,10 +1175,10 @@ function yatco_options_page() {
             $final_progress = get_transient( 'yatco_cache_warming_progress' );
             
             echo '<div class="notice notice-success">';
-            echo '<p><strong>Direct cache warming completed!</strong></p>';
+            echo '<p><strong>Vessel update completed!</strong></p>';
             if ( $final_progress !== false && is_array( $final_progress ) ) {
                 $processed = isset( $final_progress['processed'] ) ? intval( $final_progress['processed'] ) : 0;
-                echo '<p>Total vessels processed: <strong>' . number_format( $processed ) . '</strong></p>';
+                echo '<p>Total vessels updated: <strong>' . number_format( $processed ) . '</strong></p>';
             }
             echo '</div>';
             
@@ -1186,14 +1186,14 @@ function yatco_options_page() {
         }
     }
     
-    echo '<h3>Server Cron Setup (Required for Auto-Resume & Cache Warming)</h3>';
+    echo '<h3>Server Cron Setup (Required for Auto-Resume & Auto-Update)</h3>';
     echo '<div style="background: #fff; border: 1px solid #ddd; padding: 15px; margin: 10px 0;">';
-    echo '<p>Set up a server cron job to enable auto-resume and automatic cache warming. <strong>This is required if you want these features to work automatically.</strong></p>';
+    echo '<p>Set up a server cron job to enable auto-resume and automatic vessel updates. <strong>This is required if you want these features to work automatically.</strong></p>';
     echo '<div style="background: #e7f3ff; border-left: 4px solid #2271b1; padding: 10px; margin: 15px 0;">';
     echo '<p style="margin: 5px 0; font-weight: bold;">ℹ️ What the Server Cron Does:</p>';
     echo '<ul style="margin: 5px 0 0 20px; padding-left: 10px; font-size: 13px;">';
     echo '<li><strong>Helps with auto-resume</strong> - If an import times out, the server cron can help resume it automatically (if auto-resume is enabled)</li>';
-    echo '<li><strong>Runs cache warming</strong> - If "Auto-Refresh Cache" is enabled in settings, the server cron will run cache warming every 6 hours</li>';
+    echo '<li><strong>Runs automatic vessel updates</strong> - If "Auto-Update Vessels" is enabled in settings, the server cron will update all vessels every 6 hours</li>';
     echo '<li><strong>Does NOT start new imports</strong> - You must manually click "Run Full Import" or "Run Daily Sync" buttons to start imports</li>';
     echo '<li><strong>Recommended frequency:</strong> Every 5 minutes (<code>*/5 * * * *</code>) - This ensures scheduled events run promptly</li>';
     echo '</ul>';
@@ -1304,7 +1304,7 @@ function yatco_options_page() {
 }
 
 /**
- * AJAX handler to manually trigger cache warming.
+ * AJAX handler to manually trigger update all vessels.
  */
 function yatco_ajax_trigger_cache_warming() {
     check_ajax_referer( 'yatco_trigger_warming', 'nonce' );
@@ -1317,17 +1317,17 @@ function yatco_ajax_trigger_cache_warming() {
     delete_transient( 'yatco_cache_warming_progress' );
     delete_transient( 'yatco_cache_warming_status' );
     
-    set_transient( 'yatco_cache_warming_status', 'Starting cache warm-up...', 600 );
+    set_transient( 'yatco_cache_warming_status', 'Starting vessel update...', 600 );
     
     wp_schedule_single_event( time(), 'yatco_warm_cache_hook' );
     spawn_cron();
     
-    wp_send_json_success( array( 'message' => 'Cache warming started' ) );
+    wp_send_json_success( array( 'message' => 'Vessel update started' ) );
 }
 add_action( 'wp_ajax_yatco_trigger_cache_warming', 'yatco_ajax_trigger_cache_warming' );
 
 /**
- * AJAX handler to run cache warming directly (synchronous - for testing).
+ * AJAX handler to run update all vessels directly (synchronous - for testing).
  */
 function yatco_ajax_run_cache_warming_direct() {
     check_ajax_referer( 'yatco_run_warming_direct', 'nonce' );
@@ -1341,15 +1341,15 @@ function yatco_ajax_run_cache_warming_direct() {
         require_once YATCO_PLUGIN_DIR . 'includes/yatco-cache.php';
     }
     
-    set_transient( 'yatco_cache_warming_status', 'Starting direct cache warm-up...', 600 );
+    set_transient( 'yatco_cache_warming_status', 'Starting vessel update...', 600 );
     yatco_warm_cache_function();
     
-    wp_send_json_success( array( 'message' => 'Direct cache warming completed' ) );
+    wp_send_json_success( array( 'message' => 'Vessel update completed' ) );
 }
 add_action( 'wp_ajax_yatco_run_cache_warming_direct', 'yatco_ajax_run_cache_warming_direct' );
 
 /**
- * AJAX handler to get cache warming status and progress.
+ * AJAX handler to get update all vessels status and progress.
  */
 function yatco_ajax_get_cache_status() {
     check_ajax_referer( 'yatco_get_status', 'nonce' );

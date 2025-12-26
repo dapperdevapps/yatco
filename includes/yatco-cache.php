@@ -10,8 +10,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Warm cache function - pre-loads all vessels into cache.
- * This runs in the background via WP-Cron or manually.
+ * Update All Vessels function - syncs and updates all vessels from YATCO API.
+ * This runs in the background via server cron or manually.
  * 
  * Update Process:
  * 1. Fetches all active vessel IDs from YATCO API
@@ -30,7 +30,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  * - Fallback: Matches by VesselID (yacht_vessel_id meta field)
  * - This ensures vessels are properly updated even if MLSID changes
  * 
- * Updates are performed every time cache warming runs, ensuring CPT data
+ * Updates are performed every time this function runs, ensuring CPT data
  * stays synchronized with YATCO API data.
  */
 function yatco_warm_cache_function() {

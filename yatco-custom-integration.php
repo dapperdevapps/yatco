@@ -37,7 +37,7 @@ register_activation_hook( __FILE__, 'yatco_create_cpt' );
 // Register shortcode on init
 add_action( 'init', 'yatco_register_shortcode' );
 
-// Register cache warming hook
+// Register update all vessels hook
 add_action( 'yatco_warm_cache_hook', 'yatco_warm_cache_function' );
 
 // Register import hooks
