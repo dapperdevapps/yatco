@@ -13,33 +13,73 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Display Import Status & Progress section (reusable)
  */
 function yatco_display_import_status_section() {
-    // Check if import was stopped - if so, don't show progress
+    // Get all progress data - bypass cache to get fresh data
+    wp_cache_delete( 'yatco_import_progress', 'transient' );
+    wp_cache_delete( 'yatco_daily_sync_progress', 'transient' );
+    wp_cache_delete( 'yatco_cache_warming_status', 'transient' );
+    $import_progress = get_transient( 'yatco_import_progress' );
+    $daily_sync_progress = get_transient( 'yatco_daily_sync_progress' );
+    $cache_status_raw = get_transient( 'yatco_cache_warming_status' );
     $stop_flag = get_option( 'yatco_import_stop_flag', false );
-    if ( $stop_flag !== false ) {
-        // Import was stopped - clear any stale progress
-        delete_transient( 'yatco_import_progress' );
-        delete_transient( 'yatco_daily_sync_progress' );
-        wp_cache_delete( 'yatco_import_progress', 'transient' );
-        wp_cache_delete( 'yatco_daily_sync_progress', 'transient' );
-        $import_progress = false;
-        $daily_sync_progress = false;
-        $cache_status = 'Import stopped by user.';
-    } else {
-        // Get all progress data
-        $import_progress = get_transient( 'yatco_import_progress' );
-        $daily_sync_progress = get_transient( 'yatco_daily_sync_progress' );
-        $cache_status = get_transient( 'yatco_cache_warming_status' );
-    }
     
-    // Determine if import is active
+    // Determine if import or sync is active - check ACTIVE processes FIRST
     $active_stage = 0;
     $active_progress = null;
-    if ( $import_progress !== false && is_array( $import_progress ) ) {
-        $active_stage = 'full';
-        $active_progress = $import_progress;
-    } elseif ( $daily_sync_progress !== false && is_array( $daily_sync_progress ) ) {
+    
+    // Check for active daily sync first (takes priority)
+    if ( $daily_sync_progress !== false && is_array( $daily_sync_progress ) ) {
         $active_stage = 'daily_sync';
         $active_progress = $daily_sync_progress;
+        // If sync is active, clear stop flag (sync was started after stop)
+        if ( $stop_flag !== false ) {
+            delete_option( 'yatco_import_stop_flag' );
+            delete_transient( 'yatco_cache_warming_stop' );
+            $stop_flag = false;
+        }
+    } elseif ( $import_progress !== false && is_array( $import_progress ) ) {
+        // Check if import is actually active (not stopped)
+        if ( $stop_flag === false ) {
+            // No stop flag, import is active
+            $active_stage = 'full';
+            $active_progress = $import_progress;
+        } else {
+            // Stop flag is set but we have progress - check if status says stopped
+            // If status doesn't say stopped, clear the flag (it's stale)
+            if ( $cache_status_raw === false || stripos( $cache_status_raw, 'stopped' ) === false ) {
+                delete_option( 'yatco_import_stop_flag' );
+                delete_transient( 'yatco_cache_warming_stop' );
+                $stop_flag = false;
+                $active_stage = 'full';
+                $active_progress = $import_progress;
+            }
+        }
+    }
+    
+    // Determine cache status based on active processes
+    $cache_status = false;
+    if ( $active_stage !== 0 ) {
+        // Active process running - use status from transient
+        if ( $cache_status_raw !== false ) {
+            $cache_status = $cache_status_raw;
+        } elseif ( $active_stage === 'daily_sync' ) {
+            $cache_status = 'Daily Sync: Starting...';
+        } elseif ( $active_stage === 'full' ) {
+            $cache_status = 'Full Import: Starting...';
+        }
+    } elseif ( $stop_flag !== false ) {
+        // No active process and stop flag is set - show stopped status
+        if ( $cache_status_raw === false || stripos( $cache_status_raw, 'stopped' ) !== false ) {
+            $cache_status = 'Import stopped by user.';
+        } else {
+            // Stop flag is set but status doesn't say stopped - clear the flag (stale)
+            delete_option( 'yatco_import_stop_flag' );
+            delete_transient( 'yatco_cache_warming_stop' );
+            $stop_flag = false;
+            $cache_status = $cache_status_raw !== false ? $cache_status_raw : false;
+        }
+    } else {
+        // No active process and no stop flag - use status from transient or default
+        $cache_status = $cache_status_raw !== false ? $cache_status_raw : false;
     }
     
     echo '<h2>Import Status & Progress</h2>';
@@ -229,13 +269,31 @@ function yatco_display_import_status_section() {
     echo '                _ajax_nonce: ' . json_encode( wp_create_nonce( 'yatco_get_import_status_nonce' ) ) . '';
     echo '            },';
     echo '            cache: false,';
-            echo '            success: function(response) {';
-            echo '                if (response && response.success && response.data) {';
-            echo '                    if (response.data.active && response.data.progress) {';
-            echo '                        updateProgressBar(response.data.progress);';
-            echo '                    }';
-            echo '                }';
-            echo '            }';
+    echo '            success: function(response) {';
+    echo '                console.log("[YATCO] fetchProgress: AJAX response received", response);';
+    echo '                if (response && response.success && response.data) {';
+    echo '                    var data = response.data;';
+    echo '                    console.log("[YATCO] fetchProgress: Active =", data.active, "Progress =", data.progress);';
+    echo '                    if (data.active && data.progress) {';
+    echo '                        // Add status to progress data if available';
+    echo '                        if (data.status) {';
+    echo '                            data.progress.status = data.status;';
+    echo '                        }';
+    echo '                        updateProgressBar(data.progress);';
+    echo '                    } else if (!data.active) {';
+    echo '                        console.log("[YATCO] fetchProgress: Import is not active, clearing interval");';
+    echo '                        if (pollInterval) {';
+    echo '                            clearInterval(pollInterval);';
+    echo '                            pollInterval = null;';
+    echo '                        }';
+    echo '                    }';
+    echo '                } else {';
+    echo '                    console.warn("[YATCO] fetchProgress: Invalid response structure", response);';
+    echo '                }';
+    echo '            },';
+    echo '            error: function(xhr, status, error) {';
+    echo '                console.error("[YATCO] fetchProgress: AJAX error -", status, error);';
+    echo '            }';
     echo '        });';
     echo '    }';
     echo '    ';
@@ -244,12 +302,21 @@ function yatco_display_import_status_section() {
     echo '        console.log("[YATCO] Heartbeat tick received, data:", data);';
     echo '        if (data.yatco_import_progress) {';
     echo '            console.log("[YATCO] Heartbeat: Progress data found, updating display");';
-    echo '            // Heartbeat sends the full progress object, extract progress field if needed';
-    echo '            var progressData = data.yatco_import_progress.progress || data.yatco_import_progress;';
-    echo '            if (data.yatco_import_progress.status) {';
-    echo '                progressData.status = data.yatco_import_progress.status;';
+    echo '            var progressInfo = data.yatco_import_progress;';
+    echo '            if (progressInfo.active && progressInfo.progress) {';
+    echo '                // Heartbeat sends nested structure: {active: true, progress: {...}, status: "..."}';
+    echo '                var progressData = progressInfo.progress;';
+    echo '                if (progressInfo.status) {';
+    echo '                    progressData.status = progressInfo.status;';
+    echo '                }';
+    echo '                updateProgressBar(progressData);';
+    echo '            } else if (!progressInfo.active) {';
+    echo '                console.log("[YATCO] Heartbeat: Import is not active");';
+    echo '                if (pollInterval) {';
+    echo '                    clearInterval(pollInterval);';
+    echo '                    pollInterval = null;';
+    echo '                }';
     echo '            }';
-    echo '            updateProgressBar(progressData);';
     echo '        } else {';
     echo '            console.log("[YATCO] Heartbeat: No progress data in response");';
     echo '        }';

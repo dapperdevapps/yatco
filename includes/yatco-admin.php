@@ -293,7 +293,7 @@ function yatco_options_page() {
                     'percent' => 0,
                 ), 3600 );
                 
-                // Clear any stale locks first
+                // Clear any stale locks, stop flags, and old status messages
                 $stale_lock = get_option( 'yatco_import_lock', false );
                 if ( $stale_lock !== false ) {
                     $lock_age = time() - intval( $stale_lock );
@@ -304,6 +304,26 @@ function yatco_options_page() {
                         yatco_log( "Full Import Direct: Cleared stale lock (age: {$lock_age}s)", 'info' );
                     }
                 }
+                
+                // Clear stop flags and old status
+                delete_option( 'yatco_import_stop_flag' );
+                delete_transient( 'yatco_cache_warming_stop' );
+                delete_transient( 'yatco_cache_warming_status' );
+                wp_cache_delete( 'yatco_cache_warming_status', 'transient' );
+                
+                // Clear old progress and set initial status
+                delete_transient( 'yatco_import_progress' );
+                wp_cache_delete( 'yatco_import_progress', 'transient' );
+                set_transient( 'yatco_cache_warming_status', 'Full Import: Starting import...', 600 );
+                
+                // Initialize progress immediately
+                set_transient( 'yatco_import_progress', array(
+                    'last_processed' => 0,
+                    'processed' => 0,
+                    'total' => 0,
+                    'timestamp' => time(),
+                    'percent' => 0,
+                ), 3600 );
                 
                 // Schedule the import to run immediately via wp-cron
                 wp_schedule_single_event( time(), 'yatco_full_import_hook' );
@@ -364,8 +384,15 @@ function yatco_options_page() {
             } else {
                 yatco_log( 'Daily Sync Direct: Sync triggered via button', 'info' );
                 
-                // Schedule the daily sync to run via wp-cron (non-blocking)
-                wp_schedule_single_event( time() + 2, 'yatco_daily_sync_hook' );
+                // Clear any stale stop flags (but keep progress transients for display)
+                delete_option( 'yatco_import_stop_flag' );
+                delete_transient( 'yatco_cache_warming_stop' );
+                
+                // Set initial status for daily sync (don't clear old progress yet - let the sync function handle it)
+                set_transient( 'yatco_cache_warming_status', 'Daily Sync: Starting...', 600 );
+                
+                // Schedule the daily sync to run immediately via wp-cron (non-blocking)
+                wp_schedule_single_event( time(), 'yatco_daily_sync_hook' );
                 spawn_cron(); // Trigger cron immediately if possible
                 
                 yatco_log( 'Daily Sync Direct: Sync scheduled via wp-cron, redirecting to status page', 'info' );
@@ -622,95 +649,17 @@ function yatco_options_page() {
         }
         
         echo '<div class="yatco-status-section">';
-        echo '<h2>Import Status & Progress</h2>';
         
-        // Show success message if stopped
+        // Show success message if stopped or started
         if ( isset( $_GET['stopped'] ) && $_GET['stopped'] == '1' ) {
             echo '<div class="notice notice-success is-dismissible" style="margin: 20px 0;"><p><strong>Import stop requested.</strong> The import will stop at the next checkpoint.</p></div>';
         }
-        
-        // Get all progress data first
-        $import_progress = get_transient( 'yatco_import_progress' );
-        $cache_status = get_transient( 'yatco_cache_warming_status' );
-        
-        // Check if import was stopped - if so, clear progress and don't show it
-        $stop_flag = get_option( 'yatco_import_stop_flag', false );
-        if ( $stop_flag !== false ) {
-            // Import was stopped - clear any stale progress
-            delete_transient( 'yatco_import_progress' );
-            delete_transient( 'yatco_daily_sync_progress' );
-            wp_cache_delete( 'yatco_import_progress', 'transient' );
-            wp_cache_delete( 'yatco_daily_sync_progress', 'transient' );
-            $import_progress = false;
-            $cache_status = 'Import stopped by user.';
+        if ( isset( $_GET['sync_started'] ) && $_GET['sync_started'] == '1' ) {
+            echo '<div class="notice notice-info is-dismissible" style="margin: 20px 0;"><p><strong>Daily Sync started.</strong> Progress will appear below.</p></div>';
         }
         
-        // Determine if import is active
-        $active_stage = 0;
-        $active_progress = null;
-        if ( $import_progress !== false && is_array( $import_progress ) && $stop_flag === false ) {
-            $active_stage = 'full';
-            $active_progress = $import_progress;
-        }
-        
-        // Display status bar
-        echo '<div id="yatco-import-status-display" style="background: #fff; border: 2px solid #2271b1; border-radius: 4px; padding: 20px; margin: 20px 0;">';
-        
-        if ( $active_stage > 0 || $active_stage === 'full' || $active_stage === 'daily_sync' ) {
-            if ( $active_stage === 'daily_sync' ) {
-                // Daily sync progress display
-                $current = isset( $active_progress['processed'] ) ? intval( $active_progress['processed'] ) : 0;
-                $total = isset( $active_progress['total'] ) ? intval( $active_progress['total'] ) : 0;
-                $percent = $total > 0 ? round( ( $current / $total ) * 100, 1 ) : 0;
-                $stage_name = 'Daily Sync';
-            } else {
-                // Full import progress display
-                // Use 'processed' (actual successful count) instead of 'last_processed' (array position)
-                // 'last_processed' is the position/index, 'processed' is the actual count of successful imports
-                $current = isset( $active_progress['processed'] ) ? intval( $active_progress['processed'] ) : ( isset( $active_progress['last_processed'] ) ? intval( $active_progress['last_processed'] ) : 0 );
-                $total = isset( $active_progress['total'] ) ? intval( $active_progress['total'] ) : 0;
-                $percent = isset( $active_progress['percent'] ) ? floatval( $active_progress['percent'] ) : ( $total > 0 ? round( ( $current / $total ) * 100, 1 ) : 0 );
-                $stage_name = 'Full Import';
-            }
-            
-            echo '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">';
-            echo '<h3 style="margin: 0; color: #2271b1;">' . esc_html( $stage_name ) . '</h3>';
-            echo '<form method="post" id="yatco-stop-import-form" style="margin: 0;">';
-            wp_nonce_field( 'yatco_stop_import', 'yatco_stop_import_nonce' );
-            echo '<button type="submit" name="yatco_stop_import" class="button" style="background: #dc3232; border-color: #dc3232; color: #fff; font-weight: bold; padding: 6px 12px;">Stop</button>';
-            echo '</form>';
-            echo '</div>';
-            
-            echo '<div style="background: #f0f0f0; border-radius: 10px; height: 32px; margin: 15px 0; position: relative; overflow: hidden;">';
-            echo '<div id="yatco-progress-bar" style="background: linear-gradient(90deg, #2271b1 0%, #46b450 100%); height: 100%; width: ' . esc_attr( $percent ) . '%; transition: width 0.5s ease-in-out; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: bold; font-size: 13px;">';
-            echo esc_html( number_format( $percent, 1 ) ) . '%';
-            echo '</div>';
-            echo '</div>';
-            
-            echo '<div style="display: flex; justify-content: space-between; margin-top: 10px; font-size: 14px; color: #666;">';
-            echo '<span id="yatco-processed-count">' . number_format( $current ) . ' / ' . number_format( $total ) . '</span>';
-            if ( isset( $active_progress['timestamp'] ) && $current > 0 ) {
-                $time_elapsed = time() - intval( $active_progress['timestamp'] );
-                if ( $time_elapsed > 0 && $current > 0 ) {
-                    $rate = $current / $time_elapsed;
-                    $remaining = $total - $current;
-                    if ( $rate > 0 ) {
-                        $eta_seconds = $remaining / $rate;
-                        $eta_minutes = round( $eta_seconds / 60, 1 );
-                        echo '<span id="yatco-eta-text">' . esc_html( $eta_minutes ) . ' min remaining</span>';
-                    }
-                }
-            }
-            echo '</div>';
-        } elseif ( $cache_status !== false ) {
-            echo '<div class="notice notice-info" style="margin: 0;">';
-            echo '<p><strong>Status:</strong> ' . esc_html( $cache_status ) . '</p>';
-            echo '</div>';
-        } else {
-            echo '<p style="margin: 0; color: #999; text-align: center; padding: 40px 0;">No active import</p>';
-        }
-        
-        echo '</div>';
+        // Use the helper function to display status (same as Import tab)
+        yatco_display_import_status_section();
         
         // Handle stop import form submission
         if ( isset( $_POST['yatco_stop_import'] ) && check_admin_referer( 'yatco_stop_import', 'yatco_stop_import_nonce' ) ) {
@@ -1395,6 +1344,158 @@ function yatco_options_page() {
             }
             
             echo '</div>'; // Close Step 1 div
+        }
+        
+        // Browse Vessel API Section
+        echo '<hr style="margin: 40px 0;" />';
+        echo '<h2>Browse Vessel API</h2>';
+        echo '<div style="background: #e7f3ff; border-left: 4px solid #2271b1; padding: 12px; margin: 15px 0;">';
+        echo '<p style="margin: 0; font-weight: bold; color: #004085;"><strong>🔍 Browse API:</strong> View the full API response for any vessel by entering its Vessel ID. This is useful for exploring the API structure and finding specific data fields.</p>';
+        echo '</div>';
+        echo '<p>Enter a YATCO Vessel ID to view its complete API response without creating a post.</p>';
+        echo '<form method="post" id="yatco-browse-vessel-form">';
+        wp_nonce_field( 'yatco_browse_vessel', 'yatco_browse_vessel_nonce' );
+        echo '<table class="form-table">';
+        echo '<tr>';
+        echo '<th scope="row"><label for="yatco_browse_vessel_id">Vessel ID</label></th>';
+        echo '<td><input type="text" id="yatco_browse_vessel_id" name="yatco_browse_vessel_id" value="' . ( isset( $_POST['yatco_browse_vessel_id'] ) ? esc_attr( $_POST['yatco_browse_vessel_id'] ) : '' ) . '" class="regular-text" placeholder="e.g., 413131" required />';
+        echo '<p class="description">Enter a specific YATCO Vessel ID to view its full API response.</p></td>';
+        echo '</tr>';
+        echo '</table>';
+        submit_button( '🔍 Fetch & View Full API', 'primary', 'yatco_browse_vessel', false, array( 'id' => 'yatco-browse-vessel-btn' ) );
+        echo '</form>';
+        
+        if ( isset( $_POST['yatco_browse_vessel'] ) && check_admin_referer( 'yatco_browse_vessel', 'yatco_browse_vessel_nonce' ) ) {
+            $browse_vessel_id = isset( $_POST['yatco_browse_vessel_id'] ) ? intval( $_POST['yatco_browse_vessel_id'] ) : 0;
+            
+            if ( empty( $browse_vessel_id ) ) {
+                echo '<div class="notice notice-error" style="margin-top: 15px;"><p>Please enter a valid Vessel ID.</p></div>';
+            } elseif ( empty( $token ) ) {
+                echo '<div class="notice notice-error" style="margin-top: 15px;"><p>Missing API token. Please configure your API token first.</p></div>';
+            } else {
+                echo '<div class="notice notice-info" style="margin-top: 15px;"><p><strong>Fetching API data for Vessel ID: ' . esc_html( $browse_vessel_id ) . '</strong></p></div>';
+                
+                // Fetch full specs
+                require_once YATCO_PLUGIN_DIR . 'includes/yatco-api.php';
+                $fullspecs = yatco_fetch_fullspecs( $token, $browse_vessel_id );
+                
+                if ( is_wp_error( $fullspecs ) ) {
+                    echo '<div class="notice notice-error" style="margin-top: 15px;">';
+                    echo '<p><strong>Error:</strong> ' . esc_html( $fullspecs->get_error_message() ) . '</p>';
+                    echo '</div>';
+                    
+                    // Try basic details as fallback
+                    $basic_details = yatco_fetch_basic_details( $token, $browse_vessel_id );
+                    if ( ! is_wp_error( $basic_details ) && ! empty( $basic_details ) ) {
+                        echo '<div class="notice notice-warning" style="margin-top: 15px;">';
+                        echo '<p><strong>FullSpecsAll not available, but basic details were found. Displaying basic details:</strong></p>';
+                        echo '</div>';
+                        $fullspecs = $basic_details;
+                    }
+                }
+                
+                if ( ! is_wp_error( $fullspecs ) && ! empty( $fullspecs ) ) {
+                    // Display vessel info
+                    $vessel_name = '';
+                    if ( isset( $fullspecs['Result']['VesselName'] ) ) {
+                        $vessel_name = $fullspecs['Result']['VesselName'];
+                    } elseif ( isset( $fullspecs['BasicInfo']['BoatName'] ) ) {
+                        $vessel_name = $fullspecs['BasicInfo']['BoatName'];
+                    } elseif ( isset( $fullspecs['Result']['BoatName'] ) ) {
+                        $vessel_name = $fullspecs['Result']['BoatName'];
+                    }
+                    
+                    echo '<div style="background: #d4edda; border-left: 4px solid #46b450; padding: 12px; margin-top: 15px;">';
+                    echo '<p style="margin: 0; font-weight: bold; color: #155724;">✅ Successfully fetched API data for Vessel ID: ' . esc_html( $browse_vessel_id );
+                    if ( ! empty( $vessel_name ) ) {
+                        echo ' (' . esc_html( $vessel_name ) . ')';
+                    }
+                    echo '</p>';
+                    echo '</div>';
+                    
+                    // Store fullspecs JSON for JavaScript access
+                    $fullspecs_json = wp_json_encode( $fullspecs, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+                    
+                    echo '<h3 style="margin-top: 30px;">Full API Response</h3>';
+                    echo '<p style="color: #666; font-size: 13px; margin-bottom: 15px;">View and search the complete JSON response from the YATCO API:</p>';
+                    
+                    echo '<div style="margin-bottom: 15px;">';
+                    echo '<button type="button" id="yatco-browse-toggle-full-api" class="button button-secondary" style="margin-right: 10px;">📋 View Full API</button>';
+                    echo '<input type="text" id="yatco-browse-api-search" placeholder="Search API response (Ctrl+F also works)..." class="regular-text" style="width: 350px; display: none;" />';
+                    echo '</div>';
+                    
+                    echo '<div id="yatco-browse-full-api-display" style="background: #1e1e1e; color: #d4d4d4; border: 1px solid #3c3c3c; border-radius: 4px; padding: 20px; max-height: 700px; overflow: auto; font-family: "Courier New", Courier, monospace; font-size: 13px; line-height: 1.6; display: none; position: relative;">';
+                    echo '<pre id="yatco-browse-api-content" style="margin: 0; white-space: pre-wrap; word-wrap: break-word; color: #d4d4d4;">';
+                    echo esc_html( $fullspecs_json );
+                    echo '</pre>';
+                    echo '</div>';
+                    
+                    // JavaScript for toggle and search functionality
+                    echo '<script type="text/javascript">';
+                    echo 'jQuery(document).ready(function($) {';
+                    echo '    var $toggleBtn = $("#yatco-browse-toggle-full-api");';
+                    echo '    var $searchBox = $("#yatco-browse-api-search");';
+                    echo '    var $apiDisplay = $("#yatco-browse-full-api-display");';
+                    echo '    var $apiContent = $("#yatco-browse-api-content");';
+                    echo '    var originalContent = ' . wp_json_encode( $fullspecs_json ) . ';';
+                    echo '    var isExpanded = false;';
+                    echo '    ';
+                    echo '    // Toggle button functionality';
+                    echo '    $toggleBtn.on("click", function() {';
+                    echo '        if (isExpanded) {';
+                    echo '            $apiDisplay.slideUp(300);';
+                    echo '            $searchBox.slideUp(200);';
+                    echo '            $toggleBtn.text("📋 View Full API");';
+                    echo '            isExpanded = false;';
+                    echo '            $searchBox.val("");';
+                    echo '            $apiContent.text(originalContent);';
+                    echo '        } else {';
+                    echo '            $apiDisplay.slideDown(300);';
+                    echo '            $searchBox.slideDown(200);';
+                    echo '            $toggleBtn.text("🔽 Hide Full API");';
+                    echo '            isExpanded = true;';
+                    echo '            $searchBox.focus();';
+                    echo '        }';
+                    echo '    });';
+                    echo '    ';
+                    echo '    // Search functionality with highlighting';
+                    echo '    var searchTimeout;';
+                    echo '    $searchBox.on("input keyup", function(e) {';
+                    echo '        // Allow Ctrl+F to work naturally';
+                    echo '        if (e.ctrlKey && e.key === "f") {';
+                    echo '            return;';
+                    echo '        }';
+                    echo '        ';
+                    echo '        var searchTerm = $(this).val();';
+                    echo '        clearTimeout(searchTimeout);';
+                    echo '        ';
+                    echo '        if (searchTerm === "") {';
+                    echo '            $apiContent.text(originalContent);';
+                    echo '            return;';
+                    echo '        }';
+                    echo '        ';
+                    echo '        searchTimeout = setTimeout(function() {';
+                    echo '            var regex = new RegExp("(" + searchTerm.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&") + ")", "gi");';
+                    echo '            var highlightedContent = originalContent.replace(regex, "<mark style=\'background: #ffeb3b; color: #000; padding: 2px 4px; border-radius: 2px;\'>$1</mark>");';
+                    echo '            $apiContent.html(highlightedContent);';
+                    echo '            ';
+                    echo '            // Scroll to first match';
+                    echo '            var firstMark = $apiContent.find("mark").first();';
+                    echo '            if (firstMark.length) {';
+                    echo '                $apiDisplay.animate({';
+                    echo '                    scrollTop: firstMark.offset().top - $apiDisplay.offset().top + $apiDisplay.scrollTop() - 100';
+                    echo '                }, 300);';
+                    echo '            }';
+                    echo '        }, 300);';
+                    echo '    });';
+                    echo '});';
+                    echo '</script>';
+                } else {
+                    echo '<div class="notice notice-error" style="margin-top: 15px;">';
+                    echo '<p><strong>Error:</strong> Unable to fetch API data for Vessel ID ' . esc_html( $browse_vessel_id ) . '. The vessel may not exist or may not be accessible.</p>';
+                    echo '</div>';
+                }
+            }
         }
     }
         

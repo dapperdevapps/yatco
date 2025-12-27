@@ -235,5 +235,89 @@ function yatco_test_connection( $token ) {
     }
 
     $count = count( $data );
-    return '<div class="notice notice-success"><p>Connection successful! Found ' . number_format( $count ) . ' active vessel ID(s).</p></div>';
+    $output = '<div class="notice notice-success"><p><strong>✅ Connection successful!</strong> Found ' . number_format( $count ) . ' active vessel ID(s).</p></div>';
+    
+    // Add button to view all vessel IDs
+    $vessel_ids_json = wp_json_encode( $data, JSON_PRETTY_PRINT );
+    $vessel_ids_json_escaped = esc_js( $vessel_ids_json );
+    
+    $output .= '<div style="margin-top: 15px; padding: 15px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px;">';
+    $output .= '<h3 style="margin-top: 0;">All Vessel IDs</h3>';
+    $output .= '<p style="color: #666; font-size: 13px; margin-bottom: 15px;">View and search all ' . number_format( $count ) . ' vessel IDs from the API:</p>';
+    
+    $output .= '<div style="margin-bottom: 15px;">';
+    $output .= '<button type="button" id="yatco-toggle-vessel-ids" class="button button-secondary" style="margin-right: 10px;">📋 View All Vessel IDs</button>';
+    $output .= '<input type="text" id="yatco-vessel-ids-search" placeholder="Search vessel IDs (Ctrl+F also works)..." class="regular-text" style="width: 350px; display: none;" />';
+    $output .= '</div>';
+    
+    $output .= '<div id="yatco-vessel-ids-display" style="background: #1e1e1e; color: #d4d4d4; border: 1px solid #3c3c3c; border-radius: 4px; padding: 20px; max-height: 700px; overflow: auto; font-family: "Courier New", Courier, monospace; font-size: 13px; line-height: 1.6; display: none; position: relative;">';
+    $output .= '<pre id="yatco-vessel-ids-content" style="margin: 0; white-space: pre-wrap; word-wrap: break-word; color: #d4d4d4;">';
+    $output .= esc_html( $vessel_ids_json );
+    $output .= '</pre>';
+    $output .= '</div>';
+    
+    // JavaScript for toggle and search functionality
+    $output .= '<script type="text/javascript">';
+    $output .= 'jQuery(document).ready(function($) {';
+    $output .= '    var $toggleBtn = $("#yatco-toggle-vessel-ids");';
+    $output .= '    var $searchBox = $("#yatco-vessel-ids-search");';
+    $output .= '    var $idsDisplay = $("#yatco-vessel-ids-display");';
+    $output .= '    var $idsContent = $("#yatco-vessel-ids-content");';
+    $output .= '    var originalContent = ' . wp_json_encode( $vessel_ids_json ) . ';';
+    $output .= '    var isExpanded = false;';
+    $output .= '    ';
+    $output .= '    // Toggle button functionality';
+    $output .= '    $toggleBtn.on("click", function() {';
+    $output .= '        if (isExpanded) {';
+    $output .= '            $idsDisplay.slideUp(300);';
+    $output .= '            $searchBox.slideUp(200);';
+    $output .= '            $toggleBtn.text("📋 View All Vessel IDs");';
+    $output .= '            isExpanded = false;';
+    $output .= '            $searchBox.val("");';
+    $output .= '            $idsContent.text(originalContent);';
+    $output .= '        } else {';
+    $output .= '            $idsDisplay.slideDown(300);';
+    $output .= '            $searchBox.slideDown(200);';
+    $output .= '            $toggleBtn.text("🔽 Hide Vessel IDs");';
+    $output .= '            isExpanded = true;';
+    $output .= '            $searchBox.focus();';
+    $output .= '        }';
+    $output .= '    });';
+    $output .= '    ';
+    $output .= '    // Search functionality with highlighting';
+    $output .= '    var searchTimeout;';
+    $output .= '    $searchBox.on("input keyup", function(e) {';
+    $output .= '        // Allow Ctrl+F to work naturally';
+    $output .= '        if (e.ctrlKey && e.key === "f") {';
+    $output .= '            return;';
+    $output .= '        }';
+    $output .= '        ';
+    $output .= '        var searchTerm = $(this).val();';
+    $output .= '        clearTimeout(searchTimeout);';
+    $output .= '        ';
+    $output .= '        if (searchTerm === "") {';
+    $output .= '            $idsContent.text(originalContent);';
+    $output .= '            return;';
+    $output .= '        }';
+    $output .= '        ';
+    $output .= '        searchTimeout = setTimeout(function() {';
+    $output .= '            var regex = new RegExp("(" + searchTerm.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&") + ")", "gi");';
+    $output .= '            var highlightedContent = originalContent.replace(regex, "<mark style=\'background: #ffeb3b; color: #000; padding: 2px 4px; border-radius: 2px;\'>$1</mark>");';
+    $output .= '            $idsContent.html(highlightedContent);';
+    $output .= '            ';
+    $output .= '            // Scroll to first match';
+    $output .= '            var firstMark = $idsContent.find("mark").first();';
+    $output .= '            if (firstMark.length) {';
+    $output .= '                $idsDisplay.animate({';
+    $output .= '                    scrollTop: firstMark.offset().top - $idsDisplay.offset().top + $idsDisplay.scrollTop() - 100';
+    $output .= '                }, 300);';
+    $output .= '            }';
+    $output .= '        }, 300);';
+    $output .= '    });';
+    $output .= '});';
+    $output .= '</script>';
+    
+    $output .= '</div>';
+    
+    return $output;
 }

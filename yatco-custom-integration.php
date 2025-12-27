@@ -101,23 +101,22 @@ add_action( 'yatco_full_import_hook', function() {
 
 // Register daily sync hook
 add_action( 'yatco_daily_sync_hook', function() {
-    // Check if Daily Sync is enabled
-    $options = get_option( 'yatco_api_settings', array() );
-    $enabled = isset( $options['yatco_daily_sync_enabled'] ) ? $options['yatco_daily_sync_enabled'] : 'no';
+    // Clear any stale stop flags when sync starts (important for manual triggers)
+    delete_option( 'yatco_import_stop_flag' );
+    delete_transient( 'yatco_cache_warming_stop' );
     
-    if ( $enabled !== 'yes' ) {
-        yatco_log( 'Daily Sync: Hook triggered but Daily Sync is disabled in settings', 'info' );
-        return;
-    }
-    
-    yatco_log( 'Daily Sync: Hook triggered via server cron', 'info' );
+    yatco_log( 'Daily Sync: Hook triggered', 'info' );
     $token = yatco_get_token();
     if ( ! empty( $token ) ) {
         yatco_log( 'Daily Sync: Token found, calling sync function', 'info' );
         yatco_daily_sync_check( $token );
         
-        // Schedule next run based on frequency
-        yatco_schedule_next_daily_sync();
+        // Only schedule next run if Daily Sync is enabled in settings (for automatic scheduling)
+        $options = get_option( 'yatco_api_settings', array() );
+        $enabled = isset( $options['yatco_daily_sync_enabled'] ) ? $options['yatco_daily_sync_enabled'] : 'no';
+        if ( $enabled === 'yes' ) {
+            yatco_schedule_next_daily_sync();
+        }
     } else {
         yatco_log( 'Daily Sync: Hook triggered but no token found', 'error' );
     }
@@ -229,53 +228,85 @@ function yatco_ajax_get_import_status() {
         return;
     }
     
-    // Check if import was stopped - if so, don't return progress data
-    $stop_flag = get_option( 'yatco_import_stop_flag', false );
-    yatco_log( "AJAX Status Check: Stop flag = " . ( $stop_flag !== false ? 'SET (value: ' . $stop_flag . ')' : 'NOT SET' ), 'debug' );
-    if ( $stop_flag !== false ) {
-        yatco_log( 'AJAX Status Check: Stop flag detected, returning inactive status', 'warning' );
-        // Import was stopped - clear any stale progress and return stopped status
-        delete_transient( 'yatco_import_progress' );
-        delete_transient( 'yatco_daily_sync_progress' );
-        wp_cache_delete( 'yatco_import_progress', 'transient' );
-        wp_cache_delete( 'yatco_daily_sync_progress', 'transient' );
-        
-        $response_data = array(
-            'active' => false,
-            'stage' => null,
-            'status' => 'Import stopped by user.',
-            'progress' => null,
-        );
-        yatco_log( 'AJAX Status Check: Sending response with active=false', 'debug' );
-        wp_send_json_success( $response_data );
-        return;
-    }
-    
-    // Get all progress data - bypass object cache to get fresh data
+    // Get all progress data - bypass object cache to get fresh data FIRST
     wp_cache_delete( 'yatco_import_progress', 'transient' );
     wp_cache_delete( 'yatco_cache_warming_status', 'transient' );
     wp_cache_delete( 'yatco_daily_sync_progress', 'transient' );
     wp_cache_flush(); // Force full cache flush to ensure fresh data
     $import_progress = get_transient( 'yatco_import_progress' );
     $daily_sync_progress = get_transient( 'yatco_daily_sync_progress' );
-    $cache_status = get_transient( 'yatco_cache_warming_status' );
+    $cache_status_raw = get_transient( 'yatco_cache_warming_status' );
+    $stop_flag = get_option( 'yatco_import_stop_flag', false );
     
     yatco_log( 'AJAX Status Check: Import progress = ' . ( $import_progress !== false ? 'EXISTS' : 'NOT FOUND' ), 'debug' );
     yatco_log( 'AJAX Status Check: Daily sync progress = ' . ( $daily_sync_progress !== false ? 'EXISTS' : 'NOT FOUND' ), 'debug' );
+    yatco_log( "AJAX Status Check: Stop flag = " . ( $stop_flag !== false ? 'SET (value: ' . $stop_flag . ')' : 'NOT SET' ), 'debug' );
     
-    // Determine if import is active
+    // Determine if import or sync is active - check ACTIVE processes FIRST (same logic as helper function)
     $active_stage = 0;
     $active_progress = null;
-    if ( $import_progress !== false && is_array( $import_progress ) ) {
-        $active_stage = 'full';
-        $active_progress = $import_progress;
-        yatco_log( 'AJAX Status Check: Active stage = full, progress data: ' . json_encode( $active_progress ), 'debug' );
-    } elseif ( $daily_sync_progress !== false && is_array( $daily_sync_progress ) ) {
+    
+    // Check for active daily sync first (takes priority)
+    if ( $daily_sync_progress !== false && is_array( $daily_sync_progress ) ) {
         $active_stage = 'daily_sync';
         $active_progress = $daily_sync_progress;
+        // If sync is active, clear stop flag (sync was started after stop)
+        if ( $stop_flag !== false ) {
+            delete_option( 'yatco_import_stop_flag' );
+            delete_transient( 'yatco_cache_warming_stop' );
+            $stop_flag = false;
+        }
         yatco_log( 'AJAX Status Check: Active stage = daily_sync', 'debug' );
+    } elseif ( $import_progress !== false && is_array( $import_progress ) ) {
+        // Check if import is actually active (not stopped)
+        if ( $stop_flag === false ) {
+            // No stop flag, import is active
+            $active_stage = 'full';
+            $active_progress = $import_progress;
+            yatco_log( 'AJAX Status Check: Active stage = full, progress data: ' . json_encode( $active_progress ), 'debug' );
+        } else {
+            // Stop flag is set but we have progress - check if status says stopped
+            // If status doesn't say stopped, clear the flag (it's stale)
+            if ( $cache_status_raw === false || stripos( $cache_status_raw, 'stopped' ) === false ) {
+                delete_option( 'yatco_import_stop_flag' );
+                delete_transient( 'yatco_cache_warming_stop' );
+                $stop_flag = false;
+                $active_stage = 'full';
+                $active_progress = $import_progress;
+                yatco_log( 'AJAX Status Check: Stop flag was stale, cleared. Active stage = full', 'debug' );
+            } else {
+                yatco_log( 'AJAX Status Check: Stop flag detected and status confirms stopped', 'warning' );
+            }
+        }
     } else {
         yatco_log( 'AJAX Status Check: No active stage found', 'debug' );
+    }
+    
+    // Determine cache status based on active processes
+    $cache_status = false;
+    if ( $active_stage !== 0 ) {
+        // Active process running - use status from transient
+        if ( $cache_status_raw !== false ) {
+            $cache_status = $cache_status_raw;
+        } elseif ( $active_stage === 'daily_sync' ) {
+            $cache_status = 'Daily Sync: Starting...';
+        } elseif ( $active_stage === 'full' ) {
+            $cache_status = 'Full Import: Starting...';
+        }
+    } elseif ( $stop_flag !== false ) {
+        // No active process and stop flag is set - show stopped status
+        if ( $cache_status_raw === false || stripos( $cache_status_raw, 'stopped' ) !== false ) {
+            $cache_status = 'Import stopped by user.';
+        } else {
+            // Stop flag is set but status doesn't say stopped - clear the flag (stale)
+            delete_option( 'yatco_import_stop_flag' );
+            delete_transient( 'yatco_cache_warming_stop' );
+            $stop_flag = false;
+            $cache_status = $cache_status_raw !== false ? $cache_status_raw : false;
+        }
+    } else {
+        // No active process and no stop flag - use status from transient or default
+        $cache_status = $cache_status_raw !== false ? $cache_status_raw : false;
     }
     
     // Return structured data for real-time updates instead of HTML
@@ -426,11 +457,40 @@ function yatco_heartbeat_received( $response, $data ) {
     // Force fresh data by bypassing object cache
     wp_cache_delete( 'yatco_import_progress', 'transient' );
     wp_cache_delete( 'yatco_cache_warming_status', 'transient' );
+    wp_cache_delete( 'yatco_daily_sync_progress', 'transient' );
     wp_cache_flush(); // Force full cache flush to ensure fresh data
     $import_progress = get_transient( 'yatco_import_progress' );
+    $daily_sync_progress = get_transient( 'yatco_daily_sync_progress' );
     $cache_status = get_transient( 'yatco_cache_warming_status' );
     
-    if ( $import_progress !== false && is_array( $import_progress ) ) {
+    // Check daily sync first (takes priority)
+    if ( $daily_sync_progress !== false && is_array( $daily_sync_progress ) ) {
+        $current = isset( $daily_sync_progress['processed'] ) ? intval( $daily_sync_progress['processed'] ) : 0;
+        $total = isset( $daily_sync_progress['total'] ) ? intval( $daily_sync_progress['total'] ) : 0;
+        $percent = $total > 0 ? round( ( $current / $total ) * 100, 1 ) : 0;
+        
+        $progress_data = array(
+            'current' => $current,
+            'total' => $total,
+            'percent' => $percent,
+            'remaining' => $total - $current,
+            'removed' => isset( $daily_sync_progress['removed'] ) ? intval( $daily_sync_progress['removed'] ) : 0,
+            'new' => isset( $daily_sync_progress['new'] ) ? intval( $daily_sync_progress['new'] ) : 0,
+            'price_updates' => isset( $daily_sync_progress['price_updates'] ) ? intval( $daily_sync_progress['price_updates'] ) : 0,
+            'days_on_market_updates' => isset( $daily_sync_progress['days_on_market_updates'] ) ? intval( $daily_sync_progress['days_on_market_updates'] ) : 0,
+        );
+        
+        if ( $cache_status !== false ) {
+            $progress_data['status'] = $cache_status;
+        }
+        
+        $response['yatco_import_progress'] = array(
+            'active' => true,
+            'stage' => 'daily_sync',
+            'status' => $cache_status !== false ? $cache_status : null,
+            'progress' => $progress_data,
+        );
+    } elseif ( $import_progress !== false && is_array( $import_progress ) ) {
         // Get all progress counts (same structure as AJAX handler)
         $processed = isset( $import_progress['processed'] ) ? intval( $import_progress['processed'] ) : 0;
         $failed = isset( $import_progress['failed'] ) ? intval( $import_progress['failed'] ) : 0;
