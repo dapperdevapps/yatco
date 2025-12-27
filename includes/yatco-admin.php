@@ -946,7 +946,7 @@ function yatco_options_page() {
                 // Check if user wants to fetch prices
                 $fetch_prices = isset( $_POST['yatco_fetch_prices'] ) && $_POST['yatco_fetch_prices'] === '1';
                 
-                // If fetching prices, we need to get basic info for each vessel
+                // Initialize array for vessels with prices
                 $vessels_with_prices = array();
                 if ( $fetch_prices ) {
                     echo '<div class="notice notice-info" style="background: #e3f2fd; border-left: 4px solid #2196f3; padding: 15px; margin: 20px 0;">';
