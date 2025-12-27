@@ -56,10 +56,17 @@ function yatco_display_import_status_section() {
             $stage_name = 'Daily Sync';
         } else {
             // Full import progress display
-            // Use 'processed' (actual successful count) instead of 'last_processed' (array position)
-            // 'last_processed' is the position/index, 'processed' is the actual count of successful imports
-            $current = isset( $active_progress['processed'] ) ? intval( $active_progress['processed'] ) : ( isset( $active_progress['last_processed'] ) ? intval( $active_progress['last_processed'] ) : 0 );
-            $total = isset( $active_progress['total'] ) ? intval( $active_progress['total'] ) : 0;
+            $processed = isset( $active_progress['processed'] ) ? intval( $active_progress['processed'] ) : 0;
+            $failed = isset( $active_progress['failed'] ) ? intval( $active_progress['failed'] ) : 0;
+            $attempted = isset( $active_progress['attempted'] ) ? intval( $active_progress['attempted'] ) : 0;
+            $pending = isset( $active_progress['pending'] ) ? intval( $active_progress['pending'] ) : 0;
+            $total_to_process = isset( $active_progress['total'] ) ? intval( $active_progress['total'] ) : 0;
+            $total_from_api = isset( $active_progress['total_from_api'] ) ? intval( $active_progress['total_from_api'] ) : $total_to_process;
+            $already_imported = isset( $active_progress['already_imported'] ) ? intval( $active_progress['already_imported'] ) : 0;
+            
+            // Use attempted for progress bar (shows actual progress through the list)
+            $current = $attempted > 0 ? $attempted : $processed;
+            $total = $total_to_process;
             $percent = isset( $active_progress['percent'] ) ? floatval( $active_progress['percent'] ) : ( $total > 0 ? round( ( $current / $total ) * 100, 1 ) : 0 );
             $stage_name = 'Full Import';
         }
@@ -78,10 +85,26 @@ function yatco_display_import_status_section() {
         echo '</div>';
         echo '</div>';
         
-        echo '<div style="display: flex; justify-content: space-between; margin-top: 10px; font-size: 13px; color: #666;">';
-        echo '<span><strong>Processed:</strong> <span id="yatco-processed-count">' . number_format( $current ) . ' / ' . number_format( $total ) . '</span></span>';
-        echo '<span><strong>Remaining:</strong> <span id="yatco-remaining-count">' . number_format( $total - $current ) . '</span></span>';
-        echo '</div>';
+        // Show detailed counts for full import
+        if ( $active_stage === 'full' && isset( $total_from_api ) ) {
+            echo '<div style="margin-top: 15px; padding: 15px; background: #f9f9f9; border-radius: 4px; font-size: 13px;">';
+            echo '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 10px;">';
+            echo '<div><strong>Total from API:</strong> <span id="yatco-total-from-api">' . number_format( $total_from_api ) . '</span></div>';
+            echo '<div><strong>Already Imported:</strong> <span id="yatco-already-imported">' . number_format( $already_imported ) . '</span></div>';
+            echo '<div style="color: #46b450;"><strong>✓ Successful:</strong> <span id="yatco-successful-count">' . number_format( $processed ) . '</span></div>';
+            echo '<div style="color: #dc3232;"><strong>✗ Failed:</strong> <span id="yatco-failed-count">' . number_format( $failed ) . '</span></div>';
+            echo '<div style="color: #2271b1;"><strong>⏳ Pending:</strong> <span id="yatco-pending-count">' . number_format( $pending ) . '</span></div>';
+            echo '</div>';
+            echo '<div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #ddd; color: #666;">';
+            echo '<strong>Progress:</strong> <span id="yatco-processed-count">' . number_format( $current ) . ' / ' . number_format( $total ) . '</span> attempted';
+            echo '</div>';
+            echo '</div>';
+        } else {
+            echo '<div style="display: flex; justify-content: space-between; margin-top: 10px; font-size: 13px; color: #666;">';
+            echo '<span><strong>Processed:</strong> <span id="yatco-processed-count">' . number_format( $current ) . ' / ' . number_format( $total ) . '</span></span>';
+            echo '<span><strong>Remaining:</strong> <span id="yatco-remaining-count">' . number_format( $total - $current ) . '</span></span>';
+            echo '</div>';
+        }
         
         // Show daily sync details
         if ( $active_stage === 'daily_sync' ) {
@@ -160,14 +183,37 @@ function yatco_display_import_status_section() {
     echo '            $("#yatco-status-text").html("<strong>Status:</strong> " + progressData.status);';
     echo '        }';
     echo '        ';
-    echo '        // Update counts';
-    echo '        if (progressData.current !== undefined && $("#yatco-processed-count").length) {';
-    echo '            $("#yatco-processed-count").text(progressData.current.toLocaleString() + " / " + progressData.total.toLocaleString());';
-    echo '        }';
-    echo '        if (progressData.remaining !== undefined && $("#yatco-remaining-count").length) {';
-    echo '            $("#yatco-remaining-count").text(progressData.remaining.toLocaleString());';
-    echo '        }';
-    echo '        ';
+        echo '        // Update counts - handle both full import (with detailed counts) and daily sync (simple counts)';
+        echo '        if (progressData.processed !== undefined && $("#yatco-successful-count").length) {';
+        echo '            // Full import with detailed counts';
+        echo '            if (progressData.total_from_api !== undefined && $("#yatco-total-from-api").length) {';
+        echo '                $("#yatco-total-from-api").text(progressData.total_from_api.toLocaleString());';
+        echo '            }';
+        echo '            if (progressData.already_imported !== undefined && $("#yatco-already-imported").length) {';
+        echo '                $("#yatco-already-imported").text(progressData.already_imported.toLocaleString());';
+        echo '            }';
+        echo '            if ($("#yatco-successful-count").length) {';
+        echo '                $("#yatco-successful-count").text(progressData.processed.toLocaleString());';
+        echo '            }';
+        echo '            if (progressData.failed !== undefined && $("#yatco-failed-count").length) {';
+        echo '                $("#yatco-failed-count").text(progressData.failed.toLocaleString());';
+        echo '            }';
+        echo '            if (progressData.pending !== undefined && $("#yatco-pending-count").length) {';
+        echo '                $("#yatco-pending-count").text(progressData.pending.toLocaleString());';
+        echo '            }';
+        echo '            if ($("#yatco-processed-count").length) {';
+        echo '                $("#yatco-processed-count").text(progressData.attempted.toLocaleString() + " / " + progressData.total.toLocaleString());';
+        echo '            }';
+        echo '        } else {';
+        echo '            // Daily sync or simple counts';
+        echo '            if (progressData.current !== undefined && $("#yatco-processed-count").length && !$("#yatco-successful-count").length) {';
+        echo '                $("#yatco-processed-count").text(progressData.current.toLocaleString() + " / " + progressData.total.toLocaleString());';
+        echo '            }';
+        echo '            if (progressData.remaining !== undefined && $("#yatco-remaining-count").length) {';
+        echo '                $("#yatco-remaining-count").text(progressData.remaining.toLocaleString());';
+        echo '            }';
+        echo '        }';
+        echo '        ';
     echo '        // Update ETA';
     echo '        if (progressData.eta_minutes !== undefined && $("#yatco-eta-text").length) {';
     echo '            $("#yatco-eta-text").text(progressData.eta_minutes + " minutes");';
@@ -251,11 +297,11 @@ function yatco_display_import_logs() {
     echo '<p style="font-size: 12px; color: #666; margin-top: 10px;">Showing last 50 log entries. Logs update automatically every 2 seconds. Logs are cleared when they exceed 100 entries.</p>';
     echo '</div>';
     
-    // Real-time log update script with improved change detection
+    // Real-time log update script - simplified to always update
     $log_nonce = wp_create_nonce( 'yatco_get_import_logs_nonce' );
     echo '<script type="text/javascript">';
     echo 'jQuery(document).ready(function($) {';
-    echo '    var lastLogHash = "";';
+    echo '    var lastLogCount = 0;';
     echo '    var logUpdateInterval = null;';
     echo '    var updateCount = 0;';
     echo '    ';
@@ -273,19 +319,10 @@ function yatco_display_import_logs() {
     echo '            success: function(response) {';
     echo '                if (response && response.success && response.data && response.data.logs) {';
     echo '                    var logs = response.data.logs;';
+    echo '                    var currentLogCount = logs.length;';
     echo '                    ';
-    echo '                    // Create hash of all log entries to detect ANY changes';
-    echo '                    var currentHash = logs.length + "|";';
-    echo '                    if (logs.length > 0) {';
-    echo '                        // Hash the last 3 log entries to detect changes';
-    echo '                        var checkLogs = logs.slice(-3);';
-    echo '                        $.each(checkLogs, function(i, log) {';
-    echo '                            currentHash += (log.timestamp || "") + "|" + (log.message || "").substring(0, 50) + "|";';
-    echo '                        });';
-    echo '                    }';
-    echo '                    ';
-    echo '                    // Always update if hash changed or first update';
-    echo '                    if (currentHash !== lastLogHash || updateCount === 1) {';
+    echo '                    // Always update if log count changed or first update';
+    echo '                    if (currentLogCount !== lastLogCount || updateCount === 1) {';
     echo '                        var logHtml = "";';
     echo '                        var levelColors = {';
     echo '                            "ERROR": "#f48771",';
@@ -325,7 +362,7 @@ function yatco_display_import_logs() {
     echo '                        }';
     echo '                        ';
     echo '                        container.html(logHtml);';
-    echo '                        lastLogHash = currentHash;';
+    echo '                        lastLogCount = currentLogCount;';
     echo '                        ';
     echo '                        // Auto-scroll to bottom if was near bottom';
     echo '                        if (wasNearBottom && container.length) {';
@@ -334,7 +371,9 @@ function yatco_display_import_logs() {
     echo '                            }, 10);';
     echo '                        }';
     echo '                        ';
-    echo '                        console.log("YATCO: Logs updated (#" + updateCount + ", " + logs.length + " entries)");';
+    echo '                        console.log("YATCO: Logs updated (#" + updateCount + ", " + logs.length + " entries, was: " + (lastLogCount - (logs.length - lastLogCount)) + ")")';
+    echo '                    } else {';
+    echo '                        console.log("YATCO: Logs unchanged (" + logs.length + " entries)");';
     echo '                    }';
     echo '                } else {';
     echo '                    console.log("YATCO: Log update failed - invalid response", response);';
@@ -346,24 +385,14 @@ function yatco_display_import_logs() {
     echo '        });';
     echo '    }';
     echo '    ';
-    echo '    // Create initial hash from existing logs on page';
-    echo '    var initialLogs = $(".yatco-log-entry");';
-    echo '    if (initialLogs.length > 0) {';
-    echo '        var hashParts = [initialLogs.length];';
-    echo '        initialLogs.slice(-3).each(function() {';
-    echo '            var $entry = $(this);';
-    echo '            var timestamp = $entry.find("span").first().text() || "";';
-    echo '            var message = $entry.text() || "";';
-    echo '            hashParts.push(timestamp + "|" + message.substring(0, 50));';
-    echo '        });';
-    echo '        lastLogHash = hashParts.join("|") + "|";';
-    echo '    }';
+    echo '    // Initialize lastLogCount from existing logs on page';
+    echo '    lastLogCount = $(".yatco-log-entry").length;';
     echo '    ';
     echo '    // Update logs immediately, then every 2 seconds';
     echo '    updateLogs();';
     echo '    logUpdateInterval = setInterval(updateLogs, 2000);';
     echo '    ';
-    echo '    console.log("YATCO: Log viewer initialized (polling every 2s)");';
+    echo '    console.log("YATCO: Log viewer initialized (polling every 2s, initial count: " + lastLogCount + ")");';
     echo '});';
     echo '</script>';
 }

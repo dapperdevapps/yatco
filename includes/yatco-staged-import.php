@@ -51,7 +51,7 @@ function yatco_stage1_import_ids_and_names( $token ) {
     // Check stop flag - check both option and transient (consistent with full import)
     $stop_flag = get_option( 'yatco_import_stop_flag', false );
     if ( $stop_flag === false ) {
-        $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+    $stop_flag = get_transient( 'yatco_cache_warming_stop' );
     }
     if ( $stop_flag !== false ) {
         yatco_log( '🛑 Stage 1: Stop flag detected, cancelling', 'warning' );
@@ -107,7 +107,7 @@ function yatco_stage1_import_ids_and_names( $token ) {
         // Check stop flag - check both option and transient
         $stop_flag = get_option( 'yatco_import_stop_flag', false );
         if ( $stop_flag === false ) {
-            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+        $stop_flag = get_transient( 'yatco_cache_warming_stop' );
         }
         if ( $stop_flag !== false ) {
             yatco_log( '🛑 Stage 1: Stop flag detected in batch, cancelling', 'warning' );
@@ -121,7 +121,7 @@ function yatco_stage1_import_ids_and_names( $token ) {
             // Check stop flag - check both option and transient
             $stop_flag = get_option( 'yatco_import_stop_flag', false );
             if ( $stop_flag === false ) {
-                $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
             }
             if ( $stop_flag !== false ) {
                 yatco_log( '🛑 Stage 1: Stop flag detected, cancelling', 'warning' );
@@ -138,7 +138,7 @@ function yatco_stage1_import_ids_and_names( $token ) {
             // Check stop flag before API call - check both option and transient
             $stop_flag = get_option( 'yatco_import_stop_flag', false );
             if ( $stop_flag === false ) {
-                $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
             }
             if ( $stop_flag !== false ) {
                 yatco_log( '🛑 Stage 1: Stop flag detected before API call, cancelling', 'warning' );
@@ -165,7 +165,7 @@ function yatco_stage1_import_ids_and_names( $token ) {
             // Check stop flag after API call - check both option and transient
             $stop_flag = get_option( 'yatco_import_stop_flag', false );
             if ( $stop_flag === false ) {
-                $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
             }
             if ( $stop_flag !== false ) {
                 yatco_log( '🛑 Stage 1: Stop flag detected after API call, cancelling', 'warning' );
@@ -266,7 +266,7 @@ function yatco_stage2_import_images( $token ) {
     // Check stop flag - check both option and transient (consistent with full import)
     $stop_flag = get_option( 'yatco_import_stop_flag', false );
     if ( $stop_flag === false ) {
-        $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+    $stop_flag = get_transient( 'yatco_cache_warming_stop' );
     }
     if ( $stop_flag !== false ) {
         yatco_log( '🛑 Stage 2: Stop flag detected, cancelling', 'warning' );
@@ -307,7 +307,7 @@ function yatco_stage2_import_images( $token ) {
         // Check stop flag - check both option and transient
         $stop_flag = get_option( 'yatco_import_stop_flag', false );
         if ( $stop_flag === false ) {
-            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+        $stop_flag = get_transient( 'yatco_cache_warming_stop' );
         }
         if ( $stop_flag !== false ) {
             yatco_log( '🛑 Stage 2: Stop flag detected in batch, cancelling', 'warning' );
@@ -321,7 +321,7 @@ function yatco_stage2_import_images( $token ) {
             // Check stop flag - check both option and transient
             $stop_flag = get_option( 'yatco_import_stop_flag', false );
             if ( $stop_flag === false ) {
-                $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
             }
             if ( $stop_flag !== false ) {
                 yatco_log( '🛑 Stage 2: Stop flag detected, cancelling', 'warning' );
@@ -409,7 +409,7 @@ function yatco_stage3_import_full_data( $token ) {
     // Check stop flag - check both option and transient (consistent with full import)
     $stop_flag = get_option( 'yatco_import_stop_flag', false );
     if ( $stop_flag === false ) {
-        $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+    $stop_flag = get_transient( 'yatco_cache_warming_stop' );
     }
     if ( $stop_flag !== false ) {
         yatco_log( '🛑 Stage 3: Stop flag detected, cancelling', 'warning' );
@@ -450,7 +450,7 @@ function yatco_stage3_import_full_data( $token ) {
         // Check stop flag - check both option and transient
         $stop_flag = get_option( 'yatco_import_stop_flag', false );
         if ( $stop_flag === false ) {
-            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+        $stop_flag = get_transient( 'yatco_cache_warming_stop' );
         }
         if ( $stop_flag !== false ) {
             yatco_log( '🛑 Stage 3: Stop flag detected in batch, cancelling', 'warning' );
@@ -464,7 +464,7 @@ function yatco_stage3_import_full_data( $token ) {
             // Check stop flag - check both option and transient
             $stop_flag = get_option( 'yatco_import_stop_flag', false );
             if ( $stop_flag === false ) {
-                $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
             }
             if ( $stop_flag !== false ) {
                 yatco_log( '🛑 Stage 3: Stop flag detected, cancelling', 'warning' );
@@ -481,7 +481,7 @@ function yatco_stage3_import_full_data( $token ) {
             // Check stop flag before calling import function - check both option and transient
             $stop_flag = get_option( 'yatco_import_stop_flag', false );
             if ( $stop_flag === false ) {
-                $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
             }
             if ( $stop_flag !== false ) {
                 yatco_log( '🛑 Stage 3: Stop flag detected before import, cancelling', 'warning' );
@@ -497,7 +497,7 @@ function yatco_stage3_import_full_data( $token ) {
             // Check stop flag after import - check both option and transient
             $stop_flag = get_option( 'yatco_import_stop_flag', false );
             if ( $stop_flag === false ) {
-                $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
             }
             if ( $stop_flag !== false ) {
                 yatco_log( '🛑 Stage 3: Stop flag detected after import, cancelling', 'warning' );
@@ -806,9 +806,11 @@ function yatco_full_import( $token ) {
     $existing_count = count( $vessel_id_lookup );
     yatco_log( "Full Import: Built lookup map with {$existing_count} existing vessel IDs and " . count( $mlsid_lookup ) . " MLSIDs", 'info' );
     
+    // Store original API count (before filtering) for progress tracking
+    $total_from_api = count( $vessel_ids );
+    
     // OPTIMIZED: Filter out vessels that already exist using array_diff (much faster than foreach loop)
     // Convert vessel IDs to integers and use array operations for speed
-    $original_count = count( $vessel_ids );
     $vessel_ids_int = array_map( 'intval', $vessel_ids ); // Convert all to integers once
     $existing_vessel_ids = array_keys( $vessel_id_lookup ); // Get array of existing vessel IDs (already integers)
     
@@ -819,14 +821,14 @@ function yatco_full_import( $token ) {
     // Convert back to original array format (preserve keys if needed)
     $vessel_ids_to_process = array_values( $vessel_ids_to_process_int );
     
-    $skipped_count = $original_count - count( $vessel_ids_to_process );
+    $already_imported_count = $total_from_api - count( $vessel_ids_to_process );
     $vessel_ids = $vessel_ids_to_process;
     
     if ( $skip_existing ) {
-        yatco_log( "Full Import: Comparison complete - {$original_count} total vessels from API, {$existing_count} already imported, {$skipped_count} skipped, " . count( $vessel_ids ) . " new vessels need importing", 'info' );
-        set_transient( 'yatco_cache_warming_status', "Full Import: {$original_count} total from API, {$existing_count} already imported, " . count( $vessel_ids ) . " new to process...", 600 );
+        yatco_log( "Full Import: Comparison complete - {$total_from_api} total vessels from API, {$already_imported_count} already imported, " . count( $vessel_ids ) . " new vessels need importing", 'info' );
+        set_transient( 'yatco_cache_warming_status', "Full Import: {$total_from_api} total from API, {$already_imported_count} already imported, " . count( $vessel_ids ) . " new to process...", 600 );
     } else {
-        yatco_log( "Full Import: Resuming - {$original_count} total vessels, {$existing_count} already imported, {$skipped_count} skipped, " . count( $vessel_ids ) . " remaining to process", 'info' );
+        yatco_log( "Full Import: Resuming - {$total_from_api} total vessels from API, {$already_imported_count} already imported, " . count( $vessel_ids ) . " remaining to process", 'info' );
         set_transient( 'yatco_cache_warming_status', "Full Import: Resuming - " . count( $vessel_ids ) . " vessels remaining to process...", 600 );
     }
     
@@ -857,7 +859,9 @@ function yatco_full_import( $token ) {
     
     set_transient( 'yatco_cache_warming_status', "Full Import: Processing {$total_to_process} vessels...", 600 );
     
-    $processed = 0;
+    $processed = 0; // Count of successfully imported vessels
+    $failed = 0;    // Count of failed vessel imports
+    $attempted = 0; // Count of vessels attempted (for progress tracking)
     $batch_size = 2; // Process 2 at a time (balanced between speed and stability)
     $delay_seconds = 3; // 3 second delay between batches (reduced to speed up)
     $delay_between_items = 0.5; // 0.5 second delay between individual items (reduced from 2 seconds)
@@ -890,18 +894,18 @@ function yatco_full_import( $token ) {
         yatco_log( "Full Import: Starting batch {$batch_number} (" . count( $batch ) . " vessels)", 'info' );
         
             // Check stop flag (check both option and transient) - DON'T DELETE IT, keep it so it persists
-            $stop_flag = get_option( 'yatco_import_stop_flag', false );
-            if ( $stop_flag === false ) {
-                $stop_flag = get_transient( 'yatco_cache_warming_stop' );
-            }
-            if ( $stop_flag !== false ) {
+        $stop_flag = get_option( 'yatco_import_stop_flag', false );
+        if ( $stop_flag === false ) {
+            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+        }
+        if ( $stop_flag !== false ) {
                 yatco_log( '🛑 Full Import: Stop flag detected in batch, cancelling immediately', 'warning' );
-                delete_transient( 'yatco_import_progress' );
+            delete_transient( 'yatco_import_progress' );
                 wp_cache_delete( 'yatco_import_progress', 'transient' );
-                set_transient( 'yatco_cache_warming_status', 'Full Import stopped by user.', 60 );
+            set_transient( 'yatco_cache_warming_status', 'Full Import stopped by user.', 60 );
                 // DON'T delete stop flag - keep it so it can be checked again if import continues
-                return;
-            }
+            return;
+        }
         
         foreach ( $batch as $vessel_id ) {
             // Check stop flag (check both option and transient) - DON'T DELETE IT
@@ -963,13 +967,16 @@ function yatco_full_import( $token ) {
                 return;
             }
             
-            yatco_log( "Full Import: Starting vessel {$vessel_id} (vessel " . ($processed + 1) . " of {$total_to_process})", 'info' );
+            // Increment attempted counter BEFORE processing (shows progress even if import fails)
+            $attempted++;
+            $vessel_position = $resume_from_index + $attempted;
+            yatco_log( "Full Import: Starting vessel {$vessel_id} (position {$vessel_position} of {$total_to_process}, {$processed} successful so far)", 'info' );
             
-            // Log memory usage every 10 vessels
-            if ( $processed % 10 == 0 && function_exists( 'memory_get_usage' ) ) {
+            // Log memory usage every 10 vessels (use attempted instead of processed so it logs even if vessels fail)
+            if ( $attempted % 10 == 0 && $attempted > 0 && function_exists( 'memory_get_usage' ) ) {
                 $memory_mb = round( memory_get_usage( true ) / 1024 / 1024, 2 );
                 $peak_memory_mb = round( memory_get_peak_usage( true ) / 1024 / 1024, 2 );
-                yatco_log( "Full Import: Memory usage - Current: {$memory_mb} MB, Peak: {$peak_memory_mb} MB", 'info' );
+                yatco_log( "Full Import: Memory usage - Current: {$memory_mb} MB, Peak: {$peak_memory_mb} MB (after {$attempted} attempts, {$processed} successful)", 'info' );
             }
             
             // Reset execution time before each vessel import
@@ -992,22 +999,28 @@ function yatco_full_import( $token ) {
                 // Check if connection was aborted (browser closed, timeout, etc.)
                 if ( connection_aborted() ) {
                     yatco_log( "Full Import: Connection aborted while processing vessel {$vessel_id}. Saving progress...", 'warning' );
-                    // Save progress before returning (using current processed count before incrementing)
-                    $current_position = $resume_from_index + $processed;
-                    $percent = $total_to_process > 0 ? round( ( $processed / $total_to_process ) * 100, 1 ) : 0;
+                    // Save progress before returning (using current attempted count for position)
+                    $current_position = $resume_from_index + $attempted;
+                    $percent = $total_to_process > 0 ? round( ( $attempted / $total_to_process ) * 100, 1 ) : 0;
+                    $pending = $total_to_process - $attempted;
                     $progress_data = array(
-                        'last_processed' => $current_position,
-                        'processed'      => $processed, // Include processed count for proper resume
-                        'total'          => $total_to_process,
-                        'timestamp'      => time(),
-                        'percent'        => $percent,
-                        'last_vessel_id' => $vessel_id, // Save last vessel ID for debugging
+                        'last_processed'   => $current_position, // Position based on attempted
+                        'processed'        => $processed,        // Actual count of successfully processed vessels
+                        'failed'           => $failed,           // Count of failed vessel imports
+                        'attempted'        => $attempted,        // Count of vessels attempted
+                        'pending'          => $pending,          // Count of vessels remaining to process
+                        'total'            => $total_to_process, // Total vessels to process (new vessels only)
+                        'total_from_api'   => $total_from_api,   // Total vessels from API (before filtering)
+                        'already_imported' => $already_imported_count, // Vessels that were already imported
+                        'timestamp'        => time(),
+                        'percent'          => $percent,
+                        'last_vessel_id'   => $vessel_id,        // Save last vessel ID for debugging
                     );
                     delete_transient( 'yatco_import_progress' );
                     set_transient( 'yatco_import_progress', $progress_data, 3600 );
                     wp_cache_flush(); // Force immediate write
-                    set_transient( 'yatco_cache_warming_status', "Full Import: Connection lost. Processed {$processed} of {$total_to_process} vessels ({$percent}%). Progress saved - auto-resume enabled.", 600 );
-                    yatco_log( "Full Import: Progress saved before connection abort: position {$current_position}, processed {$processed}, last vessel {$vessel_id}", 'info' );
+                    set_transient( 'yatco_cache_warming_status', "Full Import: Connection lost. Attempted {$attempted} of {$total_to_process} vessels ({$percent}%), {$processed} successful. Progress saved - auto-resume enabled.", 600 );
+                    yatco_log( "Full Import: Progress saved before connection abort: position {$current_position}, attempted {$attempted}, processed {$processed}, last vessel {$vessel_id}", 'info' );
                     update_option( 'yatco_import_auto_resume', time(), false ); // Enable auto-resume
                     return;
                 }
@@ -1016,14 +1029,20 @@ function yatco_full_import( $token ) {
                 $import_result = new WP_Error( 'import_exception', $e->getMessage() );
                 
                 // Save progress even on error so we can resume
-                $current_position = $resume_from_index + $processed;
-                $percent = $total_to_process > 0 ? round( ( $processed / $total_to_process ) * 100, 1 ) : 0;
+                $current_position = $resume_from_index + $attempted;
+                $pending = $total_to_process - $attempted;
+                $percent = $total_to_process > 0 ? round( ( $attempted / $total_to_process ) * 100, 1 ) : 0;
                 $progress_data = array(
-                    'last_processed' => $current_position,
-                    'processed'      => $processed,
-                    'total'          => $total_to_process,
-                    'timestamp'      => time(),
-                    'percent'        => $percent,
+                    'last_processed'   => $current_position, // Position based on attempted
+                    'processed'        => $processed,        // Actual count of successfully processed vessels
+                    'failed'           => $failed,           // Count of failed vessel imports
+                    'attempted'        => $attempted,        // Count of vessels attempted
+                    'pending'          => $pending,          // Count of vessels remaining to process
+                    'total'            => $total_to_process, // Total vessels to process (new vessels only)
+                    'total_from_api'   => $total_from_api,   // Total vessels from API (before filtering)
+                    'already_imported' => $already_imported_count, // Vessels that were already imported
+                    'timestamp'        => time(),
+                    'percent'          => $percent,
                 );
                 set_transient( 'yatco_import_progress', $progress_data, 3600 );
                 wp_cache_flush();
@@ -1033,14 +1052,20 @@ function yatco_full_import( $token ) {
                 $import_result = new WP_Error( 'import_fatal_error', $e->getMessage() );
                 
                 // Save progress even on fatal error so we can resume
-                $current_position = $resume_from_index + $processed;
-                $percent = $total_to_process > 0 ? round( ( $processed / $total_to_process ) * 100, 1 ) : 0;
+                $current_position = $resume_from_index + $attempted;
+                $pending = $total_to_process - $attempted;
+                $percent = $total_to_process > 0 ? round( ( $attempted / $total_to_process ) * 100, 1 ) : 0;
                 $progress_data = array(
-                    'last_processed' => $current_position,
-                    'processed'      => $processed,
-                    'total'          => $total_to_process,
-                    'timestamp'      => time(),
-                    'percent'        => $percent,
+                    'last_processed'   => $current_position, // Position based on attempted
+                    'processed'        => $processed,        // Actual count of successfully processed vessels
+                    'failed'           => $failed,           // Count of failed vessel imports
+                    'attempted'        => $attempted,        // Count of vessels attempted
+                    'pending'          => $pending,          // Count of vessels remaining to process
+                    'total'            => $total_to_process, // Total vessels to process (new vessels only)
+                    'total_from_api'   => $total_from_api,   // Total vessels from API (before filtering)
+                    'already_imported' => $already_imported_count, // Vessels that were already imported
+                    'timestamp'        => time(),
+                    'percent'          => $percent,
                 );
                 set_transient( 'yatco_import_progress', $progress_data, 3600 );
                 wp_cache_flush();
@@ -1052,15 +1077,21 @@ function yatco_full_import( $token ) {
                 yatco_log( "Full Import: Vessel {$vessel_id} exceeded time limit ({$vessel_elapsed}s > {$vessel_max_time}s), skipping to next vessel", 'warning' );
                 $import_result = new WP_Error( 'import_timeout', "Vessel import exceeded {$vessel_max_time} second timeout" );
                 
-                // Save progress after timeout
-                $current_position = $resume_from_index + $processed;
-                $percent = $total_to_process > 0 ? round( ( $processed / $total_to_process ) * 100, 1 ) : 0;
+                // Save progress after timeout (use attempted for position)
+                $current_position = $resume_from_index + $attempted;
+                $pending = $total_to_process - $attempted;
+                $percent = $total_to_process > 0 ? round( ( $attempted / $total_to_process ) * 100, 1 ) : 0;
                 $progress_data = array(
-                    'last_processed' => $current_position,
-                    'processed'      => $processed,
-                    'total'          => $total_to_process,
-                    'timestamp'      => time(),
-                    'percent'        => $percent,
+                    'last_processed'   => $current_position, // Position based on attempted
+                    'processed'        => $processed,        // Actual count of successfully processed vessels
+                    'failed'           => $failed,           // Count of failed vessel imports
+                    'attempted'        => $attempted,        // Count of vessels attempted
+                    'pending'          => $pending,          // Count of vessels remaining to process
+                    'total'            => $total_to_process, // Total vessels to process (new vessels only)
+                    'total_from_api'   => $total_from_api,   // Total vessels from API (before filtering)
+                    'already_imported' => $already_imported_count, // Vessels that were already imported
+                    'timestamp'        => time(),
+                    'percent'          => $percent,
                 );
                 set_transient( 'yatco_import_progress', $progress_data, 3600 );
                 wp_cache_flush();
@@ -1097,20 +1128,27 @@ function yatco_full_import( $token ) {
                 // DON'T delete stop flag here - it's already been handled in the import function
                 return;
             } else {
+                $failed++;
                 yatco_log( "Full Import: Error importing vessel {$vessel_id}: " . $import_result->get_error_message(), 'error' );
             }
             
             // Save progress after EACH vessel for real-time updates (critical for progress bar)
-            // Track both position (for resuming) and processed count (for progress display)
-            $current_position = $resume_from_index + $processed;
-            $percent = $total_to_process > 0 ? round( ( $processed / $total_to_process ) * 100, 1 ) : 0;
+            // Track position (for resuming) and all counts for comprehensive progress display
+            $current_position = $resume_from_index + $attempted; // Use attempted for position (shows actual progress through list)
+            $pending = $total_to_process - $attempted; // Vessels remaining to process
+            $percent = $total_to_process > 0 ? round( ( $attempted / $total_to_process ) * 100, 1 ) : 0; // Use attempted for percent (shows progress through list)
             $progress_data = array(
-                'last_processed' => $current_position, // Position in array (for resuming)
-                'processed'      => $processed,        // Actual count of successfully processed vessels
-                'total'          => $total_to_process,
-                'timestamp'      => time(),
-                'percent'        => $percent,
-                'last_vessel_id' => $vessel_id,        // Track last vessel processed for debugging
+                'last_processed'   => $current_position, // Position in array (for resuming) - based on attempted
+                'processed'        => $processed,        // Count of successfully processed vessels
+                'failed'           => $failed,           // Count of failed vessel imports
+                'attempted'        => $attempted,        // Count of vessels attempted
+                'pending'          => $pending,          // Count of vessels remaining to process
+                'total'            => $total_to_process, // Total vessels to process (new vessels only)
+                'total_from_api'   => $total_from_api,   // Total vessels from API (before filtering)
+                'already_imported' => $already_imported_count, // Vessels that were already imported
+                'timestamp'        => time(),
+                'percent'          => $percent,
+                'last_vessel_id'   => $vessel_id,        // Track last vessel processed for debugging
             );
             
             // Check if this process still owns the lock (prevent overwriting progress from other processes)
@@ -1134,7 +1172,8 @@ function yatco_full_import( $token ) {
             delete_transient( 'yatco_import_progress' );
             set_transient( 'yatco_import_progress', $progress_data, 3600 );
             delete_transient( 'yatco_cache_warming_status' );
-            set_transient( 'yatco_cache_warming_status', "Full Import: Processed {$processed} of {$total_to_process} vessels ({$percent}%) - Last vessel: {$vessel_id}", 600 );
+            $status_message = "Full Import: {$total_from_api} total from API | {$already_imported_count} already imported | {$processed} successful | {$failed} failed | {$pending} pending";
+            set_transient( 'yatco_cache_warming_status', $status_message, 600 );
             
             // Force database write immediately - bypass all caches
             wp_cache_flush();
@@ -1144,9 +1183,9 @@ function yatco_full_import( $token ) {
                 wp_cache_flush_group( 'transient' );
             }
             
-            // Log progress save for debugging
-            if ( $processed % 10 == 0 || $processed <= 5 ) {
-                yatco_log( "Full Import: Progress saved - {$processed}/{$total_to_process} ({$percent}%) - Last vessel: {$vessel_id}", 'info' );
+            // Log progress save for debugging (use attempted so it logs even if all vessels fail)
+            if ( $attempted % 10 == 0 || $attempted <= 5 ) {
+                yatco_log( "Full Import: Progress saved - {$total_from_api} total from API | {$already_imported_count} already imported | {$processed} successful | {$failed} failed | {$pending} pending - Last vessel: {$vessel_id}", 'info' );
             }
             
             // Memory cleanup after each vessel to prevent memory buildup
@@ -1156,23 +1195,30 @@ function yatco_full_import( $token ) {
         }
         
         // Progress is already saved after each vessel, but save again after batch for extra safety
-        // Track position in the filtered array (vessels to process)
-        $current_position = $resume_from_index + $processed;
-        $percent = $total_to_process > 0 ? round( ( $processed / $total_to_process ) * 100, 1 ) : 0;
+        // Track position in the filtered array (vessels to process) - use attempted for consistency
+        $current_position = $resume_from_index + $attempted;
+        $pending = $total_to_process - $attempted;
+        $percent = $total_to_process > 0 ? round( ( $attempted / $total_to_process ) * 100, 1 ) : 0;
         $progress_data = array(
-            'last_processed' => $current_position, // Position in filtered array
-            'processed'      => $processed,        // Actual count of successfully processed vessels
-            'total'          => $total_to_process,
-            'timestamp'      => time(),
-            'percent'        => $percent,
+            'last_processed'   => $current_position, // Position in filtered array - based on attempted
+            'processed'        => $processed,        // Actual count of successfully processed vessels
+            'failed'           => $failed,           // Count of failed vessel imports
+            'attempted'        => $attempted,        // Count of vessels attempted
+            'pending'          => $pending,          // Count of vessels remaining to process
+            'total'            => $total_to_process, // Total vessels to process (new vessels only)
+            'total_from_api'   => $total_from_api,   // Total vessels from API (before filtering)
+            'already_imported' => $already_imported_count, // Vessels that were already imported
+            'timestamp'        => time(),
+            'percent'          => $percent,
         );
         set_transient( 'yatco_import_progress', $progress_data, 3600 );
-        set_transient( 'yatco_cache_warming_status', "Full Import: Processed {$processed} of {$total_to_process} vessels ({$percent}%)...", 600 );
+        $status_message = "Full Import: {$total_from_api} total from API | {$already_imported_count} already imported | {$processed} successful | {$failed} failed | {$pending} pending";
+        set_transient( 'yatco_cache_warming_status', $status_message, 600 );
         
         // Force flush transients to database immediately
         wp_cache_flush();
         
-        yatco_log( "Full Import: Batch {$batch_number} complete - Progress: {$processed}/{$total_to_process} ({$percent}%) | Position: {$current_position}", 'info' );
+        yatco_log( "Full Import: Batch {$batch_number} complete - {$total_from_api} total from API | {$already_imported_count} already imported | {$processed} successful | {$failed} failed | {$pending} pending | Position: {$current_position}", 'info' );
         
         // Flush output after each batch (when running directly)
         if ( ob_get_level() > 0 ) {
@@ -1186,7 +1232,7 @@ function yatco_full_import( $token ) {
         }
         
         // Delay between batches - check stop flag during delay
-        if ( $processed < $total_to_process ) {
+        if ( $attempted < $total_to_process ) {
             // Break delay into 1-second chunks and check stop flag between chunks
             for ( $i = 0; $i < $delay_seconds; $i++ ) {
                 sleep( 1 );
@@ -1209,16 +1255,19 @@ function yatco_full_import( $token ) {
         }
     }
     
-    // Check if we've completed all vessels
-    if ( $processed >= $total_to_process ) {
+    // Check if we've completed all vessels (use attempted, not processed, since we need to process all even if some fail)
+    if ( $attempted >= $total_to_process ) {
         // Clear progress and stop flags (import completed successfully)
         delete_transient( 'yatco_import_progress' );
         wp_cache_delete( 'yatco_import_progress', 'transient' );
         delete_option( 'yatco_import_stop_flag' );
         delete_transient( 'yatco_cache_warming_stop' );
         delete_option( 'yatco_import_auto_resume' );
-        set_transient( 'yatco_cache_warming_status', "Full Import Complete: Processed {$processed} of {$total_to_process} vessels.", 300 );
-        yatco_log( "Full Import Complete: Processed {$processed} of {$total_to_process} vessels.", 'info' );
+        $failed_count = $attempted - $processed;
+        $success_rate = $attempted > 0 ? round( ( $processed / $attempted ) * 100, 1 ) : 0;
+        $completion_message = "Full Import Complete: {$total_from_api} total from API | {$already_imported_count} already imported | {$processed} successful ({$success_rate}%) | {$failed_count} failed";
+        set_transient( 'yatco_cache_warming_status', $completion_message, 300 );
+        yatco_log( $completion_message, 'info' );
         
         // Log final memory usage for debugging
         if ( function_exists( 'memory_get_peak_usage' ) ) {
@@ -1235,7 +1284,11 @@ function yatco_full_import( $token ) {
         // NOTE: We do NOT release the lock here - keep it so auto-resume can continue this same import
         // The lock will be released when import completes or is stopped
         $last_vessel_id = isset( $progress_data['last_vessel_id'] ) ? $progress_data['last_vessel_id'] : 'unknown';
-        yatco_log( "Full Import: INCOMPLETE - Stopped at {$processed}/{$total_to_process} vessels (last vessel: {$last_vessel_id}). Auto-resume enabled. Lock maintained for resume.", 'warning' );
+        $attempted_final = isset( $progress_data['attempted'] ) ? intval( $progress_data['attempted'] ) : $processed;
+        $processed_final = isset( $progress_data['processed'] ) ? intval( $progress_data['processed'] ) : 0;
+        $failed_final = isset( $progress_data['failed'] ) ? intval( $progress_data['failed'] ) : 0;
+        $pending_final = isset( $progress_data['pending'] ) ? intval( $progress_data['pending'] ) : 0;
+        yatco_log( "Full Import: INCOMPLETE - Stopped at {$attempted_final}/{$total_to_process} attempted, {$processed_final} successful, {$failed_final} failed, {$pending_final} pending (last vessel: {$last_vessel_id}). Auto-resume enabled. Lock maintained for resume.", 'warning' );
         
         // Log system information for debugging
         if ( function_exists( 'memory_get_peak_usage' ) ) {
@@ -1387,7 +1440,7 @@ function yatco_daily_sync_check( $token ) {
             // Check stop flag - check both option and transient
             $stop_flag = get_option( 'yatco_import_stop_flag', false );
             if ( $stop_flag === false ) {
-                $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
             }
             if ( $stop_flag !== false ) {
                 yatco_log( '🛑 Daily Sync: Stop flag detected in batch, cancelling', 'warning' );

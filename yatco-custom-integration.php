@@ -260,19 +260,34 @@ function yatco_ajax_get_import_status() {
     );
     
     if ( $active_stage === 'full' && $active_progress ) {
-        // Use 'processed' count if available (more accurate), otherwise fall back to 'last_processed'
-        $current = isset( $active_progress['processed'] ) ? intval( $active_progress['processed'] ) : ( isset( $active_progress['last_processed'] ) ? intval( $active_progress['last_processed'] ) : 0 );
-        $total = isset( $active_progress['total'] ) ? intval( $active_progress['total'] ) : 0;
+        // Get all progress counts
+        $processed = isset( $active_progress['processed'] ) ? intval( $active_progress['processed'] ) : 0;
+        $failed = isset( $active_progress['failed'] ) ? intval( $active_progress['failed'] ) : 0;
+        $attempted = isset( $active_progress['attempted'] ) ? intval( $active_progress['attempted'] ) : 0;
+        $pending = isset( $active_progress['pending'] ) ? intval( $active_progress['pending'] ) : 0;
+        $total_to_process = isset( $active_progress['total'] ) ? intval( $active_progress['total'] ) : 0;
+        $total_from_api = isset( $active_progress['total_from_api'] ) ? intval( $active_progress['total_from_api'] ) : $total_to_process;
+        $already_imported = isset( $active_progress['already_imported'] ) ? intval( $active_progress['already_imported'] ) : 0;
+        
+        // Use attempted for progress calculation (shows actual progress through the list)
+        $current = $attempted > 0 ? $attempted : $processed;
+        $total = $total_to_process;
         // Prefer saved percent if available (more accurate), otherwise calculate
         $percent = isset( $active_progress['percent'] ) ? floatval( $active_progress['percent'] ) : ( $total > 0 ? round( ( $current / $total ) * 100, 1 ) : 0 );
         
         $response_data['active'] = true;
         $response_data['stage'] = 'full';
         $response_data['progress'] = array(
+            'processed' => $processed,
+            'failed' => $failed,
+            'attempted' => $attempted,
+            'pending' => $pending,
             'current' => $current,
             'total' => $total,
+            'total_from_api' => $total_from_api,
+            'already_imported' => $already_imported,
             'percent' => $percent,
-            'remaining' => $total - $current,
+            'remaining' => $pending,
         );
         
         // Always include status message in progress object
@@ -447,9 +462,24 @@ function yatco_ajax_get_import_logs() {
         return;
     }
     
-    // Bypass cache to get fresh logs
+    // Force fresh logs by bypassing all caches
     wp_cache_delete( 'yatco_import_logs', 'options' );
-    $logs = get_option( 'yatco_import_logs', array() );
+    wp_cache_flush();
+    
+    // Get logs directly from database (bypass object cache)
+    global $wpdb;
+    $logs_serialized = $wpdb->get_var( $wpdb->prepare( 
+        "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s",
+        'yatco_import_logs'
+    ) );
+    
+    $logs = array();
+    if ( ! empty( $logs_serialized ) ) {
+        $logs = maybe_unserialize( $logs_serialized );
+        if ( ! is_array( $logs ) ) {
+            $logs = array();
+        }
+    }
     
     // Return last 50 log entries
     $recent_logs = array_slice( $logs, -50 );
