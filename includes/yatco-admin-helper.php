@@ -84,117 +84,102 @@ function yatco_display_import_status_section() {
     
     echo '<h2>Import Status & Progress</h2>';
     
-    // Display status bar
+    // ALWAYS render the progress bar structure - let JavaScript populate it
+    // This ensures the progress bar is always visible and can be updated in real-time
     echo '<div id="yatco-import-status-display" style="background: #fff; border: 2px solid #2271b1; border-radius: 4px; padding: 20px; margin: 20px 0;">';
     
-    if ( $active_stage > 0 || $active_stage === 'full' || $active_stage === 'daily_sync' ) {
-        if ( $active_stage === 'daily_sync' ) {
-            // Daily sync progress display
-            $current = isset( $active_progress['processed'] ) ? intval( $active_progress['processed'] ) : 0;
-            $total = isset( $active_progress['total'] ) ? intval( $active_progress['total'] ) : 0;
-            $percent = $total > 0 ? round( ( $current / $total ) * 100, 1 ) : 0;
-            $stage_name = 'Daily Sync';
-        } else {
-            // Full import progress display
-            $processed = isset( $active_progress['processed'] ) ? intval( $active_progress['processed'] ) : 0;
-            $failed = isset( $active_progress['failed'] ) ? intval( $active_progress['failed'] ) : 0;
-            $attempted = isset( $active_progress['attempted'] ) ? intval( $active_progress['attempted'] ) : 0;
-            $pending = isset( $active_progress['pending'] ) ? intval( $active_progress['pending'] ) : 0;
-            $total_to_process = isset( $active_progress['total'] ) ? intval( $active_progress['total'] ) : 0;
-            $total_from_api = isset( $active_progress['total_from_api'] ) ? intval( $active_progress['total_from_api'] ) : $total_to_process;
-            $already_imported = isset( $active_progress['already_imported'] ) ? intval( $active_progress['already_imported'] ) : 0;
-            
-            // Use attempted for progress bar (shows actual progress through the list)
-            $current = $attempted > 0 ? $attempted : $processed;
-            $total = $total_to_process;
-            $percent = isset( $active_progress['percent'] ) ? floatval( $active_progress['percent'] ) : ( $total > 0 ? round( ( $current / $total ) * 100, 1 ) : 0 );
-            $stage_name = 'Full Import';
+    // Determine initial values from current progress (if available)
+    $initial_stage_name = 'Full Import';
+    $initial_percent = 0;
+    $initial_current = 0;
+    $initial_total = 0;
+    $initial_status = $cache_status !== false ? $cache_status : 'No active import';
+    
+    if ( $active_stage === 'daily_sync' && $active_progress ) {
+        $initial_stage_name = 'Daily Sync';
+        $initial_current = isset( $active_progress['processed'] ) ? intval( $active_progress['processed'] ) : 0;
+        $initial_total = isset( $active_progress['total'] ) ? intval( $active_progress['total'] ) : 0;
+        $initial_percent = $initial_total > 0 ? round( ( $initial_current / $initial_total ) * 100, 1 ) : 0;
+    } elseif ( $active_stage === 'full' && $active_progress ) {
+        $initial_stage_name = 'Full Import';
+        $processed = isset( $active_progress['processed'] ) ? intval( $active_progress['processed'] ) : 0;
+        $attempted = isset( $active_progress['attempted'] ) ? intval( $active_progress['attempted'] ) : 0;
+        $initial_current = $attempted > 0 ? $attempted : $processed;
+        $initial_total = isset( $active_progress['total'] ) ? intval( $active_progress['total'] ) : 0;
+        $initial_percent = isset( $active_progress['percent'] ) ? floatval( $active_progress['percent'] ) : ( $initial_total > 0 ? round( ( $initial_current / $initial_total ) * 100, 1 ) : 0 );
+    } elseif ( ( $import_progress !== false && is_array( $import_progress ) ) || ( $daily_sync_progress !== false && is_array( $daily_sync_progress ) ) ) {
+        // There's progress data but stop flag might be set - still show it
+        if ( $daily_sync_progress !== false && is_array( $daily_sync_progress ) ) {
+            $initial_stage_name = 'Daily Sync';
+            $initial_current = isset( $daily_sync_progress['processed'] ) ? intval( $daily_sync_progress['processed'] ) : 0;
+            $initial_total = isset( $daily_sync_progress['total'] ) ? intval( $daily_sync_progress['total'] ) : 0;
+            $initial_percent = $initial_total > 0 ? round( ( $initial_current / $initial_total ) * 100, 1 ) : 0;
+        } elseif ( $import_progress !== false && is_array( $import_progress ) ) {
+            $initial_stage_name = 'Full Import';
+            $processed = isset( $import_progress['processed'] ) ? intval( $import_progress['processed'] ) : 0;
+            $attempted = isset( $import_progress['attempted'] ) ? intval( $import_progress['attempted'] ) : 0;
+            $initial_current = $attempted > 0 ? $attempted : $processed;
+            $initial_total = isset( $import_progress['total'] ) ? intval( $import_progress['total'] ) : 0;
+            $initial_percent = isset( $import_progress['percent'] ) ? floatval( $import_progress['percent'] ) : ( $initial_total > 0 ? round( ( $initial_current / $initial_total ) * 100, 1 ) : 0 );
         }
-        
-        echo '<h3 style="margin-top: 0; color: #2271b1;">📊 ' . esc_html( $stage_name ) . ' Progress</h3>';
-        
-        if ( $cache_status !== false ) {
-            echo '<p id="yatco-status-text" style="margin: 10px 0; font-size: 14px; color: #666;"><strong>Status:</strong> ' . esc_html( $cache_status ) . '</p>';
-        } else {
-            echo '<p id="yatco-status-text" style="margin: 10px 0; font-size: 14px; color: #666;"><strong>Status:</strong> <span>Starting...</span></p>';
+        if ( $cache_status_raw !== false ) {
+            $initial_status = $cache_status_raw;
         }
-        
-        echo '<div style="background: #f0f0f0; border-radius: 10px; height: 30px; margin: 15px 0; position: relative; overflow: hidden;">';
-        echo '<div id="yatco-progress-bar" style="background: linear-gradient(90deg, #2271b1 0%, #46b450 100%); height: 100%; width: ' . esc_attr( $percent ) . '%; transition: width 0.5s ease-in-out; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: bold; font-size: 12px;">';
-        echo esc_html( $percent ) . '%';
-        echo '</div>';
-        echo '</div>';
-        
-        // Show detailed counts for full import
-        if ( $active_stage === 'full' && isset( $total_from_api ) ) {
-            echo '<div style="margin-top: 15px; padding: 15px; background: #f9f9f9; border-radius: 4px; font-size: 13px;">';
-            echo '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 10px;">';
-            echo '<div><strong>Total from API:</strong> <span id="yatco-total-from-api">' . number_format( $total_from_api ) . '</span></div>';
-            echo '<div><strong>Already Imported:</strong> <span id="yatco-already-imported">' . number_format( $already_imported ) . '</span></div>';
-            echo '<div style="color: #46b450;"><strong>✓ Successful:</strong> <span id="yatco-successful-count">' . number_format( $processed ) . '</span></div>';
-            echo '<div style="color: #dc3232;"><strong>✗ Failed:</strong> <span id="yatco-failed-count">' . number_format( $failed ) . '</span></div>';
-            echo '<div style="color: #2271b1;"><strong>⏳ Pending:</strong> <span id="yatco-pending-count">' . number_format( $pending ) . '</span></div>';
-            echo '</div>';
-            echo '<div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #ddd; color: #666;">';
-            echo '<strong>Progress:</strong> <span id="yatco-processed-count">' . number_format( $current ) . ' / ' . number_format( $total ) . '</span> attempted';
-            echo '</div>';
-            echo '</div>';
-        } else {
-            echo '<div style="display: flex; justify-content: space-between; margin-top: 10px; font-size: 13px; color: #666;">';
-            echo '<span><strong>Processed:</strong> <span id="yatco-processed-count">' . number_format( $current ) . ' / ' . number_format( $total ) . '</span></span>';
-            echo '<span><strong>Remaining:</strong> <span id="yatco-remaining-count">' . number_format( $total - $current ) . '</span></span>';
-            echo '</div>';
-        }
-        
-        // Show daily sync details
-        if ( $active_stage === 'daily_sync' ) {
-            $removed = isset( $active_progress['removed'] ) ? intval( $active_progress['removed'] ) : 0;
-            $new = isset( $active_progress['new'] ) ? intval( $active_progress['new'] ) : 0;
-            $price_updates = isset( $active_progress['price_updates'] ) ? intval( $active_progress['price_updates'] ) : 0;
-            $days_updates = isset( $active_progress['days_on_market_updates'] ) ? intval( $active_progress['days_on_market_updates'] ) : 0;
-            echo '<div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e0e0e0; font-size: 13px; color: #666;">';
-            echo '<p style="margin: 5px 0;"><strong>Removed:</strong> ' . number_format( $removed ) . '</p>';
-            echo '<p style="margin: 5px 0;"><strong>New:</strong> ' . number_format( $new ) . '</p>';
-            echo '<p style="margin: 5px 0;"><strong>Price Updates:</strong> ' . number_format( $price_updates ) . '</p>';
-            echo '<p style="margin: 5px 0;"><strong>Days on Market Updates:</strong> ' . number_format( $days_updates ) . '</p>';
-            echo '</div>';
-        }
-        
-        // Estimated time remaining
-        if ( isset( $active_progress['timestamp'] ) && $current > 0 ) {
-            $time_elapsed = time() - intval( $active_progress['timestamp'] );
-            if ( $time_elapsed > 0 && $current > 0 ) {
-                $rate = $current / $time_elapsed; // items per second
-                $remaining = $total - $current;
-                if ( $rate > 0 ) {
-                    $eta_seconds = $remaining / $rate;
-                    $eta_minutes = round( $eta_seconds / 60, 1 );
-                    echo '<p style="margin: 10px 0 0 0; font-size: 12px; color: #666;"><strong>Estimated time remaining:</strong> <span id="yatco-eta-text">' . esc_html( $eta_minutes ) . ' minutes</span></p>';
-                } else {
-                    echo '<p style="margin: 10px 0 0 0; font-size: 12px; color: #666;"><strong>Estimated time remaining:</strong> <span id="yatco-eta-text">calculating...</span></p>';
-                }
-            } else {
-                echo '<p style="margin: 10px 0 0 0; font-size: 12px; color: #666;"><strong>Estimated time remaining:</strong> <span id="yatco-eta-text">calculating...</span></p>';
-            }
-        } else {
-            echo '<p style="margin: 10px 0 0 0; font-size: 12px; color: #666;"><strong>Estimated time remaining:</strong> <span id="yatco-eta-text">calculating...</span></p>';
-        }
-        
-        // Stop button
-        echo '<div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #e0e0e0;">';
-        echo '<form method="post" id="yatco-stop-import-form" style="display: inline-block;">';
-        wp_nonce_field( 'yatco_stop_import', 'yatco_stop_import_nonce' );
-        echo '<button type="submit" name="yatco_stop_import" class="button button-secondary" style="background: #dc3232; border-color: #dc3232; color: #fff; font-weight: bold; padding: 8px 16px;">🛑 Stop Import</button>';
-        echo '</form>';
-        echo '<p style="margin: 8px 0 0 0; font-size: 12px; color: #666;">Click to cancel the current import. The import will stop at the next checkpoint.</p>';
-        echo '</div>';
-    } elseif ( $cache_status !== false ) {
-        echo '<div class="notice notice-info" style="margin: 0;">';
-        echo '<p><strong>Status:</strong> ' . esc_html( $cache_status ) . '</p>';
-        echo '</div>';
-    } else {
-        echo '<p style="margin: 0; color: #666;">No active import. Start a full import or daily sync below to see progress.</p>';
     }
+    
+    // Always render the progress structure - JavaScript will update it
+    echo '<h3 id="yatco-stage-name" style="margin-top: 0; color: #2271b1;">📊 ' . esc_html( $initial_stage_name ) . ' Progress</h3>';
+    echo '<p id="yatco-status-text" style="margin: 10px 0; font-size: 14px; color: #666;"><strong>Status:</strong> <span>' . esc_html( $initial_status ) . '</span></p>';
+    
+    echo '<div style="background: #f0f0f0; border-radius: 10px; height: 30px; margin: 15px 0; position: relative; overflow: hidden;">';
+    echo '<div id="yatco-progress-bar" style="background: linear-gradient(90deg, #2271b1 0%, #46b450 100%); height: 100%; width: ' . esc_attr( $initial_percent ) . '%; transition: width 0.5s ease-in-out; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: bold; font-size: 12px;">';
+    echo esc_html( $initial_percent ) . '%';
+    echo '</div>';
+    echo '</div>';
+    
+    // Always render full import detailed counts structure (JavaScript will show/hide as needed)
+    echo '<div id="yatco-full-import-details" style="margin-top: 15px; padding: 15px; background: #f9f9f9; border-radius: 4px; font-size: 13px; ' . ( $active_stage === 'full' && isset( $total_from_api ) ? '' : 'display: none;' ) . '">';
+    echo '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 10px;">';
+    echo '<div><strong>Total from API:</strong> <span id="yatco-total-from-api">' . ( isset( $total_from_api ) ? number_format( $total_from_api ) : '0' ) . '</span></div>';
+    echo '<div><strong>Already Imported:</strong> <span id="yatco-already-imported">' . ( isset( $already_imported ) ? number_format( $already_imported ) : '0' ) . '</span></div>';
+    echo '<div style="color: #46b450;"><strong>✓ Successful:</strong> <span id="yatco-successful-count">' . ( isset( $processed ) ? number_format( $processed ) : '0' ) . '</span></div>';
+    echo '<div style="color: #dc3232;"><strong>✗ Failed:</strong> <span id="yatco-failed-count">' . ( isset( $failed ) ? number_format( $failed ) : '0' ) . '</span></div>';
+    echo '<div style="color: #2271b1;"><strong>⏳ Pending:</strong> <span id="yatco-pending-count">' . ( isset( $pending ) ? number_format( $pending ) : '0' ) . '</span></div>';
+    echo '</div>';
+    echo '<div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #ddd; color: #666;">';
+    echo '<strong>Progress:</strong> <span id="yatco-processed-count">' . number_format( $initial_current ) . ' / ' . number_format( $initial_total ) . '</span> attempted';
+    echo '</div>';
+    echo '</div>';
+    
+    // Always render simple progress counts (for daily sync or fallback)
+    echo '<div id="yatco-simple-progress" style="display: ' . ( $active_stage === 'daily_sync' || ( $active_stage !== 'full' && ! isset( $total_from_api ) ) ? 'flex' : 'none' ) . '; justify-content: space-between; margin-top: 10px; font-size: 13px; color: #666;">';
+    echo '<span><strong>Processed:</strong> <span id="yatco-processed-count-simple">' . number_format( $initial_current ) . ' / ' . number_format( $initial_total ) . '</span></span>';
+    echo '<span><strong>Remaining:</strong> <span id="yatco-remaining-count">' . number_format( max( 0, $initial_total - $initial_current ) ) . '</span></span>';
+    echo '</div>';
+    
+    // Always render daily sync details structure (JavaScript will show/hide as needed)
+    $removed = isset( $active_progress['removed'] ) ? intval( $active_progress['removed'] ) : 0;
+    $new = isset( $active_progress['new'] ) ? intval( $active_progress['new'] ) : 0;
+    $price_updates = isset( $active_progress['price_updates'] ) ? intval( $active_progress['price_updates'] ) : 0;
+    $days_updates = isset( $active_progress['days_on_market_updates'] ) ? intval( $active_progress['days_on_market_updates'] ) : 0;
+    echo '<div id="yatco-daily-sync-details" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e0e0e0; font-size: 13px; color: #666; ' . ( $active_stage === 'daily_sync' ? '' : 'display: none;' ) . '">';
+    echo '<p style="margin: 5px 0;"><strong>Removed:</strong> <span id="yatco-removed-count">' . number_format( $removed ) . '</span></p>';
+    echo '<p style="margin: 5px 0;"><strong>New:</strong> <span id="yatco-new-count">' . number_format( $new ) . '</span></p>';
+    echo '<p style="margin: 5px 0;"><strong>Price Updates:</strong> <span id="yatco-price-updates-count">' . number_format( $price_updates ) . '</span></p>';
+    echo '<p style="margin: 5px 0;"><strong>Days on Market Updates:</strong> <span id="yatco-days-updates-count">' . number_format( $days_updates ) . '</span></p>';
+    echo '</div>';
+    
+    // Always render ETA
+    echo '<p id="yatco-eta-container" style="margin: 10px 0 0 0; font-size: 12px; color: #666;"><strong>Estimated time remaining:</strong> <span id="yatco-eta-text">calculating...</span></p>';
+    
+    // Always render stop button
+    echo '<div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #e0e0e0;">';
+    echo '<form method="post" id="yatco-stop-import-form" style="display: inline-block;">';
+    wp_nonce_field( 'yatco_stop_import', 'yatco_stop_import_nonce' );
+    echo '<button type="submit" name="yatco_stop_import" class="button button-secondary" style="background: #dc3232; border-color: #dc3232; color: #fff; font-weight: bold; padding: 8px 16px;">🛑 Stop Import</button>';
+    echo '</form>';
+    echo '<p style="margin: 8px 0 0 0; font-size: 12px; color: #666;">Click to cancel the current import. The import will stop at the next checkpoint.</p>';
+    echo '</div>';
     
     echo '</div>';
     
@@ -204,7 +189,10 @@ function yatco_display_import_status_section() {
     echo '    var pollInterval = null;';
     echo '    ';
     echo '    function updateProgressBar(progressData) {';
+    echo '        console.log("[YATCO] updateProgressBar called with:", progressData);';
     echo '        if (!progressData) {';
+    echo '            console.log("[YATCO] No progress data, hiding progress display");';
+    echo '            $("#yatco-import-status-display").html("<p style=\\"margin: 0; color: #666;\\">No active import. Start a full import or daily sync to see progress.</p>");';
     echo '            return;';
     echo '        }';
     echo '        ';
@@ -213,50 +201,101 @@ function yatco_display_import_status_section() {
     echo '        if (progressBar.length) {';
     echo '            var currentWidth = parseFloat(progressBar.css("width").replace("%", "")) || 0;';
     echo '            if (Math.abs(currentWidth - percent) > 0.01) {';
+    echo '                console.log("[YATCO] Updating progress bar from " + currentWidth + "% to " + percent + "%");';
     echo '                progressBar.css("width", percent + "%");';
     echo '                progressBar.text(percent.toFixed(1) + "%");';
     echo '            }';
+    echo '        } else {';
+    echo '            console.warn("[YATCO] Progress bar element not found!");';
     echo '        }';
     echo '        ';
     echo '        // Update status text';
     echo '        if (progressData.status && $("#yatco-status-text").length) {';
-    echo '            $("#yatco-status-text").html("<strong>Status:</strong> " + progressData.status);';
+    echo '            $("#yatco-status-text").html("<strong>Status:</strong> <span>" + progressData.status + "</span>");';
     echo '        }';
     echo '        ';
-        echo '        // Update counts - handle both full import (with detailed counts) and daily sync (simple counts)';
-        echo '        if (progressData.processed !== undefined && $("#yatco-successful-count").length) {';
-        echo '            // Full import with detailed counts';
-        echo '            if (progressData.total_from_api !== undefined && $("#yatco-total-from-api").length) {';
-        echo '                $("#yatco-total-from-api").text(progressData.total_from_api.toLocaleString());';
-        echo '            }';
-        echo '            if (progressData.already_imported !== undefined && $("#yatco-already-imported").length) {';
-        echo '                $("#yatco-already-imported").text(progressData.already_imported.toLocaleString());';
-        echo '            }';
-        echo '            if ($("#yatco-successful-count").length) {';
-        echo '                $("#yatco-successful-count").text(progressData.processed.toLocaleString());';
-        echo '            }';
-        echo '            if (progressData.failed !== undefined && $("#yatco-failed-count").length) {';
-        echo '                $("#yatco-failed-count").text(progressData.failed.toLocaleString());';
-        echo '            }';
-        echo '            if (progressData.pending !== undefined && $("#yatco-pending-count").length) {';
-        echo '                $("#yatco-pending-count").text(progressData.pending.toLocaleString());';
-        echo '            }';
-        echo '            if ($("#yatco-processed-count").length) {';
-        echo '                $("#yatco-processed-count").text(progressData.attempted.toLocaleString() + " / " + progressData.total.toLocaleString());';
-        echo '            }';
-        echo '        } else {';
-        echo '            // Daily sync or simple counts';
-        echo '            if (progressData.current !== undefined && $("#yatco-processed-count").length && !$("#yatco-successful-count").length) {';
-        echo '                $("#yatco-processed-count").text(progressData.current.toLocaleString() + " / " + progressData.total.toLocaleString());';
-        echo '            }';
-        echo '            if (progressData.remaining !== undefined && $("#yatco-remaining-count").length) {';
-        echo '                $("#yatco-remaining-count").text(progressData.remaining.toLocaleString());';
-        echo '            }';
-        echo '        }';
-        echo '        ';
+    echo '        // Update counts - handle both full import (with detailed counts) and daily sync (simple counts)';
+    echo '        if (progressData.total_from_api !== undefined) {';
+    echo '            // Full import with detailed counts - show detailed section';
+    echo '            $("#yatco-full-import-details").show();';
+    echo '            $("#yatco-simple-progress").hide();';
+    echo '            $("#yatco-daily-sync-details").hide();';
+    echo '            ';
+    echo '            if ($("#yatco-total-from-api").length) {';
+    echo '                $("#yatco-total-from-api").text((progressData.total_from_api || 0).toLocaleString());';
+    echo '            }';
+    echo '            if ($("#yatco-already-imported").length) {';
+    echo '                $("#yatco-already-imported").text((progressData.already_imported || 0).toLocaleString());';
+    echo '            }';
+    echo '            if ($("#yatco-successful-count").length) {';
+    echo '                $("#yatco-successful-count").text((progressData.processed || 0).toLocaleString());';
+    echo '            }';
+    echo '            if ($("#yatco-failed-count").length) {';
+    echo '                $("#yatco-failed-count").text((progressData.failed || 0).toLocaleString());';
+    echo '            }';
+    echo '            if ($("#yatco-pending-count").length) {';
+    echo '                $("#yatco-pending-count").text((progressData.pending || 0).toLocaleString());';
+    echo '            }';
+    echo '            if ($("#yatco-processed-count").length) {';
+    echo '                var attempted = progressData.attempted || progressData.current || 0;';
+    echo '                var total = progressData.total || 0;';
+    echo '                $("#yatco-processed-count").text(attempted.toLocaleString() + " / " + total.toLocaleString());';
+    echo '            }';
+    echo '        } else if (progressData.removed !== undefined || progressData.new !== undefined) {';
+    echo '            // Daily sync - show daily sync details';
+    echo '            $("#yatco-full-import-details").hide();';
+    echo '            $("#yatco-simple-progress").show();';
+    echo '            $("#yatco-daily-sync-details").show();';
+    echo '            ';
+    echo '            if ($("#yatco-removed-count").length) {';
+    echo '                $("#yatco-removed-count").text((progressData.removed || 0).toLocaleString());';
+    echo '            }';
+    echo '            if ($("#yatco-new-count").length) {';
+    echo '                $("#yatco-new-count").text((progressData.new || 0).toLocaleString());';
+    echo '            }';
+    echo '            if ($("#yatco-price-updates-count").length) {';
+    echo '                $("#yatco-price-updates-count").text((progressData.price_updates || 0).toLocaleString());';
+    echo '            }';
+    echo '            if ($("#yatco-days-updates-count").length) {';
+    echo '                $("#yatco-days-updates-count").text((progressData.days_on_market_updates || 0).toLocaleString());';
+    echo '            }';
+    echo '            if ($("#yatco-processed-count-simple").length) {';
+    echo '                var current = progressData.current || 0;';
+    echo '                var total = progressData.total || 0;';
+    echo '                $("#yatco-processed-count-simple").text(current.toLocaleString() + " / " + total.toLocaleString());';
+    echo '            }';
+    echo '            if ($("#yatco-remaining-count").length) {';
+    echo '                var remaining = (progressData.remaining !== undefined) ? progressData.remaining : (progressData.total || 0) - (progressData.current || 0);';
+    echo '                $("#yatco-remaining-count").text(Math.max(0, remaining).toLocaleString());';
+    echo '            }';
+    echo '        } else {';
+    echo '            // Simple progress (fallback)';
+    echo '            $("#yatco-full-import-details").hide();';
+    echo '            $("#yatco-simple-progress").show();';
+    echo '            $("#yatco-daily-sync-details").hide();';
+    echo '            ';
+    echo '            if ($("#yatco-processed-count-simple").length) {';
+    echo '                var current = progressData.current || progressData.attempted || 0;';
+    echo '                var total = progressData.total || 0;';
+    echo '                $("#yatco-processed-count-simple").text(current.toLocaleString() + " / " + total.toLocaleString());';
+    echo '            }';
+    echo '            if ($("#yatco-remaining-count").length) {';
+    echo '                var remaining = (progressData.remaining !== undefined) ? progressData.remaining : (progressData.total || 0) - (progressData.current || progressData.attempted || 0);';
+    echo '                $("#yatco-remaining-count").text(Math.max(0, remaining).toLocaleString());';
+    echo '            }';
+    echo '        }';
+    echo '        ';
     echo '        // Update ETA';
     echo '        if (progressData.eta_minutes !== undefined && $("#yatco-eta-text").length) {';
     echo '            $("#yatco-eta-text").text(progressData.eta_minutes + " minutes");';
+    echo '        } else if ($("#yatco-eta-text").length) {';
+    echo '            $("#yatco-eta-text").text("calculating...");';
+    echo '        }';
+    echo '        ';
+    echo '        // Update stage name if provided';
+    echo '        if (progressData.stage && $("#yatco-stage-name").length) {';
+    echo '            var stageName = progressData.stage === "daily_sync" ? "Daily Sync" : "Full Import";';
+    echo '            $("#yatco-stage-name").text("📊 " + stageName + " Progress");';
     echo '        }';
     echo '    }';
     echo '    ';
@@ -273,19 +312,29 @@ function yatco_display_import_status_section() {
     echo '                console.log("[YATCO] fetchProgress: AJAX response received", response);';
     echo '                if (response && response.success && response.data) {';
     echo '                    var data = response.data;';
-    echo '                    console.log("[YATCO] fetchProgress: Active =", data.active, "Progress =", data.progress);';
+    echo '                    console.log("[YATCO] fetchProgress: Active =", data.active, "Progress =", data.progress, "Status =", data.status);';
     echo '                    if (data.active && data.progress) {';
-    echo '                        // Add status to progress data if available';
+    echo '                        // Add status and stage to progress data if available';
     echo '                        if (data.status) {';
     echo '                            data.progress.status = data.status;';
     echo '                        }';
+    echo '                        if (data.stage) {';
+    echo '                            data.progress.stage = data.stage;';
+    echo '                        }';
+    echo '                        updateProgressBar(data.progress);';
+    echo '                    } else if (data.progress) {';
+    echo '                        // Even if not marked as active, if we have progress data, show it';
+    echo '                        console.log("[YATCO] fetchProgress: Progress data exists but not marked active, showing anyway");';
+    echo '                        if (data.status) {';
+    echo '                            data.progress.status = data.status;';
+    echo '                        }';
+    echo '                        if (data.stage) {';
+    echo '                            data.progress.stage = data.stage;';
+    echo '                        }';
     echo '                        updateProgressBar(data.progress);';
     echo '                    } else if (!data.active) {';
-    echo '                        console.log("[YATCO] fetchProgress: Import is not active, clearing interval");';
-    echo '                        if (pollInterval) {';
-    echo '                            clearInterval(pollInterval);';
-    echo '                            pollInterval = null;';
-    echo '                        }';
+    echo '                        console.log("[YATCO] fetchProgress: Import is not active and no progress data");';
+    echo '                        // Don\'t clear interval - keep polling in case import starts';
     echo '                    }';
     echo '                } else {';
     echo '                    console.warn("[YATCO] fetchProgress: Invalid response structure", response);';
@@ -309,16 +358,26 @@ function yatco_display_import_status_section() {
     echo '                if (progressInfo.status) {';
     echo '                    progressData.status = progressInfo.status;';
     echo '                }';
-    echo '                updateProgressBar(progressData);';
-    echo '            } else if (!progressInfo.active) {';
-    echo '                console.log("[YATCO] Heartbeat: Import is not active");';
-    echo '                if (pollInterval) {';
-    echo '                    clearInterval(pollInterval);';
-    echo '                    pollInterval = null;';
+    echo '                if (progressInfo.stage) {';
+    echo '                    progressData.stage = progressInfo.stage;';
     echo '                }';
+    echo '                updateProgressBar(progressData);';
+    echo '            } else if (progressInfo.progress) {';
+    echo '                // Even if not marked as active, if we have progress data, show it';
+    echo '                console.log("[YATCO] Heartbeat: Progress data exists but not marked active, showing anyway");';
+    echo '                var progressData = progressInfo.progress;';
+    echo '                if (progressInfo.status) {';
+    echo '                    progressData.status = progressInfo.status;';
+    echo '                }';
+    echo '                if (progressInfo.stage) {';
+    echo '                    progressData.stage = progressInfo.stage;';
+    echo '                }';
+    echo '                updateProgressBar(progressData);';
+    echo '            } else {';
+    echo '                console.log("[YATCO] Heartbeat: No progress data in response");';
     echo '            }';
     echo '        } else {';
-    echo '            console.log("[YATCO] Heartbeat: No progress data in response");';
+    echo '            console.log("[YATCO] Heartbeat: No yatco_import_progress in heartbeat data");';
     echo '        }';
     echo '    });';
     echo '    ';

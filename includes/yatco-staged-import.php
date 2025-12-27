@@ -1383,20 +1383,61 @@ function yatco_daily_sync_check( $token ) {
         return;
     }
     
-    // Get stored vessel IDs
+    $total_from_api = count( $current_ids );
+    yatco_log( "Daily Sync: Found {$total_from_api} total vessel IDs from API", 'info' );
+    
+    // Build lookup map for already imported vessels (compare against database)
+    set_transient( 'yatco_cache_warming_status', 'Daily Sync: Checking for already imported vessels...', 600 );
+    global $wpdb;
+    $imported_vessel_id_lookup = array();
+    
+    // Get all existing yacht posts with their vessel IDs
+    $vessel_id_posts = $wpdb->get_results( $wpdb->prepare( "
+        SELECT pm.post_id, pm.meta_value as vessel_id
+        FROM {$wpdb->postmeta} pm
+        INNER JOIN {$wpdb->posts} p ON pm.post_id = p.ID
+        WHERE p.post_type = %s
+        AND pm.meta_key = 'yacht_vessel_id'
+        AND pm.meta_value != ''
+        AND pm.meta_value IS NOT NULL
+    ", 'yacht' ) );
+    
+    foreach ( $vessel_id_posts as $post ) {
+        if ( ! empty( $post->vessel_id ) ) {
+            $imported_vessel_id_lookup[ intval( $post->vessel_id ) ] = intval( $post->post_id );
+        }
+    }
+    
+    $already_imported_count = count( $imported_vessel_id_lookup );
+    yatco_log( "Daily Sync: Found {$already_imported_count} vessels already imported in database", 'info' );
+    
+    // Filter out vessels that are already imported
+    $current_ids_int = array_map( 'intval', $current_ids );
+    $imported_ids = array_keys( $imported_vessel_id_lookup );
+    $vessels_not_imported = array_diff( $current_ids_int, $imported_ids );
+    
+    yatco_log( "Daily Sync: {$total_from_api} total from API, {$already_imported_count} already imported, " . count( $vessels_not_imported ) . " vessels need importing", 'info' );
+    
+    // Get stored vessel IDs (for tracking new/removed based on API list)
     $stored_ids = get_option( 'yatco_vessel_ids', array() );
     
-    // Find removed vessels
+    // Find removed vessels (vessels that were in stored_ids but not in current_ids)
     $removed_ids = array_diff( $stored_ids, $current_ids );
     
-    // Find new vessels
-    $new_ids = array_diff( $current_ids, $stored_ids );
+    // Find new vessels that need importing:
+    // Vessels that are in current_ids but NOT in stored_ids AND NOT already imported
+    $new_in_api = array_diff( $current_ids_int, array_map( 'intval', $stored_ids ) );
+    $new_ids = array_intersect( $new_in_api, $vessels_not_imported );
     
-    // Find existing vessels (for price/days on market updates)
-    $existing_ids = array_intersect( $current_ids, $stored_ids );
+    yatco_log( "Daily Sync: Found " . count( $new_ids ) . " new vessels to import (not in stored list and not already imported)", 'info' );
+    
+    // Find existing vessels (for price/days on market updates) - these are vessels that are both in current_ids and already imported
+    $existing_ids = array_intersect( $current_ids_int, $imported_ids );
     
     // Update stored IDs
     update_option( 'yatco_vessel_ids', $current_ids, false );
+    
+    set_transient( 'yatco_cache_warming_status', "Daily Sync: {$total_from_api} total from API, {$already_imported_count} already imported, " . count( $new_ids ) . " new to import...", 600 );
     
     $total_steps = count( $removed_ids ) + count( $new_ids ) + count( $existing_ids );
     $sync_progress['total'] = $total_steps;
