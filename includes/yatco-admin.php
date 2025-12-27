@@ -922,6 +922,45 @@ function yatco_options_page() {
                 echo '<p><strong>Using provided vessel ID:</strong> ' . esc_html( $test_vessel_id ) . '</p>';
                 $found_vessel_id = $test_vessel_id;
                 $tried_vessels[] = $test_vessel_id;
+                
+                // Fetch data for the provided vessel ID
+                echo '<h3>Step 2: Fetching Vessel Data for ID ' . esc_html( $test_vessel_id ) . '</h3>';
+                
+                $endpoint = 'https://api.yatcoboss.com/api/v1/ForSale/Vessel/' . intval( $test_vessel_id ) . '/Details/FullSpecsAll';
+                echo '<p style="color: #666; font-size: 13px;">Endpoint: <code>' . esc_html( $endpoint ) . '</code></p>';
+                
+                $response = wp_remote_get(
+                    $endpoint,
+                    array(
+                        'headers' => array(
+                            'Authorization' => 'Basic ' . $token,
+                            'Accept'        => 'application/json',
+                        ),
+                        'timeout' => 30,
+                    )
+                );
+                
+                if ( is_wp_error( $response ) ) {
+                    echo '<p style="color: #dc3232;">❌ WP_Remote Error: ' . esc_html( $response->get_error_message() ) . '</p>';
+                } else {
+                    $response_code = wp_remote_retrieve_response_code( $response );
+                    $response_body = wp_remote_retrieve_body( $response );
+                    
+                    if ( 200 !== $response_code ) {
+                        echo '<p style="color: #dc3232;">❌ HTTP Error ' . esc_html( $response_code ) . '</p>';
+                    } else {
+                        $fullspecs = json_decode( $response_body, true );
+                        $json_error = json_last_error();
+                        
+                        if ( $json_error !== JSON_ERROR_NONE ) {
+                            echo '<p style="color: #dc3232;">❌ JSON Parse Error: ' . esc_html( json_last_error_msg() ) . '</p>';
+                        } elseif ( $fullspecs === null || empty( $fullspecs ) ) {
+                            echo '<p style="color: #ff9800;">⚠️ API returned null for vessel ID ' . esc_html( $test_vessel_id ) . '</p>';
+                        } else {
+                            echo '<p style="color: #46b450; font-weight: bold;">✅ Successfully retrieved FullSpecsAll data for Vessel ID ' . esc_html( $test_vessel_id ) . '</p>';
+                        }
+                    }
+                }
             } else {
                 // Get multiple vessel IDs so we can try different ones if the first doesn't have FullSpecsAll data
                 echo '<p>No vessel ID provided. Fetching first available vessel ID...</p>';
@@ -1015,204 +1054,266 @@ function yatco_options_page() {
                         $sections_found = array_keys( $fullspecs );
                         echo '<p style="color: #666; font-size: 13px;">Data sections found: <strong>' . esc_html( count( $sections_found ) ) . '</strong> sections (' . esc_html( implode( ', ', array_slice( $sections_found, 0, 5 ) ) ) . ( count( $sections_found ) > 5 ? ', ...' : '' ) . ')</p>';
                     }
-                    
-                    echo '<h3>Step 3: Importing Vessel to CPT</h3>';
-                    echo '<p>Now importing vessel ID ' . esc_html( $found_vessel_id ) . ' data into your Custom Post Type...</p>';
-                    
-                    // Flush output so user sees the message
-                    if ( ob_get_level() > 0 ) {
-                        ob_flush();
-                    }
-                    flush();
-                    
-                    require_once YATCO_PLUGIN_DIR . 'includes/yatco-helpers.php';
-                    
-                    // Clear any stop flag that might be lingering from previous imports
-                    delete_option( 'yatco_import_stop_flag' );
-                    delete_transient( 'yatco_cache_warming_stop' );
-                    
-                    // Increase execution time for test
-                    @set_time_limit( 120 );
-                    @ini_set( 'max_execution_time', 120 );
-                    
-                    echo '<p style="color: #666; font-size: 13px;">Calling yatco_import_single_vessel()...</p>';
-                    
-                    // Flush again
-                    if ( ob_get_level() > 0 ) {
-                        ob_flush();
-                    }
-                    flush();
-                    
-                    $import_result = yatco_import_single_vessel( $token, $found_vessel_id );
-                    
-                    if ( is_wp_error( $import_result ) ) {
-                        echo '<div class="notice notice-error">';
-                        echo '<p><strong>❌ Import Failed:</strong> ' . esc_html( $import_result->get_error_message() ) . '</p>';
-                        echo '<p><strong>Error Code:</strong> ' . esc_html( $import_result->get_error_code() ) . '</p>';
-                        if ( $import_result->get_error_code() === 'import_stopped' ) {
-                            echo '<p style="color: #dc3232;"><strong>Note:</strong> The import was stopped because a stop flag was detected. This might be from a previous import. Try clearing the stop flag and running the test again.</p>';
-                        } else {
-                        echo '<p>This might be due to missing or invalid data in the API response. Check the raw JSON below for details.</p>';
-                        }
-                        echo '</div>';
-                    } elseif ( empty( $import_result ) ) {
-                        echo '<div class="notice notice-error">';
-                        echo '<p><strong>❌ Import Failed:</strong> The import function returned an empty result. This might indicate a fatal error occurred.</p>';
-                        echo '<p>Please check your PHP error logs for more details.</p>';
-                        echo '</div>';
-                    } else {
-                        $post_id = $import_result;
-                        $post_title = get_the_title( $post_id );
-                        $post_permalink = get_permalink( $post_id );
-                        
-                        echo '<div class="notice notice-success" style="background: #d4edda; border-left: 4px solid #46b450; padding: 15px; margin: 20px 0;">';
-                        echo '<p style="font-size: 16px; font-weight: bold; margin: 0 0 10px 0;"><strong>✅ Vessel Imported Successfully!</strong></p>';
-                        echo '<p style="margin: 5px 0;"><strong>Post ID:</strong> ' . esc_html( $post_id ) . '</p>';
-                        echo '<p style="margin: 5px 0;"><strong>Title:</strong> ' . esc_html( $post_title ) . '</p>';
-                        echo '<p style="margin: 15px 0 5px 0;"><strong>View the post:</strong></p>';
-                        echo '<p style="margin: 5px 0;">';
-                        echo '<a href="' . esc_url( $post_permalink ) . '" target="_blank" class="button button-primary" style="margin-right: 10px; display: inline-block; padding: 8px 16px; text-decoration: none; background: #2271b1; color: #fff; border-radius: 3px; font-weight: bold;">👁️ View Post (New Tab)</a>';
-                        echo '<a href="' . esc_url( admin_url( 'post.php?post=' . $post_id . '&action=edit' ) ) . '" class="button button-secondary" style="display: inline-block; padding: 8px 16px; text-decoration: none; background: #f0f0f1; color: #2c3338; border-radius: 3px; border: 1px solid #8c8f94;">✏️ Edit Post</a>';
-                        echo '</p>';
-                        echo '</div>';
-                        
-                        echo '<h4 style="margin-top: 20px;">Import Summary:</h4>';
-                        echo '<div style="background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 15px;">';
-                        echo '<ul style="list-style: disc; margin-left: 20px;">';
-                        
-                        $meta_fields_to_check = array(
-                            'yacht_vessel_id' => 'Vessel ID',
-                            'yacht_year' => 'Year',
-                            'yacht_make' => 'Builder',
-                            'yacht_model' => 'Model',
-                            'yacht_price' => 'Price',
-                            'yacht_length' => 'Length',
-                            'yacht_location_custom_rjc' => 'Location',
-                        );
-                        
-                        foreach ( $meta_fields_to_check as $meta_key => $label ) {
-                            $meta_value = get_post_meta( $post_id, $meta_key, true );
-                            if ( ! empty( $meta_value ) ) {
-                                echo '<li><strong>' . esc_html( $label ) . ':</strong> ' . esc_html( $meta_value ) . '</li>';
-                            }
-                        }
-                        
-                        $gallery_count = 0;
-                        $gallery_urls = get_post_meta( $post_id, 'yacht_image_gallery_urls', true );
-                        if ( is_array( $gallery_urls ) ) {
-                            $gallery_count = count( $gallery_urls );
-                        }
-                        if ( $gallery_count > 0 ) {
-                            echo '<li><strong>Gallery Images:</strong> ' . esc_html( $gallery_count ) . ' images</li>';
-                        }
-                        
-                        echo '</ul>';
-                        echo '</div>';
-                            
-                            // Check for price reduction fields
-                            echo '<h3 style="margin-top: 30px;">Price Reduction Check</h3>';
-                            echo '<div style="background: #f0f6fc; border-left: 4px solid #2271b1; padding: 15px; margin: 20px 0;">';
-                            echo '<p><strong>Checking for price reduction fields in API response...</strong></p>';
-                            
-                            $price_reduction_fields = array();
-                            $price_fields_found = array();
-                            
-                            // Search for price-related fields
-                            $search_terms = array( 'reduction', 'original', 'previous', 'old', 'was', 'before', 'discount', 'savings', 'decrease' );
-                            
-                            // Recursive function to search for fields
-                            $search_in_array = function( $array, $prefix = '' ) use ( &$search_in_array, &$price_fields_found, $search_terms ) {
-                                foreach ( $array as $key => $value ) {
-                                    $full_key = $prefix ? $prefix . '.' . $key : $key;
-                                    $key_lower = strtolower( $key );
-                                    
-                                    // Check if key contains price-related terms
-                                    foreach ( $search_terms as $term ) {
-                                        if ( strpos( $key_lower, $term ) !== false ) {
-                                            $price_fields_found[ $full_key ] = $value;
-                                        }
-                                    }
-                                    
-                                    // Also collect all price-related fields
-                                    if ( strpos( $key_lower, 'price' ) !== false ) {
-                                        $price_fields_found[ $full_key ] = $value;
-                                    }
-                                    
-                                    // Recursively search nested arrays
-                                    if ( is_array( $value ) ) {
-                                        $search_in_array( $value, $full_key );
-                                    }
-                                }
-                            };
-                            
-                            $search_in_array( $fullspecs );
-                            
-                            if ( ! empty( $price_fields_found ) ) {
-                                echo '<p style="color: #46b450; font-weight: bold;">✅ Found ' . count( $price_fields_found ) . ' price-related field(s):</p>';
-                                echo '<table class="widefat" style="margin-top: 10px;">';
-                                echo '<thead><tr><th style="width: 300px;">Field Name</th><th>Value</th></tr></thead>';
-                                echo '<tbody>';
-                                foreach ( $price_fields_found as $field => $value ) {
-                                    $is_reduction = false;
-                                    foreach ( $search_terms as $term ) {
-                                        if ( stripos( $field, $term ) !== false ) {
-                                            $is_reduction = true;
-                                            break;
-                                        }
-                                    }
-                                    $row_class = $is_reduction ? 'style="background: #fff3cd;"' : '';
-                                    echo '<tr ' . $row_class . '>';
-                                    echo '<td><code>' . esc_html( $field ) . '</code></td>';
-                                    if ( is_array( $value ) ) {
-                                        echo '<td><pre style="margin: 0; font-size: 11px;">' . esc_html( wp_json_encode( $value, JSON_PRETTY_PRINT ) ) . '</pre></td>';
-    } else {
-                                        echo '<td>' . esc_html( is_bool( $value ) ? ( $value ? 'true' : 'false' ) : $value ) . '</td>';
-                                    }
-                                    echo '</tr>';
-                                }
-                                echo '</tbody>';
-                                echo '</table>';
-                                
-                                // Highlight reduction-related fields
-                                $reduction_count = 0;
-                                foreach ( $price_fields_found as $field => $value ) {
-                                    foreach ( $search_terms as $term ) {
-                                        if ( stripos( $field, $term ) !== false ) {
-                                            $reduction_count++;
-                        break;
-                                        }
-                                    }
-                                }
-                                
-                                if ( $reduction_count > 0 ) {
-                                    echo '<div style="background: #d4edda; border-left: 4px solid #46b450; padding: 12px; margin-top: 15px;">';
-                                    echo '<p style="margin: 0; font-weight: bold; color: #155724;">🎉 Found ' . $reduction_count . ' potential price reduction field(s)!</p>';
-                                    echo '<p style="margin: 5px 0 0 0;">These fields (highlighted in yellow above) may contain price reduction information.</p>';
-        echo '</div>';
-        } else {
-                                    echo '<div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; margin-top: 15px;">';
-                                    echo '<p style="margin: 0;"><strong>Note:</strong> No obvious price reduction fields found, but all price-related fields are listed above.</p>';
-            echo '</div>';
-                                }
-    } else {
-                                echo '<p style="color: #dc3232;">❌ No price-related fields found in API response.</p>';
-                            }
+                }
+                }
+            }
+            
+            // Check if we successfully got a vessel with data (for both provided ID and auto-found ID)
+            if ( ! $found_vessel_id || ! $fullspecs ) {
+                echo '<div class="notice notice-error" style="background: #fce8e6; border-left: 4px solid #dc3232; padding: 15px; margin: 20px 0;">';
+                echo '<p style="font-size: 16px; font-weight: bold; margin: 0 0 10px 0;"><strong>❌ No Accessible Vessel Data Found</strong></p>';
+                if ( $test_vessel_id ) {
+                    echo '<p>Vessel ID ' . esc_html( $test_vessel_id ) . ' does not have accessible FullSpecsAll data. This may indicate:</p>';
+                } else {
+                    echo '<p>Tried ' . count( $tried_vessels ) . ' vessel ID(s): <code>' . esc_html( implode( ', ', $tried_vessels ) ) . '</code></p>';
+                    echo '<p>None of these vessels have accessible FullSpecsAll data. This may indicate:</p>';
+                }
+                echo '<ul style="margin-left: 20px; margin-top: 10px;">';
+                echo '<li>Your API token may not have permissions to access FullSpecsAll data</li>';
+                echo '<li>The vessels may have been removed or are restricted</li>';
+                echo '<li>There may be a temporary API issue</li>';
+                echo '</ul>';
+                echo '<p style="margin-top: 15px;">Please verify your API token permissions or contact YATCO support.</p>';
                 echo '</div>';
+            } else {
+                // Found a vessel with accessible FullSpecsAll data - proceed with import
+                if ( ! isset( $response ) || is_wp_error( $response ) ) {
+                    // If we don't have a response yet (for provided vessel ID), fetch it now
+                    echo '<h3>Step 2: Fetching Vessel Data for ID ' . esc_html( $found_vessel_id ) . '</h3>';
+                    
+                    $endpoint = 'https://api.yatcoboss.com/api/v1/ForSale/Vessel/' . intval( $found_vessel_id ) . '/Details/FullSpecsAll';
+                    echo '<p style="color: #666; font-size: 13px;">Endpoint: <code>' . esc_html( $endpoint ) . '</code></p>';
+                    
+                    $response = wp_remote_get(
+                        $endpoint,
+                        array(
+                            'headers' => array(
+                                'Authorization' => 'Basic ' . $token,
+                                'Accept'        => 'application/json',
+                            ),
+                            'timeout' => 30,
+                        )
+                    );
+                    
+                    if ( ! is_wp_error( $response ) && wp_remote_retrieve_response_code( $response ) === 200 ) {
+                        $response_body = wp_remote_retrieve_body( $response );
+                        $fullspecs = json_decode( $response_body, true );
+                        if ( json_last_error() === JSON_ERROR_NONE && $fullspecs !== null && ! empty( $fullspecs ) ) {
+                            echo '<p style="color: #46b450; font-weight: bold;">✅ Successfully retrieved FullSpecsAll data for Vessel ID ' . esc_html( $found_vessel_id ) . '</p>';
+                        }
+                    }
+                }
+                
+                // Display response info if we have it
+                if ( isset( $response ) && ! is_wp_error( $response ) ) {
+                    echo '<p><strong>Response Code:</strong> ' . esc_html( wp_remote_retrieve_response_code( $response ) ) . '</p>';
+                    echo '<p><strong>Content-Type:</strong> ' . esc_html( wp_remote_retrieve_header( $response, 'content-type' ) ) . '</p>';
+                    echo '<p><strong>Response Length:</strong> ' . strlen( wp_remote_retrieve_body( $response ) ) . ' characters</p>';
+                    echo '<p><strong>✅ Success!</strong> FullSpecsAll data retrieved and parsed successfully.</p>';
+                    
+                    if ( is_array( $fullspecs ) && ! empty( $fullspecs ) ) {
+                        $sections_found = array_keys( $fullspecs );
+                        echo '<p style="color: #666; font-size: 13px;">Data sections found: <strong>' . esc_html( count( $sections_found ) ) . '</strong> sections (' . esc_html( implode( ', ', array_slice( $sections_found, 0, 5 ) ) ) . ( count( $sections_found ) > 5 ? ', ...' : '' ) . ')</p>';
+                    }
+                }
+                
+                echo '<h3>Step 3: Importing Vessel to CPT</h3>';
+                echo '<p>Now importing vessel ID ' . esc_html( $found_vessel_id ) . ' data into your Custom Post Type...</p>';
+                
+                // Flush output so user sees the message
+                if ( ob_get_level() > 0 ) {
+                    ob_flush();
+                }
+                flush();
+                
+                require_once YATCO_PLUGIN_DIR . 'includes/yatco-helpers.php';
+                
+                // Clear any stop flag that might be lingering from previous imports
+                delete_option( 'yatco_import_stop_flag' );
+                delete_transient( 'yatco_cache_warming_stop' );
+                
+                // Increase execution time for test
+                @set_time_limit( 120 );
+                @ini_set( 'max_execution_time', 120 );
+                
+                echo '<p style="color: #666; font-size: 13px;">Calling yatco_import_single_vessel()...</p>';
+                
+                // Flush again
+                if ( ob_get_level() > 0 ) {
+                    ob_flush();
+                }
+                flush();
+                
+                $import_result = yatco_import_single_vessel( $token, $found_vessel_id );
+                
+                if ( is_wp_error( $import_result ) ) {
+                    echo '<div class="notice notice-error">';
+                    echo '<p><strong>❌ Import Failed:</strong> ' . esc_html( $import_result->get_error_message() ) . '</p>';
+                    echo '<p><strong>Error Code:</strong> ' . esc_html( $import_result->get_error_code() ) . '</p>';
+                    if ( $import_result->get_error_code() === 'import_stopped' ) {
+                        echo '<p style="color: #dc3232;"><strong>Note:</strong> The import was stopped because a stop flag was detected. This might be from a previous import. Try clearing the stop flag and running the test again.</p>';
+                    } else {
+                        echo '<p>This might be due to missing or invalid data in the API response. Check the raw JSON below for details.</p>';
+                    }
+                    echo '</div>';
+                } elseif ( empty( $import_result ) ) {
+                    echo '<div class="notice notice-error">';
+                    echo '<p><strong>❌ Import Failed:</strong> The import function returned an empty result. This might indicate a fatal error occurred.</p>';
+                    echo '<p>Please check your PHP error logs for more details.</p>';
+                    echo '</div>';
+                } else {
+                    $post_id = $import_result;
+                    $post_title = get_the_title( $post_id );
+                    $post_permalink = get_permalink( $post_id );
+                    
+                    echo '<div class="notice notice-success" style="background: #d4edda; border-left: 4px solid #46b450; padding: 15px; margin: 20px 0;">';
+                    echo '<p style="font-size: 16px; font-weight: bold; margin: 0 0 10px 0;"><strong>✅ Vessel Imported Successfully!</strong></p>';
+                    echo '<p style="margin: 5px 0;"><strong>Post ID:</strong> ' . esc_html( $post_id ) . '</p>';
+                    echo '<p style="margin: 5px 0;"><strong>Title:</strong> ' . esc_html( $post_title ) . '</p>';
+                    echo '<p style="margin: 15px 0 5px 0;"><strong>View the post:</strong></p>';
+                    echo '<p style="margin: 5px 0;">';
+                    echo '<a href="' . esc_url( $post_permalink ) . '" target="_blank" class="button button-primary" style="margin-right: 10px; display: inline-block; padding: 8px 16px; text-decoration: none; background: #2271b1; color: #fff; border-radius: 3px; font-weight: bold;">👁️ View Post (New Tab)</a>';
+                    echo '<a href="' . esc_url( admin_url( 'post.php?post=' . $post_id . '&action=edit' ) ) . '" class="button button-secondary" style="display: inline-block; padding: 8px 16px; text-decoration: none; background: #f0f0f1; color: #2c3338; border-radius: 3px; border: 1px solid #8c8f94;">✏️ Edit Post</a>';
+                    echo '</p>';
+                    echo '</div>';
+                    
+                    echo '<h4 style="margin-top: 20px;">Import Summary:</h4>';
+                    echo '<div style="background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 15px;">';
+                    echo '<ul style="list-style: disc; margin-left: 20px;">';
+                    
+                    $meta_fields_to_check = array(
+                        'yacht_vessel_id' => 'Vessel ID',
+                        'yacht_year' => 'Year',
+                        'yacht_make' => 'Builder',
+                        'yacht_model' => 'Model',
+                        'yacht_price' => 'Price',
+                        'yacht_length' => 'Length',
+                        'yacht_location_custom_rjc' => 'Location',
+                    );
+                    
+                    foreach ( $meta_fields_to_check as $meta_key => $label ) {
+                        $meta_value = get_post_meta( $post_id, $meta_key, true );
+                        if ( ! empty( $meta_value ) ) {
+                            echo '<li><strong>' . esc_html( $label ) . ':</strong> ' . esc_html( $meta_value ) . '</li>';
+                        }
+                    }
+                    
+                    $gallery_count = 0;
+                    $gallery_urls = get_post_meta( $post_id, 'yacht_image_gallery_urls', true );
+                    if ( is_array( $gallery_urls ) ) {
+                        $gallery_count = count( $gallery_urls );
+                    }
+                    if ( $gallery_count > 0 ) {
+                        echo '<li><strong>Gallery Images:</strong> ' . esc_html( $gallery_count ) . ' images</li>';
+                    }
+                    
+                    echo '</ul>';
+                    echo '</div>';
+                    
+                    // Check for price reduction fields
+                    echo '<h3 style="margin-top: 30px;">Price Reduction Check</h3>';
+                    echo '<div style="background: #f0f6fc; border-left: 4px solid #2271b1; padding: 15px; margin: 20px 0;">';
+                    echo '<p><strong>Checking for price reduction fields in API response...</strong></p>';
+                    
+                    $price_reduction_fields = array();
+                    $price_fields_found = array();
+                    
+                    // Search for price-related fields
+                    $search_terms = array( 'reduction', 'original', 'previous', 'old', 'was', 'before', 'discount', 'savings', 'decrease' );
+                    
+                    // Recursive function to search for fields
+                    $search_in_array = function( $array, $prefix = '' ) use ( &$search_in_array, &$price_fields_found, $search_terms ) {
+                        foreach ( $array as $key => $value ) {
+                            $full_key = $prefix ? $prefix . '.' . $key : $key;
+                            $key_lower = strtolower( $key );
+                            
+                            // Check if key contains price-related terms
+                            foreach ( $search_terms as $term ) {
+                                if ( strpos( $key_lower, $term ) !== false ) {
+                                    $price_fields_found[ $full_key ] = $value;
+                                }
+                            }
+                            
+                            // Also collect all price-related fields
+                            if ( strpos( $key_lower, 'price' ) !== false ) {
+                                $price_fields_found[ $full_key ] = $value;
+                            }
+                            
+                            // Recursively search nested arrays
+                            if ( is_array( $value ) ) {
+                                $search_in_array( $value, $full_key );
+                            }
+                        }
+                    };
+                    
+                    $search_in_array( $fullspecs );
+                    
+                    if ( ! empty( $price_fields_found ) ) {
+                        echo '<p style="color: #46b450; font-weight: bold;">✅ Found ' . count( $price_fields_found ) . ' price-related field(s):</p>';
+                        echo '<table class="widefat" style="margin-top: 10px;">';
+                        echo '<thead><tr><th style="width: 300px;">Field Name</th><th>Value</th></tr></thead>';
+                        echo '<tbody>';
+                        foreach ( $price_fields_found as $field => $value ) {
+                            $is_reduction = false;
+                            foreach ( $search_terms as $term ) {
+                                if ( stripos( $field, $term ) !== false ) {
+                                    $is_reduction = true;
+                                    break;
+                                }
+                            }
+                            $row_class = $is_reduction ? 'style="background: #fff3cd;"' : '';
+                            echo '<tr ' . $row_class . '>';
+                            echo '<td><code>' . esc_html( $field ) . '</code></td>';
+                            if ( is_array( $value ) ) {
+                                echo '<td><pre style="margin: 0; font-size: 11px;">' . esc_html( wp_json_encode( $value, JSON_PRETTY_PRINT ) ) . '</pre></td>';
+                            } else {
+                                echo '<td>' . esc_html( is_bool( $value ) ? ( $value ? 'true' : 'false' ) : $value ) . '</td>';
+                            }
+                            echo '</tr>';
+                        }
+                        echo '</tbody>';
+                        echo '</table>';
+                        
+                        // Highlight reduction-related fields
+                        $reduction_count = 0;
+                        foreach ( $price_fields_found as $field => $value ) {
+                            foreach ( $search_terms as $term ) {
+                                if ( stripos( $field, $term ) !== false ) {
+                                    $reduction_count++;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        if ( $reduction_count > 0 ) {
+                            echo '<div style="background: #d4edda; border-left: 4px solid #46b450; padding: 12px; margin-top: 15px;">';
+                            echo '<p style="margin: 0; font-weight: bold; color: #155724;">🎉 Found ' . $reduction_count . ' potential price reduction field(s)!</p>';
+                            echo '<p style="margin: 5px 0 0 0;">These fields (highlighted in yellow above) may contain price reduction information.</p>';
+                            echo '</div>';
+                        } else {
+                            echo '<div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; margin-top: 15px;">';
+                            echo '<p style="margin: 0;"><strong>Note:</strong> No obvious price reduction fields found, but all price-related fields are listed above.</p>';
+                            echo '</div>';
+                        }
+                    } else {
+                        echo '<p style="color: #dc3232;">❌ No price-related fields found in API response.</p>';
+                    }
+                    echo '</div>';
                     
                     echo '<h3 style="margin-top: 30px;">Raw API Response Data Structure</h3>';
-                            echo '<p style="color: #666; font-size: 13px;">Below is the complete JSON response from the YATCO API for reference. You can search for "reduction", "original", "previous", or "price" to find relevant fields:</p>';
+                    echo '<p style="color: #666; font-size: 13px;">Below is the complete JSON response from the YATCO API for reference. You can search for "reduction", "original", "previous", or "price" to find relevant fields:</p>';
                     
                     echo '<div style="background: #fff; border: 1px solid #ccc; border-radius: 4px; padding: 15px; max-height: 400px; overflow: auto; font-family: monospace; font-size: 11px; line-height: 1.4;">';
                     echo '<pre style="margin: 0; white-space: pre-wrap; word-wrap: break-word;">';
                     echo esc_html( wp_json_encode( $fullspecs, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) );
                     echo '</pre>';
-            echo '</div>';
-                }
-            echo '</div>';
-                    }
+                    echo '</div>';
                 }
             }
+            
+            echo '</div>'; // Close Step 1 div
         }
+    }
         
         echo '</div>'; // Close yatco-testing-section
     }
