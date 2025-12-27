@@ -503,7 +503,7 @@ function yatco_ajax_get_import_logs() {
         }
     }
     
-    // Return last 50 log entries
+    // Return all log entries (we store max 100)
     $recent_logs = array_slice( $logs, -50 );
     
     // Format logs for JSON response (reverse order so newest is last)

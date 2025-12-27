@@ -219,22 +219,23 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
     $api_elapsed = time() - $api_start_time;
     
     // Extract vessel name early so we can include it in logs
-    $vessel_name = '';
+    $vessel_name_for_log = '';
     if ( ! is_wp_error( $full ) && is_array( $full ) ) {
         $result_temp = isset( $full['Result'] ) ? $full['Result'] : array();
         $basic_temp  = isset( $full['BasicInfo'] ) ? $full['BasicInfo'] : array();
         if ( ! empty( $basic_temp['BoatName'] ) ) {
-            $vessel_name = $basic_temp['BoatName'];
+            $vessel_name_for_log = $basic_temp['BoatName'];
         } elseif ( ! empty( $result_temp['VesselName'] ) ) {
-            $vessel_name = $result_temp['VesselName'];
+            $vessel_name_for_log = $result_temp['VesselName'];
         }
     }
     
-    $name_display = ! empty( $vessel_name ) ? " ({$vessel_name})" : '';
-    yatco_log( "Import: API fetch for vessel {$vessel_id}{$name_display} completed in {$api_elapsed} seconds", 'debug' );
+    $name_display_log = ! empty( $vessel_name_for_log ) ? " ({$vessel_name_for_log})" : '';
+    yatco_log( "Import: API fetch for vessel {$vessel_id}{$name_display_log} completed in {$api_elapsed} seconds", 'debug' );
     
     if ( is_wp_error( $full ) ) {
-        yatco_log( "Import: API fetch failed for vessel {$vessel_id}: " . $full->get_error_message(), 'error' );
+        $error_message = $full->get_error_message();
+        yatco_log( "Import: API fetch failed for vessel {$vessel_id}{$name_display_log}: {$error_message}", 'error' );
         return $full;
     }
     
