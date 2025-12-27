@@ -71,55 +71,62 @@ function yatco_get_active_vessel_ids( $token, $max_records = 50 ) {
  * Try the same endpoint structure as yatco_get_active_vessel_ids uses for individual vessels.
  */
 function yatco_fetch_basic_details( $token, $vessel_id ) {
-    // Use the same endpoint pattern as the active vessel list - just get basic vessel info
-    // The base ForSale/Vessel/{id} endpoint should return basic vessel data
-    $endpoint = 'https://api.yatcoboss.com/api/v1/ForSale/Vessel/' . intval( $vessel_id );
-
-    $response = wp_remote_get(
-        $endpoint,
-        array(
-            'headers' => array(
-                'Authorization' => 'Basic ' . $token,
-                'Accept'        => 'application/json',
-            ),
-            'timeout' => 15,
-            'connect_timeout' => 8,
-        )
+    // Try multiple endpoints - /Details endpoint often has better structure with Result/BasicInfo sections
+    $endpoints = array(
+        'https://api.yatcoboss.com/api/v1/ForSale/Vessel/' . intval( $vessel_id ) . '/Details',
+        'https://api.yatcoboss.com/api/v1/ForSale/Vessel/' . intval( $vessel_id ),
     );
-
-    if ( is_wp_error( $response ) ) {
-        return $response;
-    }
-
-    $response_code = wp_remote_retrieve_response_code( $response );
-    if ( $response_code !== 200 ) {
-        return new WP_Error( 'yatco_http_error_basic', 'HTTP ' . $response_code . ' for basic vessel endpoint' );
-    }
-
-    $body = wp_remote_retrieve_body( $response );
-    $data = json_decode( $body, true );
-
-    $json_error = json_last_error();
-    if ( $json_error !== JSON_ERROR_NONE && $data === null ) {
-        return new WP_Error( 'yatco_parse_error_basic', 'Could not parse basic vessel JSON: ' . json_last_error_msg() );
-    }
     
-    if ( $data === null || ( is_array( $data ) && empty( $data ) ) ) {
-        return new WP_Error( 'yatco_no_data_basic', 'Basic vessel endpoint returned null or empty data.' );
-    }
+    foreach ( $endpoints as $endpoint ) {
+        $response = wp_remote_get(
+            $endpoint,
+            array(
+                'headers' => array(
+                    'Authorization' => 'Basic ' . $token,
+                    'Accept'        => 'application/json',
+                ),
+                'timeout' => 15,
+                'connect_timeout' => 8,
+            )
+        );
 
-    // The base endpoint returns data in a simpler structure - wrap it to match FullSpecsAll format
-    // Try to preserve existing structure if it has Result/BasicInfo, otherwise wrap everything in Result
-    if ( ! isset( $data['Result'] ) && ! isset( $data['BasicInfo'] ) ) {
-        // Wrap the response to match expected structure
+        if ( is_wp_error( $response ) ) {
+            continue; // Try next endpoint
+        }
+
+        $response_code = wp_remote_retrieve_response_code( $response );
+        if ( $response_code !== 200 ) {
+            continue; // Try next endpoint
+        }
+
+        $body = wp_remote_retrieve_body( $response );
+        $data = json_decode( $body, true );
+
+        $json_error = json_last_error();
+        if ( $json_error !== JSON_ERROR_NONE && $data === null ) {
+            continue; // Try next endpoint
+        }
+        
+        if ( $data === null || ( is_array( $data ) && empty( $data ) ) ) {
+            continue; // Try next endpoint
+        }
+
+        // If we got valid data with Result/BasicInfo structure, return it as-is
+        if ( isset( $data['Result'] ) || isset( $data['BasicInfo'] ) ) {
+            return $data;
+        }
+        
+        // If data is flat, wrap it to match FullSpecsAll format
+        // All flat data goes in Result, and BasicInfo gets a copy for compatibility
         $wrapped_data = array(
             'Result' => $data, // All basic data goes in Result
-            'BasicInfo' => isset( $data['BasicInfo'] ) ? $data['BasicInfo'] : ( isset( $data['BoatName'] ) ? $data : array() ),
+            'BasicInfo' => $data, // Also copy to BasicInfo for compatibility
         );
         return $wrapped_data;
     }
-
-    return $data;
+    
+    // All endpoints failed
+    return new WP_Error( 'yatco_no_data_basic', 'All basic vessel endpoints failed or returned no data.' );
 }
 
 /**

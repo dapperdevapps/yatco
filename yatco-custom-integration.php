@@ -232,9 +232,10 @@ function yatco_ajax_get_import_status() {
     require_once YATCO_PLUGIN_DIR . 'includes/yatco-progress.php';
     
     // Get all progress data using wp_options (more reliable than transients)
+    require_once YATCO_PLUGIN_DIR . 'includes/yatco-progress.php';
     $import_progress = yatco_get_import_status( 'full' );
     $daily_sync_progress = yatco_get_import_status( 'daily_sync' );
-    $cache_status_raw = get_transient( 'yatco_cache_warming_status' );
+    $cache_status_raw = yatco_get_import_status_message();
     $stop_flag = get_option( 'yatco_import_stop_flag', false );
     
     yatco_log( 'AJAX Status Check: Import progress = ' . ( $import_progress !== false ? 'EXISTS' : 'NOT FOUND' ), 'debug' );
@@ -453,14 +454,11 @@ function yatco_heartbeat_received( $response, $data ) {
     }
     
     // Add progress data to heartbeat response for real-time updates
-    // Force fresh data by bypassing object cache
-    wp_cache_delete( 'yatco_import_progress', 'transient' );
-    wp_cache_delete( 'yatco_cache_warming_status', 'transient' );
-    wp_cache_delete( 'yatco_daily_sync_progress', 'transient' );
-    wp_cache_flush(); // Force full cache flush to ensure fresh data
-    $import_progress = get_transient( 'yatco_import_progress' );
-    $daily_sync_progress = get_transient( 'yatco_daily_sync_progress' );
-    $cache_status = get_transient( 'yatco_cache_warming_status' );
+    // Use wp_options helper functions (bypasses cache automatically)
+    require_once YATCO_PLUGIN_DIR . 'includes/yatco-progress.php';
+    $import_progress = yatco_get_import_status( 'full' );
+    $daily_sync_progress = yatco_get_import_status( 'daily_sync' );
+    $cache_status = yatco_get_import_status_message();
     
     // Check daily sync first (takes priority)
     if ( $daily_sync_progress !== false && is_array( $daily_sync_progress ) ) {

@@ -13,13 +13,11 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Display Import Status & Progress section (reusable)
  */
 function yatco_display_import_status_section() {
-    // Get all progress data - bypass cache to get fresh data
-    wp_cache_delete( 'yatco_import_progress', 'transient' );
-    wp_cache_delete( 'yatco_daily_sync_progress', 'transient' );
-    wp_cache_delete( 'yatco_cache_warming_status', 'transient' );
-    $import_progress = get_transient( 'yatco_import_progress' );
-    $daily_sync_progress = get_transient( 'yatco_daily_sync_progress' );
-    $cache_status_raw = get_transient( 'yatco_cache_warming_status' );
+    // Get all progress data from wp_options (more reliable than transients)
+    require_once YATCO_PLUGIN_DIR . 'includes/yatco-progress.php';
+    $import_progress = yatco_get_import_status( 'full' );
+    $daily_sync_progress = yatco_get_import_status( 'daily_sync' );
+    $cache_status_raw = yatco_get_import_status_message();
     $stop_flag = get_option( 'yatco_import_stop_flag', false );
     
     // Determine if import or sync is active - check ACTIVE processes FIRST

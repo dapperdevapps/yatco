@@ -974,29 +974,37 @@ function yatco_options_page() {
                             $result = isset( $basic_details['Result'] ) ? $basic_details['Result'] : array();
                             $basic  = isset( $basic_details['BasicInfo'] ) ? $basic_details['BasicInfo'] : array();
                             
-                            // Extract price
-                            if ( isset( $basic['AskingPriceUSD'] ) && $basic['AskingPriceUSD'] > 0 ) {
-                                $price_formatted = '$' . number_format( floatval( $basic['AskingPriceUSD'] ), 0 );
-                            } elseif ( isset( $result['AskingPriceCompare'] ) && $result['AskingPriceCompare'] > 0 ) {
-                                $currency = isset( $basic['Currency'] ) ? $basic['Currency'] : ( isset( $result['Currency'] ) ? $result['Currency'] : 'USD' );
-                                if ( isset( $result['AskingPriceFormatted'] ) && ! empty( $result['AskingPriceFormatted'] ) ) {
-                                    $price_formatted = $result['AskingPriceFormatted'];
-                                } else {
-                                    $price_formatted = $currency . ' ' . number_format( floatval( $result['AskingPriceCompare'] ), 0 );
-                                }
-                            } elseif ( isset( $basic['AskingPrice'] ) && $basic['AskingPrice'] > 0 ) {
-                                $currency = isset( $basic['Currency'] ) ? $basic['Currency'] : 'USD';
-                                $price_formatted = $currency . ' ' . number_format( floatval( $basic['AskingPrice'] ), 0 );
-                            }
-                            
-                            // Check for "Price on Application"
+                            // Check for "Price on Application" first
                             if ( ( isset( $result['PriceOnApplication'] ) && $result['PriceOnApplication'] ) || 
                                  ( isset( $basic['PriceOnApplication'] ) && $basic['PriceOnApplication'] ) ) {
                                 $price_formatted = 'Price on Application';
-                            }
-                            
-                            if ( empty( $price_formatted ) ) {
-                                $price_formatted = 'N/A';
+                            } else {
+                                // Extract price - check Result section first (most reliable)
+                                // Priority: Result.AskingPriceFormatted > Result.AskingPriceCompare > BasicInfo.AskingPriceUSD > BasicInfo.AskingPrice
+                                if ( isset( $result['AskingPriceFormatted'] ) && ! empty( $result['AskingPriceFormatted'] ) ) {
+                                    // Already formatted (e.g., "$129,900 USD")
+                                    $price_formatted = $result['AskingPriceFormatted'];
+                                } elseif ( isset( $result['AskingPriceCompare'] ) && $result['AskingPriceCompare'] > 0 ) {
+                                    // Use AskingPriceCompare from Result (USD value)
+                                    $currency = isset( $result['AskingPriceCurrencyText'] ) ? $result['AskingPriceCurrencyText'] : ( isset( $basic['Currency'] ) ? $basic['Currency'] : 'USD' );
+                                    $price_formatted = $currency . ' ' . number_format( floatval( $result['AskingPriceCompare'] ), 0 );
+                                } elseif ( isset( $result['AskingPrice'] ) && $result['AskingPrice'] > 0 ) {
+                                    // Use AskingPrice from Result
+                                    $currency = isset( $result['AskingPriceCurrencyText'] ) ? $result['AskingPriceCurrencyText'] : ( isset( $basic['Currency'] ) ? $basic['Currency'] : 'USD' );
+                                    $price_formatted = $currency . ' ' . number_format( floatval( $result['AskingPrice'] ), 0 );
+                                } elseif ( isset( $basic['AskingPriceUSD'] ) && $basic['AskingPriceUSD'] > 0 ) {
+                                    // Fallback to BasicInfo.AskingPriceUSD
+                                    $price_formatted = '$' . number_format( floatval( $basic['AskingPriceUSD'] ), 0 );
+                                } elseif ( isset( $basic['AskingPriceFormatted'] ) && ! empty( $basic['AskingPriceFormatted'] ) ) {
+                                    // Use BasicInfo.AskingPriceFormatted
+                                    $price_formatted = $basic['AskingPriceFormatted'];
+                                } elseif ( isset( $basic['AskingPrice'] ) && $basic['AskingPrice'] > 0 ) {
+                                    // Fallback to BasicInfo.AskingPrice
+                                    $currency = isset( $basic['Currency'] ) ? $basic['Currency'] : 'USD';
+                                    $price_formatted = $currency . ' ' . number_format( floatval( $basic['AskingPrice'] ), 0 );
+                                } else {
+                                    $price_formatted = 'N/A';
+                                }
                             }
                         } else {
                             $price_formatted = 'N/A';

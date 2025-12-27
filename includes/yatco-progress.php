@@ -48,12 +48,16 @@ function yatco_get_import_status( $type = 'full' ) {
     $status = get_option( $option_name, false );
     
     // If status exists but hasn't been updated in 5 minutes, consider it stalled
-    if ( $status !== false && is_array( $status ) && isset( $status['updated'] ) ) {
-        $age = time() - intval( $status['updated'] );
-        if ( $age > 300 && isset( $status['status'] ) && $status['status'] === 'running' ) {
-            // Mark as stalled (but don't delete - useful for debugging)
-            $status['status'] = 'stalled';
-            $status['stalled_since'] = $status['updated'];
+    // Check both 'updated_at' and 'updated' for backward compatibility
+    if ( $status !== false && is_array( $status ) ) {
+        $updated_time = isset( $status['updated_at'] ) ? intval( $status['updated_at'] ) : ( isset( $status['updated'] ) ? intval( $status['updated'] ) : false );
+        if ( $updated_time !== false ) {
+            $age = time() - $updated_time;
+            if ( $age > 300 && isset( $status['status'] ) && $status['status'] === 'running' ) {
+                // Mark as stalled (but don't delete - useful for debugging)
+                $status['status'] = 'stalled';
+                $status['stalled_since'] = $updated_time;
+            }
         }
     }
     
@@ -73,15 +77,40 @@ function yatco_clear_import_status( $type = 'full' ) {
 }
 
 /**
- * Update import status message (separate from progress data for faster updates)
+ * Update import status message (stored in wp_options for consistency)
  * 
  * @param string $message Status message
- * @param int $expires Expiration time in seconds (default 600 = 10 minutes)
+ * @param int $expires Expiration time in seconds (default 600 = 10 minutes) - for reference only, wp_options don't expire
  */
 function yatco_update_import_status_message( $message, $expires = 600 ) {
-    // Still use transient for status message (short-lived, frequently updated)
-    set_transient( 'yatco_cache_warming_status', $message, $expires );
-    wp_cache_delete( 'yatco_cache_warming_status', 'transient' );
-    wp_cache_flush();
+    // Store status message in wp_options for consistency with progress data
+    $status_data = array(
+        'message' => $message,
+        'updated_at' => time(),
+    );
+    update_option( 'yatco_import_status_message', $status_data, false );
+    wp_cache_delete( 'yatco_import_status_message', 'options' );
+}
+
+/**
+ * Get import status message (from wp_options)
+ * 
+ * @return string|false Status message or false if not found
+ */
+function yatco_get_import_status_message() {
+    wp_cache_delete( 'yatco_import_status_message', 'options' );
+    $status_data = get_option( 'yatco_import_status_message', false );
+    if ( $status_data !== false && is_array( $status_data ) && isset( $status_data['message'] ) ) {
+        return $status_data['message'];
+    }
+    return false;
+}
+
+/**
+ * Clear import status message
+ */
+function yatco_clear_import_status_message() {
+    delete_option( 'yatco_import_status_message' );
+    wp_cache_delete( 'yatco_import_status_message', 'options' );
 }
 
