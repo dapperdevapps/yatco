@@ -64,14 +64,39 @@ add_action( 'yatco_full_import_hook', function() {
         }
     }
     
-    yatco_log( 'Full Import: Hook triggered via server cron', 'info' );
+    yatco_log( 'Full Import: Hook triggered via wp-cron', 'info' );
+    
+    // Get token
     $token = yatco_get_token();
-    if ( ! empty( $token ) ) {
-        yatco_log( 'Full Import: Token found, calling import function', 'info' );
-        yatco_full_import( $token );
-    } else {
+    if ( empty( $token ) ) {
         yatco_log( 'Full Import: Hook triggered but no token found', 'error' );
+        return;
     }
+    
+    // Set import lock
+    update_option( 'yatco_import_lock', time(), false );
+    
+    // Set process ID for this import run
+    $process_id = getmypid();
+    if ( ! $process_id ) {
+        $process_id = time() . rand( 1000, 9999 );
+    }
+    update_option( 'yatco_import_process_id', $process_id, false );
+    yatco_log( "Full Import: Import lock acquired (Process ID: {$process_id})", 'info' );
+    
+    // Increase execution time and memory limits for wp-cron runs
+    @set_time_limit( 0 );
+    @ini_set( 'max_execution_time', 0 );
+    @ini_set( 'memory_limit', '512M' );
+    
+    // Run the import
+    require_once YATCO_PLUGIN_DIR . 'includes/yatco-staged-import.php';
+    yatco_full_import( $token );
+    
+    // Release lock when done
+    delete_option( 'yatco_import_lock' );
+    delete_option( 'yatco_import_process_id' );
+    yatco_log( 'Full Import: Import lock released', 'info' );
 } );
 
 // Register daily sync hook

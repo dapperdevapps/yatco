@@ -260,14 +260,14 @@ function yatco_options_page() {
         // Full Import Button
         echo '<div style="background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 20px; margin: 20px 0;">';
         echo '<h3 style="margin-top: 0;">Full Import</h3>';
-        echo '<p style="color: #666; margin-bottom: 20px;">Import all vessels from YATCO. Keep this page open to monitor progress.</p>';
-        echo '<form method="post" style="margin: 0;">';
+        echo '<p style="color: #666; margin-bottom: 20px;">Import all vessels from YATCO. The import will run in the background - you\'ll be redirected to the Status page to monitor progress.</p>';
+        echo '<form method="post" id="yatco-full-import-form" style="margin: 0;">';
         wp_nonce_field( 'yatco_full_import_direct', 'yatco_full_import_direct_nonce' );
         submit_button( 'Run Full Import', 'primary large', 'yatco_full_import_direct', false, array( 'style' => 'font-size: 14px; padding: 10px 20px; height: auto;' ) );
         echo '</form>';
         echo '</div>';
 
-        // Direct run handler
+        // Direct run handler - start import via wp-cron and redirect immediately
         if ( isset( $_POST['yatco_full_import_direct'] ) && check_admin_referer( 'yatco_full_import_direct', 'yatco_full_import_direct_nonce' ) ) {
             if ( empty( $token ) ) {
                 yatco_log( 'Full Import Direct: Import attempt failed - missing token', 'error' );
@@ -284,7 +284,7 @@ function yatco_options_page() {
                 update_option( 'yatco_import_auto_resume', time(), false );
                 
                 // Initialize progress immediately
-                set_transient( 'yatco_cache_warming_status', 'Full Import: Starting direct import (auto-resume enabled)...', 600 );
+                set_transient( 'yatco_cache_warming_status', 'Full Import: Starting import (auto-resume enabled)...', 600 );
                 set_transient( 'yatco_import_progress', array(
                     'last_processed' => 0,
                     'processed' => 0,
@@ -293,32 +293,15 @@ function yatco_options_page() {
                     'percent' => 0,
                 ), 3600 );
                 
-                echo '<div class="notice notice-info"><p><strong>Full Import running directly with auto-resume enabled...</strong> If the import stops (e.g., due to timeout), it will automatically resume until all vessels are imported. <strong>Keep this page open</strong> to monitor progress in the Status tab.</p></div>';
+                // Schedule the import to run via wp-cron (non-blocking)
+                wp_schedule_single_event( time() + 2, 'yatco_full_import_hook' );
+                spawn_cron(); // Trigger cron immediately if possible
                 
-                // Flush output so user sees the message
-                if ( ob_get_level() > 0 ) {
-                    ob_flush();
-                }
-                flush();
+                yatco_log( 'Full Import Direct: Import scheduled via wp-cron, redirecting to status page', 'info' );
                 
-                // Run directly - set much higher limits for direct runs
-                @set_time_limit( 0 ); // Try to set unlimited (may not work on all servers)
-                @ini_set( 'max_execution_time', 0 ); // Try unlimited
-                @ini_set( 'memory_limit', '512M' ); // Increase memory limit
-                yatco_log( 'Full Import Direct: Execution time limit set to unlimited, memory limit increased to 512M', 'info' );
-                yatco_log( 'Full Import Direct: Calling yatco_full_import()', 'info' );
-                
-                // Wrap in try-catch to catch fatal errors
-                try {
-                yatco_full_import( $token );
-                yatco_log( 'Full Import Direct: Import function completed', 'info' );
-                } catch ( Exception $e ) {
-                    yatco_log( 'Full Import Direct: Fatal error occurred: ' . $e->getMessage(), 'error' );
-                    set_transient( 'yatco_cache_warming_status', 'Full Import Error: ' . $e->getMessage(), 300 );
-                    echo '<div class="notice notice-error"><p><strong>Import Error:</strong> ' . esc_html( $e->getMessage() ) . '</p></div>';
-                }
-                
-                echo '<div class="notice notice-success"><p><strong>Full Import completed!</strong> Check the Status tab for details.</p></div>';
+                // Redirect immediately to status page to prevent timeout
+                wp_safe_redirect( admin_url( 'options-general.php?page=yatco_api&tab=status&import_started=1' ) );
+                exit;
             }
         }
         echo '</div>';
@@ -356,7 +339,7 @@ function yatco_options_page() {
         echo '</p>';
         echo '</div>';
         
-        echo '<form method="post" style="margin: 0;">';
+        echo '<form method="post" id="yatco-daily-sync-form" style="margin: 0;">';
         wp_nonce_field( 'yatco_daily_sync', 'yatco_daily_sync_nonce' );
         submit_button( 'Run Daily Sync Now', 'secondary', 'yatco_daily_sync', false, array( 'style' => 'font-size: 14px; padding: 10px 20px; height: auto;' ) );
         echo '</form>';
@@ -365,8 +348,17 @@ function yatco_options_page() {
             if ( empty( $token ) ) {
                 echo '<div class="notice notice-error" style="margin-top: 15px;"><p>Missing token. Please configure your API token first.</p></div>';
             } else {
-                yatco_daily_sync_check( $token );
-                echo '<div class="notice notice-success" style="margin-top: 15px;"><p><strong>Daily Sync completed!</strong></p></div>';
+                yatco_log( 'Daily Sync Direct: Sync triggered via button', 'info' );
+                
+                // Schedule the daily sync to run via wp-cron (non-blocking)
+                wp_schedule_single_event( time() + 2, 'yatco_daily_sync_hook' );
+                spawn_cron(); // Trigger cron immediately if possible
+                
+                yatco_log( 'Daily Sync Direct: Sync scheduled via wp-cron, redirecting to status page', 'info' );
+                
+                // Redirect immediately to status page to prevent timeout
+                wp_safe_redirect( admin_url( 'options-general.php?page=yatco_api&tab=status&sync_started=1' ) );
+                exit;
             }
         }
         
@@ -885,12 +877,18 @@ function yatco_options_page() {
         echo '<hr style="margin: 30px 0;" />';
     echo '<h2>Test Single Vessel & Create Post</h2>';
     echo '<div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; margin: 15px 0;">';
-    echo '<p style="margin: 0; font-weight: bold; color: #856404;"><strong>📝 Test & Import:</strong> This button fetches the first active vessel from the YATCO API, displays its data structure, <strong>and creates a CPT post</strong> so you can preview how the template looks.</p>';
+    echo '<p style="margin: 0; font-weight: bold; color: #856404;"><strong>📝 Test & Import:</strong> Fetch a specific vessel from the YATCO API by ID, display its data structure, <strong>and create a CPT post</strong> so you can preview how the template looks.</p>';
     echo '</div>';
-    echo '<p>This is useful for testing the single yacht template before importing all vessels.</p>';
+    echo '<p>This is useful for testing the single yacht template before importing all vessels. Enter a vessel ID or leave empty to use the first available vessel.</p>';
     echo '<form method="post" id="yatco-test-vessel-form">';
     wp_nonce_field( 'yatco_test_vessel', 'yatco_test_vessel_nonce' );
-    submit_button( '🔍 Fetch First Vessel & Create Test Post', 'secondary', 'yatco_test_vessel_data_only', false, array( 'id' => 'yatco-test-vessel-btn' ) );
+    echo '<table class="form-table">';
+    echo '<tr>';
+    echo '<th scope="row"><label for="yatco_test_vessel_id">Vessel ID (Optional)</label></th>';
+    echo '<td><input type="number" id="yatco_test_vessel_id" name="yatco_test_vessel_id" value="' . ( isset( $_POST['yatco_test_vessel_id'] ) ? esc_attr( intval( $_POST['yatco_test_vessel_id'] ) ) : '' ) . '" class="regular-text" placeholder="Leave empty to use first available vessel" /></td>';
+    echo '</tr>';
+    echo '</table>';
+    submit_button( '🔍 Fetch Vessel & Create Test Post', 'secondary', 'yatco_test_vessel_data_only', false, array( 'id' => 'yatco-test-vessel-btn' ) );
     echo '</form>';
 
     if ( isset( $_POST['yatco_test_vessel_data_only'] ) && ! empty( $_POST['yatco_test_vessel_data_only'] ) ) {
@@ -899,31 +897,46 @@ function yatco_options_page() {
         } elseif ( empty( $token ) ) {
             echo '<div class="notice notice-error"><p>Missing token. Please configure your API token first.</p></div>';
         } else {
+            // Get vessel ID from form input or use first available
+            $test_vessel_id = isset( $_POST['yatco_test_vessel_id'] ) && ! empty( $_POST['yatco_test_vessel_id'] ) ? intval( $_POST['yatco_test_vessel_id'] ) : null;
+            
             echo '<div class="notice notice-info" style="background: #e3f2fd; border-left: 4px solid #2196f3; padding: 12px; margin: 15px 0;">';
-            echo '<p><strong>🔍 Test Mode - Fetching & Importing First Vessel</strong></p>';
+            if ( $test_vessel_id ) {
+                echo '<p><strong>🔍 Test Mode - Fetching & Importing Vessel ID: ' . esc_html( $test_vessel_id ) . '</strong></p>';
+            } else {
+                echo '<p><strong>🔍 Test Mode - Fetching & Importing First Available Vessel</strong></p>';
+            }
             echo '<p>This will fetch vessel data from the YATCO API, display it below, and <strong>create a CPT post</strong> so you can see how the template renders.</p>';
             echo '</div>';
             
             echo '<div style="background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; padding: 20px; margin: 20px 0;">';
-            echo '<h3>Step 1: Getting Active Vessel IDs (Read Only)</h3>';
+            echo '<h3>Step 1: Getting Vessel Data</h3>';
             
-            // Get multiple vessel IDs so we can try different ones if the first doesn't have FullSpecsAll data
-            $vessel_ids = yatco_get_active_vessel_ids( $token, 10 );
+            $found_vessel_id = null;
+            $fullspecs = null;
+            $response = null;
+            $tried_vessels = array();
             
-            if ( is_wp_error( $vessel_ids ) ) {
-                echo '<div class="notice notice-error"><p><strong>Error getting vessel IDs:</strong> ' . esc_html( $vessel_ids->get_error_message() ) . '</p></div>';
-                echo '</div>';
-            } elseif ( empty( $vessel_ids ) || ! is_array( $vessel_ids ) ) {
-                echo '<div class="notice notice-error"><p><strong>Error:</strong> No vessel IDs returned. The API response may be empty or invalid.</p></div>';
-                echo '</div>';
+            if ( $test_vessel_id ) {
+                // Use the provided vessel ID
+                echo '<p><strong>Using provided vessel ID:</strong> ' . esc_html( $test_vessel_id ) . '</p>';
+                $found_vessel_id = $test_vessel_id;
+                $tried_vessels[] = $test_vessel_id;
             } else {
-                echo '<p><strong>✅ Success!</strong> Found ' . count( $vessel_ids ) . ' vessel ID(s). Will try each one until we find one with accessible FullSpecsAll data.</p>';
+                // Get multiple vessel IDs so we can try different ones if the first doesn't have FullSpecsAll data
+                echo '<p>No vessel ID provided. Fetching first available vessel ID...</p>';
+                $vessel_ids = yatco_get_active_vessel_ids( $token, 10 );
                 
-                // Try multiple vessel IDs until we find one with FullSpecsAll data
-                $found_vessel_id = null;
-                $fullspecs = null;
-                $response = null;
-                $tried_vessels = array();
+                if ( is_wp_error( $vessel_ids ) ) {
+                    echo '<div class="notice notice-error"><p><strong>Error getting vessel IDs:</strong> ' . esc_html( $vessel_ids->get_error_message() ) . '</p></div>';
+                    echo '</div>';
+                } elseif ( empty( $vessel_ids ) || ! is_array( $vessel_ids ) ) {
+                    echo '<div class="notice notice-error"><p><strong>Error:</strong> No vessel IDs returned. The API response may be empty or invalid.</p></div>';
+                    echo '</div>';
+                } else {
+                    echo '<p><strong>✅ Success!</strong> Found ' . count( $vessel_ids ) . ' vessel ID(s). Will try each one until we find one with accessible FullSpecsAll data.</p>';
+                    
+                    // Try multiple vessel IDs until we find one with FullSpecsAll data
                 
                 foreach ( $vessel_ids as $vessel_id ) {
                     $tried_vessels[] = $vessel_id;

@@ -249,18 +249,39 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
         return new WP_Error( 'import_stopped', 'Import stopped by user.' );
     }
 
+    // Check if this is partial/basic data (from fallback endpoint)
+    $is_partial_data = isset( $full['_is_partial_data'] ) && $full['_is_partial_data'] === true;
+    
     // Get Result and BasicInfo for easier access.
-    $result = isset( $full['Result'] ) ? $full['Result'] : array();
-    $basic  = isset( $full['BasicInfo'] ) ? $full['BasicInfo'] : array();
-    $dims   = isset( $full['Dimensions'] ) ? $full['Dimensions'] : array();
-    $vd     = isset( $full['VD'] ) ? $full['VD'] : array();
-    $misc   = isset( $full['MiscInfo'] ) ? $full['MiscInfo'] : array();
-    $sections = isset( $full['Sections'] ) && is_array( $full['Sections'] ) ? $full['Sections'] : array();
-    $engines = isset( $full['Engines'] ) && is_array( $full['Engines'] ) ? $full['Engines'] : array();
-    $accommodations = isset( $full['Accommodations'] ) ? $full['Accommodations'] : array();
-    $speed_weight = isset( $full['SpeedWeight'] ) ? $full['SpeedWeight'] : array();
-    $hull_deck = isset( $full['HullDeck'] ) ? $full['HullDeck'] : array();
-    $seo = isset( $full['SEO'] ) ? $full['SEO'] : array();
+    // For partial data, the structure might be different - handle both cases
+    if ( $is_partial_data ) {
+        // Partial data: Result might contain all data, BasicInfo might be in Result or separate
+        $result = isset( $full['Result'] ) ? $full['Result'] : array();
+        $basic  = isset( $full['BasicInfo'] ) ? $full['BasicInfo'] : ( isset( $result['BasicInfo'] ) ? $result['BasicInfo'] : array() );
+        // For partial data, we might not have all sections, so use empty arrays
+        $dims   = isset( $full['Dimensions'] ) ? $full['Dimensions'] : ( isset( $result['Dimensions'] ) ? $result['Dimensions'] : array() );
+        $vd     = array();
+        $misc   = isset( $full['MiscInfo'] ) ? $full['MiscInfo'] : ( isset( $result['MiscInfo'] ) ? $result['MiscInfo'] : array() );
+        $sections = array();
+        $engines = array();
+        $accommodations = array();
+        $speed_weight = array();
+        $hull_deck = array();
+        $seo = array();
+    } else {
+        // Full data: standard structure
+        $result = isset( $full['Result'] ) ? $full['Result'] : array();
+        $basic  = isset( $full['BasicInfo'] ) ? $full['BasicInfo'] : array();
+        $dims   = isset( $full['Dimensions'] ) ? $full['Dimensions'] : array();
+        $vd     = isset( $full['VD'] ) ? $full['VD'] : array();
+        $misc   = isset( $full['MiscInfo'] ) ? $full['MiscInfo'] : array();
+        $sections = isset( $full['Sections'] ) && is_array( $full['Sections'] ) ? $full['Sections'] : array();
+        $engines = isset( $full['Engines'] ) && is_array( $full['Engines'] ) ? $full['Engines'] : array();
+        $accommodations = isset( $full['Accommodations'] ) ? $full['Accommodations'] : array();
+        $speed_weight = isset( $full['SpeedWeight'] ) ? $full['SpeedWeight'] : array();
+        $hull_deck = isset( $full['HullDeck'] ) ? $full['HullDeck'] : array();
+        $seo = isset( $full['SEO'] ) ? $full['SEO'] : array();
+    }
 
     // Basic fields – updated to match actual API structure.
     $name   = '';
@@ -275,10 +296,23 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
     // Vessel name: Prefer BasicInfo.BoatName (better case formatting), then Result.VesselName.
     // BasicInfo.BoatName usually has proper case like "25' Scarab 255 Open ID"
     // Result.VesselName is often all caps like "25' SCARAB 255 OPEN ID"
-    if ( ! empty( $basic['BoatName'] ) ) {
-        $name = $basic['BoatName'];
-    } elseif ( ! empty( $result['VesselName'] ) ) {
-        $name = $result['VesselName'];
+    // For partial data, check Result first since BasicInfo might be nested or missing
+    if ( $is_partial_data ) {
+        // Try Result.VesselName first for partial data
+        if ( ! empty( $result['VesselName'] ) ) {
+            $name = $result['VesselName'];
+        } elseif ( ! empty( $basic['BoatName'] ) ) {
+            $name = $basic['BoatName'];
+        } elseif ( ! empty( $result['BoatName'] ) ) {
+            $name = $result['BoatName'];
+        }
+    } else {
+        // Full data: prefer BasicInfo.BoatName
+        if ( ! empty( $basic['BoatName'] ) ) {
+            $name = $basic['BoatName'];
+        } elseif ( ! empty( $result['VesselName'] ) ) {
+            $name = $result['VesselName'];
+        }
     }
 
     // Price: Prefer USD price from BasicInfo, fallback to Result.AskingPriceCompare.
@@ -290,7 +324,7 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
         $price = $basic['AskingPrice'];
     }
 
-    // Year: Check BasicInfo first, then Result.
+    // Year: Check BasicInfo first, then Result. Check multiple field names for partial data.
     if ( ! empty( $basic['YearBuilt'] ) ) {
         $year = $basic['YearBuilt'];
     } elseif ( ! empty( $basic['ModelYear'] ) ) {
@@ -299,29 +333,45 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
         $year = $result['YearBuilt'];
     } elseif ( ! empty( $result['Year'] ) ) {
         $year = $result['Year'];
+    } elseif ( ! empty( $result['ModelYear'] ) ) {
+        $year = $result['ModelYear'];
     }
 
-    // LOA: Use LOAFeet if available, otherwise formatted LOA string.
+    // LOA: Use LOAFeet if available, otherwise formatted LOA string. Check multiple sources for partial data.
     if ( isset( $result['LOAFeet'] ) && $result['LOAFeet'] > 0 ) {
         $loa = $result['LOAFeet'];
     } elseif ( ! empty( $dims['LOAFeet'] ) ) {
         $loa = $dims['LOAFeet'];
-    } elseif ( ! empty( $dims['LOA'] ) ) {
+    } elseif ( ! empty( $dims['LOA'] ) && is_numeric( $dims['LOA'] ) ) {
         $loa = $dims['LOA'];
+    } elseif ( ! empty( $result['LOA'] ) && is_numeric( $result['LOA'] ) ) {
+        $loa = $result['LOA'];
+    } elseif ( ! empty( $basic['LOAFeet'] ) ) {
+        $loa = $basic['LOAFeet'];
     }
 
-    // MLSID: From Result.
+    // MLSID: From Result or BasicInfo. Check multiple sources for partial data.
     if ( ! empty( $result['MLSID'] ) ) {
         $mlsid = $result['MLSID'];
     } elseif ( ! empty( $result['VesselID'] ) ) {
         $mlsid = $result['VesselID'];
+    } elseif ( ! empty( $basic['MLSID'] ) ) {
+        $mlsid = $basic['MLSID'];
+    } elseif ( ! empty( $basic['VesselID'] ) ) {
+        $mlsid = $basic['VesselID'];
     }
 
-    // Builder: From BasicInfo.
+    // Builder/Make: From BasicInfo or Result. Check multiple possible field names for partial data support.
     if ( ! empty( $basic['Builder'] ) ) {
         $make = $basic['Builder'];
+    } elseif ( ! empty( $result['Builder'] ) ) {
+        $make = $result['Builder'];
     } elseif ( ! empty( $result['BuilderName'] ) ) {
         $make = $result['BuilderName'];
+    } elseif ( ! empty( $basic['BuilderName'] ) ) {
+        $make = $basic['BuilderName'];
+    } elseif ( ! empty( $result['Make'] ) ) {
+        $make = $result['Make'];
     }
 
     // Model: From BasicInfo or Result.
@@ -336,11 +386,21 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
         $model = $result['ModelName'];
     }
 
-    // Vessel class: From BasicInfo.MainCategory, or Result.MainCategoryText.
+    // Vessel class/Category: From BasicInfo.MainCategory, or Result.MainCategoryText. Check multiple field names.
     if ( ! empty( $basic['MainCategory'] ) ) {
         $class = $basic['MainCategory'];
     } elseif ( ! empty( $result['MainCategoryText'] ) ) {
         $class = $result['MainCategoryText'];
+    } elseif ( ! empty( $result['Category'] ) ) {
+        $class = $result['Category'];
+    } elseif ( ! empty( $basic['Category'] ) ) {
+        $class = $basic['Category'];
+    } elseif ( ! empty( $result['Class'] ) ) {
+        $class = $result['Class'];
+    } elseif ( ! empty( $result['VesselType'] ) ) {
+        $class = $result['VesselType'];
+    } elseif ( ! empty( $basic['VesselType'] ) ) {
+        $class = $basic['VesselType'];
     }
     
     // Sub Category: From BasicInfo or Result.
