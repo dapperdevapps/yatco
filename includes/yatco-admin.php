@@ -943,7 +943,14 @@ function yatco_options_page() {
                 echo '<p style="font-size: 16px; margin: 5px 0;"><strong>Total Active Vessels:</strong> <span style="color: #2271b1; font-size: 20px; font-weight: bold;">' . number_format( $total_count ) . '</span></p>';
                 echo '</div>';
                 
-                // Display the full JSON response
+                // Add option to view sample full API data
+                echo '<div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0;">';
+                echo '<p style="margin: 0 0 10px 0; font-weight: bold;"><strong>💡 View Sample Full API Data:</strong></p>';
+                echo '<p style="margin: 0 0 10px 0;">Want to see what data is available for each vessel? You can view the full API response for individual vessels using the <strong>"Browse Single Vessel API"</strong> section below. Simply enter a vessel ID to see its complete API structure.</p>';
+                echo '<p style="margin: 0;">You can also use the <strong>"Test Single Vessel & Create Post"</strong> section to view the full API data for any vessel.</p>';
+                echo '</div>';
+                
+                // Display the full JSON response (just IDs)
                 $vessel_ids_json = wp_json_encode( $all_vessel_ids, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
                 
                 echo '<h3 style="margin-top: 30px;">Full API Response (All Vessel IDs)</h3>';
@@ -1251,6 +1258,36 @@ function yatco_options_page() {
                     if ( is_array( $fullspecs ) && ! empty( $fullspecs ) ) {
                         $sections_found = array_keys( $fullspecs );
                         echo '<p style="color: #666; font-size: 13px;">Data sections found: <strong>' . esc_html( count( $sections_found ) ) . '</strong> sections (' . esc_html( implode( ', ', array_slice( $sections_found, 0, 5 ) ) ) . ( count( $sections_found ) > 5 ? ', ...' : '' ) . ')</p>';
+                        
+                        // Extract and display price information
+                        $result = isset( $fullspecs['Result'] ) ? $fullspecs['Result'] : array();
+                        $basic  = isset( $fullspecs['BasicInfo'] ) ? $fullspecs['BasicInfo'] : array();
+                        
+                        $price_formatted = '';
+                        if ( isset( $basic['AskingPriceUSD'] ) && $basic['AskingPriceUSD'] > 0 ) {
+                            $price_formatted = '$' . number_format( floatval( $basic['AskingPriceUSD'] ), 0 );
+                        } elseif ( isset( $result['AskingPriceCompare'] ) && $result['AskingPriceCompare'] > 0 ) {
+                            $currency = isset( $basic['Currency'] ) ? $basic['Currency'] : ( isset( $result['Currency'] ) ? $result['Currency'] : 'USD' );
+                            if ( isset( $result['AskingPriceFormatted'] ) && ! empty( $result['AskingPriceFormatted'] ) ) {
+                                $price_formatted = $result['AskingPriceFormatted'];
+                            } else {
+                                $price_formatted = $currency . ' ' . number_format( floatval( $result['AskingPriceCompare'] ), 0 );
+                            }
+                        } elseif ( isset( $basic['AskingPrice'] ) && $basic['AskingPrice'] > 0 ) {
+                            $currency = isset( $basic['Currency'] ) ? $basic['Currency'] : 'USD';
+                            $price_formatted = $currency . ' ' . number_format( floatval( $basic['AskingPrice'] ), 0 );
+                        }
+                        
+                        // Check for "Price on Application"
+                        if ( isset( $result['PriceOnApplication'] ) && $result['PriceOnApplication'] ) {
+                            $price_formatted = 'Price on Application';
+                        } elseif ( isset( $basic['PriceOnApplication'] ) && $basic['PriceOnApplication'] ) {
+                            $price_formatted = 'Price on Application';
+                        }
+                        
+                        if ( ! empty( $price_formatted ) ) {
+                            echo '<p style="color: #666; font-size: 14px; margin-top: 10px;"><strong>💰 Price:</strong> <span style="font-size: 16px; color: #2271b1; font-weight: bold;">' . esc_html( $price_formatted ) . '</span></p>';
+                        }
                     }
                 }
                 
@@ -1569,22 +1606,61 @@ function yatco_options_page() {
                 }
                 
                 if ( ! is_wp_error( $fullspecs ) && ! empty( $fullspecs ) ) {
-                    // Display vessel info
+                    // Extract vessel info for display
+                    $result = isset( $fullspecs['Result'] ) ? $fullspecs['Result'] : array();
+                    $basic  = isset( $fullspecs['BasicInfo'] ) ? $fullspecs['BasicInfo'] : array();
+                    
+                    // Vessel name
                     $vessel_name = '';
-                    if ( isset( $fullspecs['Result']['VesselName'] ) ) {
-                        $vessel_name = $fullspecs['Result']['VesselName'];
-                    } elseif ( isset( $fullspecs['BasicInfo']['BoatName'] ) ) {
-                        $vessel_name = $fullspecs['BasicInfo']['BoatName'];
-                    } elseif ( isset( $fullspecs['Result']['BoatName'] ) ) {
-                        $vessel_name = $fullspecs['Result']['BoatName'];
+                    if ( ! empty( $basic['BoatName'] ) ) {
+                        $vessel_name = $basic['BoatName'];
+                    } elseif ( ! empty( $result['VesselName'] ) ) {
+                        $vessel_name = $result['VesselName'];
+                    } elseif ( ! empty( $result['BoatName'] ) ) {
+                        $vessel_name = $result['BoatName'];
                     }
                     
-                    echo '<div style="background: #d4edda; border-left: 4px solid #46b450; padding: 12px; margin-top: 15px;">';
-                    echo '<p style="margin: 0; font-weight: bold; color: #155724;">✅ Successfully fetched API data for Vessel ID: ' . esc_html( $browse_vessel_id );
+                    // Price: Prefer USD price from BasicInfo, fallback to Result.AskingPriceCompare
+                    $price = '';
+                    $price_formatted = '';
+                    $currency = 'USD';
+                    
+                    if ( isset( $basic['AskingPriceUSD'] ) && $basic['AskingPriceUSD'] > 0 ) {
+                        $price = floatval( $basic['AskingPriceUSD'] );
+                        $price_formatted = '$' . number_format( $price, 0 );
+                    } elseif ( isset( $result['AskingPriceCompare'] ) && $result['AskingPriceCompare'] > 0 ) {
+                        $price = floatval( $result['AskingPriceCompare'] );
+                        $currency = isset( $basic['Currency'] ) ? $basic['Currency'] : ( isset( $result['Currency'] ) ? $result['Currency'] : 'USD' );
+                        if ( isset( $result['AskingPriceFormatted'] ) && ! empty( $result['AskingPriceFormatted'] ) ) {
+                            $price_formatted = $result['AskingPriceFormatted'];
+                        } else {
+                            $price_formatted = $currency . ' ' . number_format( $price, 0 );
+                        }
+                    } elseif ( isset( $basic['AskingPrice'] ) && $basic['AskingPrice'] > 0 ) {
+                        $price = floatval( $basic['AskingPrice'] );
+                        $currency = isset( $basic['Currency'] ) ? $basic['Currency'] : 'USD';
+                        $price_formatted = $currency . ' ' . number_format( $price, 0 );
+                    }
+                    
+                    // Check for "Price on Application"
+                    $price_on_application = false;
+                    if ( isset( $result['PriceOnApplication'] ) && $result['PriceOnApplication'] ) {
+                        $price_on_application = true;
+                        $price_formatted = 'Price on Application';
+                    } elseif ( isset( $basic['PriceOnApplication'] ) && $basic['PriceOnApplication'] ) {
+                        $price_on_application = true;
+                        $price_formatted = 'Price on Application';
+                    }
+                    
+                    echo '<div style="background: #d4edda; border-left: 4px solid #46b450; padding: 15px; margin-top: 15px;">';
+                    echo '<p style="margin: 0 0 8px 0; font-weight: bold; color: #155724; font-size: 16px;">✅ Successfully fetched API data for Vessel ID: ' . esc_html( $browse_vessel_id );
                     if ( ! empty( $vessel_name ) ) {
                         echo ' (' . esc_html( $vessel_name ) . ')';
                     }
                     echo '</p>';
+                    if ( ! empty( $price_formatted ) ) {
+                        echo '<p style="margin: 0; color: #155724; font-size: 18px; font-weight: bold;">💰 Price: ' . esc_html( $price_formatted ) . '</p>';
+                    }
                     echo '</div>';
                     
                     // Store fullspecs JSON for JavaScript access
