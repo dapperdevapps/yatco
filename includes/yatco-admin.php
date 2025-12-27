@@ -293,11 +293,24 @@ function yatco_options_page() {
                     'percent' => 0,
                 ), 3600 );
                 
-                // Schedule the import to run via wp-cron (non-blocking)
-                wp_schedule_single_event( time() + 2, 'yatco_full_import_hook' );
-                spawn_cron(); // Trigger cron immediately if possible
+                // Schedule the import to run immediately via wp-cron (non-blocking)
+                // Use time() instead of time() + 2 for immediate execution
+                wp_schedule_single_event( time(), 'yatco_full_import_hook' );
                 
-                yatco_log( 'Full Import Direct: Import scheduled via wp-cron, redirecting to status page', 'info' );
+                // Trigger cron immediately via background request
+                spawn_cron();
+                
+                // Also trigger it directly in the background using a fast non-blocking approach
+                // This ensures it runs even if spawn_cron doesn't work
+                ignore_user_abort( true );
+                if ( function_exists( 'fastcgi_finish_request' ) ) {
+                    fastcgi_finish_request();
+                }
+                
+                // Trigger the hook directly in the background
+                do_action( 'yatco_full_import_hook' );
+                
+                yatco_log( 'Full Import Direct: Import scheduled and triggered via wp-cron and direct action, redirecting to status page', 'info' );
                 
                 // Redirect immediately to status page to prevent timeout
                 wp_safe_redirect( admin_url( 'options-general.php?page=yatco_api&tab=status&import_started=1' ) );
@@ -1300,14 +1313,83 @@ function yatco_options_page() {
                     }
                     echo '</div>';
                     
-                    echo '<h3 style="margin-top: 30px;">Raw API Response Data Structure</h3>';
-                    echo '<p style="color: #666; font-size: 13px;">Below is the complete JSON response from the YATCO API for reference. You can search for "reduction", "original", "previous", or "price" to find relevant fields:</p>';
+                    echo '<h3 style="margin-top: 30px;">Full API Response</h3>';
+                    echo '<p style="color: #666; font-size: 13px; margin-bottom: 15px;">View and search the complete JSON response from the YATCO API:</p>';
                     
-                    echo '<div style="background: #fff; border: 1px solid #ccc; border-radius: 4px; padding: 15px; max-height: 400px; overflow: auto; font-family: monospace; font-size: 11px; line-height: 1.4;">';
-                    echo '<pre style="margin: 0; white-space: pre-wrap; word-wrap: break-word;">';
-                    echo esc_html( wp_json_encode( $fullspecs, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) );
+                    // Store fullspecs JSON for JavaScript access
+                    $fullspecs_json = wp_json_encode( $fullspecs, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+                    
+                    echo '<div style="margin-bottom: 15px;">';
+                    echo '<button type="button" id="yatco-toggle-full-api" class="button button-secondary" style="margin-right: 10px;">📋 View Full API</button>';
+                    echo '<input type="text" id="yatco-api-search" placeholder="Search API response (Ctrl+F also works)..." class="regular-text" style="width: 350px; display: none;" />';
+                    echo '</div>';
+                    
+                    echo '<div id="yatco-full-api-display" style="background: #1e1e1e; color: #d4d4d4; border: 1px solid #3c3c3c; border-radius: 4px; padding: 20px; max-height: 700px; overflow: auto; font-family: "Courier New", Courier, monospace; font-size: 13px; line-height: 1.6; display: none; position: relative;">';
+                    echo '<pre id="yatco-api-content" style="margin: 0; white-space: pre-wrap; word-wrap: break-word; color: #d4d4d4;">';
+                    echo esc_html( $fullspecs_json );
                     echo '</pre>';
                     echo '</div>';
+                    
+                    // JavaScript for toggle and search functionality
+                    echo '<script type="text/javascript">';
+                    echo 'jQuery(document).ready(function($) {';
+                    echo '    var $toggleBtn = $("#yatco-toggle-full-api");';
+                    echo '    var $searchBox = $("#yatco-api-search");';
+                    echo '    var $apiDisplay = $("#yatco-full-api-display");';
+                    echo '    var $apiContent = $("#yatco-api-content");';
+                    echo '    var originalContent = ' . wp_json_encode( $fullspecs_json ) . ';';
+                    echo '    var isExpanded = false;';
+                    echo '    ';
+                    echo '    // Toggle button functionality';
+                    echo '    $toggleBtn.on("click", function() {';
+                    echo '        if (isExpanded) {';
+                    echo '            $apiDisplay.slideUp(300);';
+                    echo '            $searchBox.slideUp(200);';
+                    echo '            $toggleBtn.text("📋 View Full API");';
+                    echo '            isExpanded = false;';
+                    echo '            $searchBox.val("");';
+                    echo '            $apiContent.text(originalContent);';
+                    echo '        } else {';
+                    echo '            $apiDisplay.slideDown(300);';
+                    echo '            $searchBox.slideDown(200);';
+                    echo '            $toggleBtn.text("🔽 Hide Full API");';
+                    echo '            isExpanded = true;';
+                    echo '            $searchBox.focus();';
+                    echo '        }';
+                    echo '    });';
+                    echo '    ';
+                    echo '    // Search functionality with highlighting';
+                    echo '    var searchTimeout;';
+                    echo '    $searchBox.on("input keyup", function(e) {';
+                    echo '        // Allow Ctrl+F to work naturally';
+                    echo '        if (e.ctrlKey && e.key === "f") {';
+                    echo '            return;';
+                    echo '        }';
+                    echo '        ';
+                    echo '        var searchTerm = $(this).val();';
+                    echo '        clearTimeout(searchTimeout);';
+                    echo '        ';
+                    echo '        if (searchTerm === "") {';
+                    echo '            $apiContent.text(originalContent);';
+                    echo '            return;';
+                    echo '        }';
+                    echo '        ';
+                    echo '        searchTimeout = setTimeout(function() {';
+                    echo '            var regex = new RegExp("(" + searchTerm.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&") + ")", "gi");';
+                    echo '            var highlightedContent = originalContent.replace(regex, "<mark style=\'background: #ffeb3b; color: #000; padding: 2px 4px; border-radius: 2px;\'>$1</mark>");';
+                    echo '            $apiContent.html(highlightedContent);';
+                    echo '            ';
+                    echo '            // Scroll to first match';
+                    echo '            var firstMark = $apiContent.find("mark").first();';
+                    echo '            if (firstMark.length) {';
+                    echo '                $apiDisplay.animate({';
+                    echo '                    scrollTop: firstMark.offset().top - $apiDisplay.offset().top + $apiDisplay.scrollTop() - 100';
+                    echo '                }, 300);';
+                    echo '            }';
+                    echo '        }, 300);';
+                    echo '    });';
+                    echo '});';
+                    echo '</script>';
                 }
             }
             
