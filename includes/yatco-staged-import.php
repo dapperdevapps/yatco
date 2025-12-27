@@ -803,29 +803,31 @@ function yatco_full_import( $token ) {
         }
     }
     
-    yatco_log( "Full Import: Built lookup map with " . count( $vessel_id_lookup ) . " vessel IDs and " . count( $mlsid_lookup ) . " MLSIDs", 'info' );
+    $existing_count = count( $vessel_id_lookup );
+    yatco_log( "Full Import: Built lookup map with {$existing_count} existing vessel IDs and " . count( $mlsid_lookup ) . " MLSIDs", 'info' );
     
-    // Filter out vessels that already exist (both fresh import and resume)
-    // This ensures we don't re-process vessels that were already imported
+    // OPTIMIZED: Filter out vessels that already exist using array_diff (much faster than foreach loop)
+    // Convert vessel IDs to integers and use array operations for speed
     $original_count = count( $vessel_ids );
-    $vessel_ids_to_process = array();
+    $vessel_ids_int = array_map( 'intval', $vessel_ids ); // Convert all to integers once
+    $existing_vessel_ids = array_keys( $vessel_id_lookup ); // Get array of existing vessel IDs (already integers)
     
-    foreach ( $vessel_ids as $vessel_id ) {
-        $vessel_id_int = intval( $vessel_id );
-        // Skip if vessel ID already exists in lookup map
-        if ( ! isset( $vessel_id_lookup[ $vessel_id_int ] ) ) {
-            $vessel_ids_to_process[] = $vessel_id;
-        }
-    }
+    // Use array_diff to find vessels that need importing (vessels in API list but not in existing list)
+    // This is MUCH faster than a foreach loop for large arrays
+    $vessel_ids_to_process_int = array_diff( $vessel_ids_int, $existing_vessel_ids );
+    
+    // Convert back to original array format (preserve keys if needed)
+    $vessel_ids_to_process = array_values( $vessel_ids_to_process_int );
     
     $skipped_count = $original_count - count( $vessel_ids_to_process );
     $vessel_ids = $vessel_ids_to_process;
     
     if ( $skip_existing ) {
-        yatco_log( "Full Import: Skipped {$skipped_count} existing vessels, {$original_count} total found, " . count( $vessel_ids ) . " new to process", 'info' );
-        set_transient( 'yatco_cache_warming_status', "Full Import: Skipped {$skipped_count} existing vessels, processing " . count( $vessel_ids ) . " new vessels...", 600 );
+        yatco_log( "Full Import: Comparison complete - {$original_count} total vessels from API, {$existing_count} already imported, {$skipped_count} skipped, " . count( $vessel_ids ) . " new vessels need importing", 'info' );
+        set_transient( 'yatco_cache_warming_status', "Full Import: {$original_count} total from API, {$existing_count} already imported, " . count( $vessel_ids ) . " new to process...", 600 );
     } else {
-        yatco_log( "Full Import: Resuming - Skipped {$skipped_count} existing vessels, " . count( $vessel_ids ) . " remaining to check", 'info' );
+        yatco_log( "Full Import: Resuming - {$original_count} total vessels, {$existing_count} already imported, {$skipped_count} skipped, " . count( $vessel_ids ) . " remaining to process", 'info' );
+        set_transient( 'yatco_cache_warming_status', "Full Import: Resuming - " . count( $vessel_ids ) . " vessels remaining to process...", 600 );
     }
     
     // If resuming, skip vessels we've already processed in previous runs
@@ -946,6 +948,21 @@ function yatco_full_import( $token ) {
             }
             
             // Import full vessel data
+            // CRITICAL: Check stop flag ONE MORE TIME right before starting import (most important check)
+            $stop_flag = get_option( 'yatco_import_stop_flag', false );
+            if ( $stop_flag === false ) {
+                $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            }
+            if ( $stop_flag !== false ) {
+                yatco_log( '🛑 Full Import: Stop flag detected right before vessel import, cancelling immediately', 'warning' );
+                delete_transient( 'yatco_import_progress' );
+                wp_cache_delete( 'yatco_import_progress', 'transient' );
+                set_transient( 'yatco_cache_warming_status', 'Full Import stopped by user.', 60 );
+                delete_option( 'yatco_import_lock' );
+                delete_option( 'yatco_import_process_id' );
+                return;
+            }
+            
             yatco_log( "Full Import: Starting vessel {$vessel_id} (vessel " . ($processed + 1) . " of {$total_to_process})", 'info' );
             
             // Log memory usage every 10 vessels

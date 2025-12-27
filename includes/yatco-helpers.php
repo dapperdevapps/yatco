@@ -209,7 +209,17 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
         $stop_flag = get_transient( 'yatco_cache_warming_stop' );
     }
     if ( $stop_flag !== false ) {
-        yatco_log( "🛑 Import: Stop flag detected in yatco_import_single_vessel for vessel {$vessel_id}, cancelling immediately", 'warning' );
+        // Don't log here - just return immediately to prevent any log entries
+        return new WP_Error( 'import_stopped', 'Import stopped by user.' );
+    }
+    
+    // Check stop flag one more time right before logging (most critical check)
+    $stop_flag = get_option( 'yatco_import_stop_flag', false );
+    if ( $stop_flag === false ) {
+        $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+    }
+    if ( $stop_flag !== false ) {
+        // Don't log here - just return immediately to prevent any log entries
         return new WP_Error( 'import_stopped', 'Import stopped by user.' );
     }
     
