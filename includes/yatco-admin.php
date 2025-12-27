@@ -187,7 +187,55 @@ function yatco_options_page() {
     
     // Import Tab
     if ( $current_tab === 'import' ) {
+        // Handle stop import form submission FIRST (before displaying anything)
+        if ( isset( $_POST['yatco_stop_import'] ) && check_admin_referer( 'yatco_stop_import', 'yatco_stop_import_nonce' ) ) {
+            yatco_log( '🛑 IMPORT STOP REQUESTED: Stop button clicked by user (Import Tab)', 'warning' );
+            
+            // Get current progress before clearing
+            $current_progress = get_transient( 'yatco_import_progress' );
+            $processed = 0;
+            $total = 0;
+            if ( $current_progress !== false && is_array( $current_progress ) ) {
+                $processed = isset( $current_progress['processed'] ) ? intval( $current_progress['processed'] ) : ( isset( $current_progress['last_processed'] ) ? intval( $current_progress['last_processed'] ) : 0 );
+                $total = isset( $current_progress['total'] ) ? intval( $current_progress['total'] ) : 0;
+            }
+            
+            yatco_log( "🛑 IMPORT STOP: Current progress was {$processed}/{$total} vessels", 'warning' );
+            
+            // Set stop flag using WordPress option (more reliable for direct runs)
+            update_option( 'yatco_import_stop_flag', time(), false );
+            set_transient( 'yatco_cache_warming_stop', time(), 900 );
+            
+            // Disable auto-resume
+            delete_option( 'yatco_import_auto_resume' );
+            yatco_log( '🛑 IMPORT STOP: Auto-resume disabled', 'warning' );
+            
+            // Clear progress transients
+            delete_transient( 'yatco_import_progress' );
+            delete_transient( 'yatco_daily_sync_progress' );
+            wp_cache_delete( 'yatco_import_progress', 'transient' );
+            wp_cache_delete( 'yatco_daily_sync_progress', 'transient' );
+            yatco_log( '🛑 IMPORT STOP: Progress cleared from cache and database', 'warning' );
+            
+            // Release import lock
+            delete_option( 'yatco_import_lock' );
+            delete_option( 'yatco_import_process_id' );
+            
+            // Update status
+            set_transient( 'yatco_cache_warming_status', 'Import stopped by user.', 300 );
+            yatco_log( '🛑 IMPORT STOP COMPLETE: All stop actions completed. Import will stop at next checkpoint.', 'warning' );
+            
+            // Redirect to prevent form resubmission
+            wp_safe_redirect( admin_url( 'options-general.php?page=yatco_api&tab=import&stopped=1' ) );
+            exit;
+        }
+        
         echo '<div class="yatco-import-section">';
+        
+        // Show success message if stopped
+        if ( isset( $_GET['stopped'] ) && $_GET['stopped'] == '1' ) {
+            echo '<div class="notice notice-success is-dismissible" style="margin: 20px 0;"><p><strong>Import stop requested.</strong> The import will stop at the next checkpoint.</p></div>';
+        }
         
         // Display Import Status & Progress at the top
         yatco_display_import_status_section();
@@ -524,8 +572,56 @@ function yatco_options_page() {
     
     // Status Tab - show cache warming status
     if ( $current_tab === 'status' ) {
+        // Handle stop import form submission FIRST (before displaying anything)
+        if ( isset( $_POST['yatco_stop_import'] ) && check_admin_referer( 'yatco_stop_import', 'yatco_stop_import_nonce' ) ) {
+            yatco_log( '🛑 IMPORT STOP REQUESTED: Stop button clicked by user (Status Tab)', 'warning' );
+            
+            // Get current progress before clearing
+            $current_progress = get_transient( 'yatco_import_progress' );
+            $processed = 0;
+            $total = 0;
+            if ( $current_progress !== false && is_array( $current_progress ) ) {
+                $processed = isset( $current_progress['processed'] ) ? intval( $current_progress['processed'] ) : ( isset( $current_progress['last_processed'] ) ? intval( $current_progress['last_processed'] ) : 0 );
+                $total = isset( $current_progress['total'] ) ? intval( $current_progress['total'] ) : 0;
+            }
+            
+            yatco_log( "🛑 IMPORT STOP: Current progress was {$processed}/{$total} vessels", 'warning' );
+            
+            // Set stop flag using WordPress option (more reliable for direct runs)
+            update_option( 'yatco_import_stop_flag', time(), false );
+            set_transient( 'yatco_cache_warming_stop', time(), 900 );
+            
+            // Disable auto-resume
+            delete_option( 'yatco_import_auto_resume' );
+            yatco_log( '🛑 IMPORT STOP: Auto-resume disabled', 'warning' );
+            
+            // Clear progress transients
+            delete_transient( 'yatco_import_progress' );
+            delete_transient( 'yatco_daily_sync_progress' );
+            wp_cache_delete( 'yatco_import_progress', 'transient' );
+            wp_cache_delete( 'yatco_daily_sync_progress', 'transient' );
+            yatco_log( '🛑 IMPORT STOP: Progress cleared from cache and database', 'warning' );
+            
+            // Release import lock
+            delete_option( 'yatco_import_lock' );
+            delete_option( 'yatco_import_process_id' );
+            
+            // Update status
+            set_transient( 'yatco_cache_warming_status', 'Import stopped by user.', 300 );
+            yatco_log( '🛑 IMPORT STOP COMPLETE: All stop actions completed. Import will stop at next checkpoint.', 'warning' );
+            
+            // Redirect to prevent form resubmission
+            wp_safe_redirect( admin_url( 'options-general.php?page=yatco_api&tab=status&stopped=1' ) );
+            exit;
+        }
+        
         echo '<div class="yatco-status-section">';
         echo '<h2>Import Status & Progress</h2>';
+        
+        // Show success message if stopped
+        if ( isset( $_GET['stopped'] ) && $_GET['stopped'] == '1' ) {
+            echo '<div class="notice notice-success is-dismissible" style="margin: 20px 0;"><p><strong>Import stop requested.</strong> The import will stop at the next checkpoint.</p></div>';
+        }
         
         // Get all progress data first
         $import_progress = get_transient( 'yatco_import_progress' );
@@ -666,16 +762,9 @@ function yatco_options_page() {
             yatco_log( '🛑 IMPORT STOP: Progress cleared from cache and database', 'warning' );
             
             yatco_log( '🛑 IMPORT STOP COMPLETE: All stop actions completed. Import will stop at next checkpoint.', 'warning' );
-            
-            // Redirect to clear the form and refresh the page
-            wp_redirect( add_query_arg( array( 'page' => 'yatco_import', 'tab' => 'status', 'stopped' => '1' ), admin_url( 'edit.php?post_type=yacht' ) ) );
-            exit;
         }
         
-        // Show success message if redirected after stop
-        if ( isset( $_GET['stopped'] ) && $_GET['stopped'] == '1' ) {
-            echo '<div class="notice notice-success" style="margin-bottom: 20px;"><p><strong>Import stopped.</strong> The import will stop at the next checkpoint.</p></div>';
-        }
+        // Stop button handler is already at the top of the Status Tab section, this duplicate is removed
         
         // Status tab - real-time updates using WordPress Heartbeat API
         echo '<script type="text/javascript">';

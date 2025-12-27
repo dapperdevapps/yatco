@@ -38,17 +38,11 @@ register_activation_hook( __FILE__, 'yatco_create_cpt' );
 add_action( 'init', 'yatco_register_shortcode' );
 
 // Schedule Daily Sync on init (if enabled) - but only if not already scheduled
-add_action( 'init', 'yatco_schedule_next_daily_sync_once' );
-function yatco_schedule_next_daily_sync_once() {
-    // Only schedule if there's no existing scheduled event
-    // This prevents infinite loops from multiple init calls
-    $next_scheduled = wp_next_scheduled( 'yatco_daily_sync_hook' );
-    if ( $next_scheduled === false ) {
-        // No event scheduled, so schedule one
-        yatco_schedule_next_daily_sync();
-    }
-    // If there's already an event scheduled, don't schedule another one
-}
+// DISABLED: This was causing infinite loops. Daily sync should only be scheduled:
+// 1. When settings are saved (via update_option_yatco_api_settings hook)
+// 2. When the sync hook actually runs (via yatco_daily_sync_hook action)
+// 3. On plugin activation (should be handled separately if needed)
+// add_action( 'init', 'yatco_schedule_next_daily_sync_once' );
 
 // Register update all vessels hook
 add_action( 'yatco_warm_cache_hook', 'yatco_warm_cache_function' );
