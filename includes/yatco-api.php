@@ -67,7 +67,59 @@ function yatco_get_active_vessel_ids( $token, $max_records = 50 ) {
 }
 
 /**
- * Helper: fetch FullSpecsAll for a vessel.
+ * Helper: fetch basic vessel details as fallback when FullSpecsAll is not available.
+ */
+function yatco_fetch_basic_details( $token, $vessel_id ) {
+    $endpoint = 'https://api.yatcoboss.com/api/v1/ForSale/Vessel/' . intval( $vessel_id ) . '/Details';
+
+    $response = wp_remote_get(
+        $endpoint,
+        array(
+            'headers' => array(
+                'Authorization' => 'Basic ' . $token,
+                'Accept'        => 'application/json',
+            ),
+            'timeout' => 15,
+            'connect_timeout' => 8,
+        )
+    );
+
+    if ( is_wp_error( $response ) ) {
+        return $response;
+    }
+
+    if ( 200 !== wp_remote_retrieve_response_code( $response ) ) {
+        return new WP_Error( 'yatco_http_error', 'HTTP ' . wp_remote_retrieve_response_code( $response ) );
+    }
+
+    $body = wp_remote_retrieve_body( $response );
+    $data = json_decode( $body, true );
+
+    $json_error = json_last_error();
+    if ( $json_error !== JSON_ERROR_NONE && $data === null ) {
+        return new WP_Error( 'yatco_parse_error', 'Could not parse Details JSON: ' . json_last_error_msg() );
+    }
+    
+    if ( $data === null || ( is_array( $data ) && empty( $data ) ) ) {
+        return new WP_Error( 'yatco_no_data', 'Basic Details endpoint also returned null.' );
+    }
+
+    // Wrap basic data in the same structure as FullSpecsAll for compatibility
+    // Most basic endpoints return data in a simpler format, try to map it
+    if ( ! isset( $data['Result'] ) && ! isset( $data['BasicInfo'] ) ) {
+        // If the response doesn't have the expected structure, wrap it
+        $wrapped_data = array(
+            'Result' => $data, // Put all data in Result section
+            'BasicInfo' => isset( $data['BasicInfo'] ) ? $data['BasicInfo'] : array(),
+        );
+        return $wrapped_data;
+    }
+
+    return $data;
+}
+
+/**
+ * Helper: fetch FullSpecsAll for a vessel, with fallback to basic details if FullSpecsAll is not available.
  */
 function yatco_fetch_fullspecs( $token, $vessel_id ) {
     // Check stop flag right before API call (check both option and transient) - DON'T DELETE IT
@@ -123,7 +175,22 @@ function yatco_fetch_fullspecs( $token, $vessel_id ) {
     
     // Check if API returned null (valid JSON but no data available for this vessel)
     if ( $data === null || ( is_array( $data ) && empty( $data ) ) ) {
-        return new WP_Error( 'yatco_no_data', 'API returned null - this vessel does not have accessible FullSpecsAll data. The vessel may be inactive or restricted.' );
+        // Try fallback to basic Details endpoint
+        yatco_log( "Import: FullSpecsAll returned null for vessel {$vessel_id}, trying basic Details endpoint as fallback", 'info' );
+        $basic_data = yatco_fetch_basic_details( $token, $vessel_id );
+        
+        if ( ! is_wp_error( $basic_data ) ) {
+            yatco_log( "Import: Successfully fetched basic Details for vessel {$vessel_id} (fallback)", 'info' );
+            // Mark this as partial data so import function knows to handle it differently
+            if ( is_array( $basic_data ) ) {
+                $basic_data['_is_partial_data'] = true;
+            }
+            return $basic_data;
+        } else {
+            // Both endpoints failed
+            yatco_log( "Import: Both FullSpecsAll and basic Details failed for vessel {$vessel_id}: " . $basic_data->get_error_message(), 'warning' );
+            return new WP_Error( 'yatco_no_data', 'API returned null for FullSpecsAll and fallback Details endpoint also failed. The vessel may be inactive or restricted.' );
+        }
     }
 
     return $data;

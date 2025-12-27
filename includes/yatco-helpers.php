@@ -217,7 +217,21 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
     $api_start_time = time();
     $full = yatco_fetch_fullspecs( $token, $vessel_id );
     $api_elapsed = time() - $api_start_time;
-    yatco_log( "Import: API fetch for vessel {$vessel_id} completed in {$api_elapsed} seconds", 'debug' );
+    
+    // Extract vessel name early so we can include it in logs
+    $vessel_name = '';
+    if ( ! is_wp_error( $full ) && is_array( $full ) ) {
+        $result_temp = isset( $full['Result'] ) ? $full['Result'] : array();
+        $basic_temp  = isset( $full['BasicInfo'] ) ? $full['BasicInfo'] : array();
+        if ( ! empty( $basic_temp['BoatName'] ) ) {
+            $vessel_name = $basic_temp['BoatName'];
+        } elseif ( ! empty( $result_temp['VesselName'] ) ) {
+            $vessel_name = $result_temp['VesselName'];
+        }
+    }
+    
+    $name_display = ! empty( $vessel_name ) ? " ({$vessel_name})" : '';
+    yatco_log( "Import: API fetch for vessel {$vessel_id}{$name_display} completed in {$api_elapsed} seconds", 'debug' );
     
     if ( is_wp_error( $full ) ) {
         yatco_log( "Import: API fetch failed for vessel {$vessel_id}: " . $full->get_error_message(), 'error' );

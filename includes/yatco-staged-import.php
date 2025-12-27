@@ -970,7 +970,16 @@ function yatco_full_import( $token ) {
             // Increment attempted counter BEFORE processing (shows progress even if import fails)
             $attempted++;
             $vessel_position = $resume_from_index + $attempted;
-            yatco_log( "Full Import: Starting vessel {$vessel_id} (position {$vessel_position} of {$total_to_process}, {$processed} successful so far)", 'info' );
+            // Try to get vessel name from existing post if available (for better log visibility)
+            $vessel_name_display = '';
+            if ( is_array( $vessel_id_lookup ) && isset( $vessel_id_lookup[ intval( $vessel_id ) ] ) ) {
+                $existing_post_id = $vessel_id_lookup[ intval( $vessel_id ) ];
+                $post_title = get_the_title( $existing_post_id );
+                if ( ! empty( $post_title ) && $post_title !== 'Auto Draft' ) {
+                    $vessel_name_display = " ({$post_title})";
+                }
+            }
+            yatco_log( "Full Import: Starting vessel {$vessel_id}{$vessel_name_display} (position {$vessel_position} of {$total_to_process}, {$processed} successful so far)", 'info' );
             
             // Log memory usage every 10 vessels (use attempted instead of processed so it logs even if vessels fail)
             if ( $attempted % 10 == 0 && $attempted > 0 && function_exists( 'memory_get_usage' ) ) {
@@ -1119,7 +1128,15 @@ function yatco_full_import( $token ) {
             
             if ( ! is_wp_error( $import_result ) ) {
                 $processed++;
-                yatco_log( "Full Import: Successfully imported vessel {$vessel_id}", 'debug' );
+                // Try to get vessel name from post title if available
+                $vessel_name_display = '';
+                if ( is_numeric( $import_result ) ) {
+                    $post_title = get_the_title( $import_result );
+                    if ( ! empty( $post_title ) && $post_title !== 'Auto Draft' ) {
+                        $vessel_name_display = " ({$post_title})";
+                    }
+                }
+                yatco_log( "Full Import: Successfully imported vessel {$vessel_id}{$vessel_name_display}", 'debug' );
             } elseif ( $import_result->get_error_code() === 'import_stopped' ) {
                 yatco_log( '🛑 Full Import: Import stopped during vessel processing (stop flag detected in import function)', 'warning' );
                 delete_transient( 'yatco_import_progress' );
@@ -1129,7 +1146,24 @@ function yatco_full_import( $token ) {
                 return;
             } else {
                 $failed++;
-                yatco_log( "Full Import: Error importing vessel {$vessel_id}: " . $import_result->get_error_message(), 'error' );
+                // Try to get vessel name from error message or existing post if available
+                $vessel_name_display = '';
+                $error_message = $import_result->get_error_message();
+                // Check if we can get name from existing post
+                $existing_posts = get_posts( array(
+                    'post_type' => 'yacht',
+                    'meta_key' => 'yacht_vessel_id',
+                    'meta_value' => $vessel_id,
+                    'numberposts' => 1,
+                    'fields' => 'ids',
+                ) );
+                if ( ! empty( $existing_posts ) ) {
+                    $post_title = get_the_title( $existing_posts[0] );
+                    if ( ! empty( $post_title ) && $post_title !== 'Auto Draft' ) {
+                        $vessel_name_display = " ({$post_title})";
+                    }
+                }
+                yatco_log( "Full Import: Error importing vessel {$vessel_id}{$vessel_name_display}: {$error_message}", 'error' );
             }
             
             // Save progress after EACH vessel for real-time updates (critical for progress bar)

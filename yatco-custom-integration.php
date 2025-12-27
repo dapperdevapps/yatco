@@ -402,25 +402,37 @@ function yatco_heartbeat_received( $response, $data ) {
     $cache_status = get_transient( 'yatco_cache_warming_status' );
     
     if ( $import_progress !== false && is_array( $import_progress ) ) {
-        $current = isset( $import_progress['processed'] ) ? intval( $import_progress['processed'] ) : ( isset( $import_progress['last_processed'] ) ? intval( $import_progress['last_processed'] ) : 0 );
-        $total = isset( $import_progress['total'] ) ? intval( $import_progress['total'] ) : 0;
-        $percent = isset( $import_progress['percent'] ) ? floatval( $import_progress['percent'] ) : ( $total > 0 ? round( ( $current / $total ) * 100, 1 ) : 0 );
+        // Get all progress counts (same structure as AJAX handler)
+        $processed = isset( $import_progress['processed'] ) ? intval( $import_progress['processed'] ) : 0;
+        $failed = isset( $import_progress['failed'] ) ? intval( $import_progress['failed'] ) : 0;
+        $attempted = isset( $import_progress['attempted'] ) ? intval( $import_progress['attempted'] ) : 0;
+        $pending = isset( $import_progress['pending'] ) ? intval( $import_progress['pending'] ) : 0;
+        $total_to_process = isset( $import_progress['total'] ) ? intval( $import_progress['total'] ) : 0;
+        $total_from_api = isset( $import_progress['total_from_api'] ) ? intval( $import_progress['total_from_api'] ) : $total_to_process;
+        $already_imported = isset( $import_progress['already_imported'] ) ? intval( $import_progress['already_imported'] ) : 0;
+        
+        $current = $attempted > 0 ? $attempted : $processed;
+        $percent = isset( $import_progress['percent'] ) ? floatval( $import_progress['percent'] ) : ( $total_to_process > 0 ? round( ( $current / $total_to_process ) * 100, 1 ) : 0 );
         
         $progress_data = array(
-            'active' => true,
+            'processed' => $processed,
+            'failed' => $failed,
+            'attempted' => $attempted,
+            'pending' => $pending,
             'current' => $current,
-            'total' => $total,
+            'total' => $total_to_process,
+            'total_from_api' => $total_from_api,
+            'already_imported' => $already_imported,
             'percent' => $percent,
-            'remaining' => $total - $current,
-            'status' => $cache_status !== false ? $cache_status : null,
+            'remaining' => $pending,
         );
         
         // Calculate ETA
-        if ( isset( $import_progress['timestamp'] ) && $current > 0 && $total > $current ) {
+        if ( isset( $import_progress['timestamp'] ) && $current > 0 && $total_to_process > $current ) {
             $time_elapsed = time() - intval( $import_progress['timestamp'] );
             if ( $time_elapsed > 0 && $current > 0 ) {
                 $rate = $current / $time_elapsed; // items per second
-                $remaining = $total - $current;
+                $remaining = $total_to_process - $current;
                 if ( $rate > 0 ) {
                     $eta_seconds = $remaining / $rate;
                     $progress_data['eta_minutes'] = round( $eta_seconds / 60, 1 );
@@ -428,7 +440,17 @@ function yatco_heartbeat_received( $response, $data ) {
             }
         }
         
-        $response['yatco_import_progress'] = $progress_data;
+        $response['yatco_import_progress'] = array(
+            'active' => true,
+            'stage' => 'full',
+            'status' => $cache_status !== false ? $cache_status : null,
+            'progress' => $progress_data,
+        );
+        
+        // Also include status in progress for easier access
+        if ( $cache_status !== false ) {
+            $response['yatco_import_progress']['progress']['status'] = $cache_status;
+        }
     } else {
         // No active import
         $response['yatco_import_progress'] = array(
