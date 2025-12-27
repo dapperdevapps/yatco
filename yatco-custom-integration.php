@@ -37,8 +37,18 @@ register_activation_hook( __FILE__, 'yatco_create_cpt' );
 // Register shortcode on init
 add_action( 'init', 'yatco_register_shortcode' );
 
-// Schedule Daily Sync on init (if enabled)
-add_action( 'init', 'yatco_schedule_next_daily_sync' );
+// Schedule Daily Sync on init (if enabled) - but only if not already scheduled
+add_action( 'init', 'yatco_schedule_next_daily_sync_once' );
+function yatco_schedule_next_daily_sync_once() {
+    // Only schedule if there's no existing scheduled event
+    // This prevents infinite loops from multiple init calls
+    $next_scheduled = wp_next_scheduled( 'yatco_daily_sync_hook' );
+    if ( $next_scheduled === false ) {
+        // No event scheduled, so schedule one
+        yatco_schedule_next_daily_sync();
+    }
+    // If there's already an event scheduled, don't schedule another one
+}
 
 // Register update all vessels hook
 add_action( 'yatco_warm_cache_hook', 'yatco_warm_cache_function' );
@@ -131,6 +141,14 @@ function yatco_schedule_next_daily_sync() {
             break;
         default:
             $next_run = time() + ( 24 * 3600 ); // Default to daily
+    }
+    
+    // Check if there's already an event scheduled for the same time (within 60 seconds)
+    $existing_scheduled = wp_next_scheduled( 'yatco_daily_sync_hook' );
+    if ( $existing_scheduled !== false && abs( $existing_scheduled - $next_run ) < 60 ) {
+        // Already scheduled for essentially the same time, don't reschedule
+        yatco_log( "Daily Sync: Already scheduled for " . date( 'Y-m-d H:i:s', $existing_scheduled ) . " (frequency: {$frequency}), skipping duplicate schedule", 'debug' );
+        return;
     }
     
     // Clear existing scheduled events

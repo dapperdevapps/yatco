@@ -509,10 +509,6 @@ function yatco_options_page() {
         echo '});';
         echo '</script>';
         
-        echo '<hr style="margin: 30px 0;" />';
-        echo '<h2>Full Import (All Stages at Once)</h2>';
-        echo '<p>This runs all stages sequentially. Use staged import above for better control.</p>';
-        
         // Show cache warming status and controls
         $pre_cache_status = get_transient( 'yatco_cache_warming_status' );
         

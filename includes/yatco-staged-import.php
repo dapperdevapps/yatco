@@ -869,7 +869,8 @@ function yatco_full_import( $token ) {
         // CRITICAL: Check if this process still owns the lock before each batch
         // This prevents multiple imports from running simultaneously
         $lock_process_id = get_option( 'yatco_import_process_id', false );
-        if ( $lock_process_id !== false && $lock_process_id !== $process_id ) {
+        // Use loose comparison to handle string vs int PID differences
+        if ( $lock_process_id !== false && strval( $lock_process_id ) !== strval( $process_id ) ) {
             yatco_log( "Full Import: Lock owned by different process ({$lock_process_id} vs {$process_id}) at batch {$batch_number}, stopping to prevent progress conflicts", 'warning' );
             return; // Another process owns the lock, stop this one immediately
         }
@@ -1097,7 +1098,8 @@ function yatco_full_import( $token ) {
             
             // Check if this process still owns the lock (prevent overwriting progress from other processes)
             $lock_process_id = get_option( 'yatco_import_process_id', false );
-            if ( $lock_process_id !== false && $lock_process_id !== $process_id ) {
+            // Use loose comparison to handle string vs int PID differences
+            if ( $lock_process_id !== false && strval( $lock_process_id ) !== strval( $process_id ) ) {
                 yatco_log( "Full Import: Lock owned by different process ({$lock_process_id} vs {$process_id}), stopping to prevent progress conflicts", 'warning' );
                 delete_option( 'yatco_import_lock' ); // Release lock since we're stopping
                 delete_option( 'yatco_import_process_id' );
