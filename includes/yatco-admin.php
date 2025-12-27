@@ -943,27 +943,116 @@ function yatco_options_page() {
                 echo '<p style="font-size: 16px; margin: 5px 0;"><strong>Total Active Vessels:</strong> <span style="color: #2271b1; font-size: 20px; font-weight: bold;">' . number_format( $total_count ) . '</span></p>';
                 echo '</div>';
                 
-                // Add option to view sample full API data
-                echo '<div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0;">';
-                echo '<p style="margin: 0 0 10px 0; font-weight: bold;"><strong>💡 View Sample Full API Data:</strong></p>';
-                echo '<p style="margin: 0 0 10px 0;">Want to see what data is available for each vessel? You can view the full API response for individual vessels using the <strong>"Browse Single Vessel API"</strong> section below. Simply enter a vessel ID to see its complete API structure.</p>';
-                echo '<p style="margin: 0;">You can also use the <strong>"Test Single Vessel & Create Post"</strong> section to view the full API data for any vessel.</p>';
-                echo '</div>';
+                // Check if user wants to fetch prices
+                $fetch_prices = isset( $_POST['yatco_fetch_prices'] ) && $_POST['yatco_fetch_prices'] === '1';
                 
-                // Display the full JSON response (just IDs)
-                $vessel_ids_json = wp_json_encode( $all_vessel_ids, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+                // If fetching prices, we need to get basic info for each vessel
+                $vessels_with_prices = array();
+                if ( $fetch_prices ) {
+                    echo '<div class="notice notice-info" style="background: #e3f2fd; border-left: 4px solid #2196f3; padding: 15px; margin: 20px 0;">';
+                    echo '<p style="margin: 0;"><strong>⏳ Fetching prices for all vessels...</strong> This may take a few minutes for ' . number_format( $total_count ) . ' vessels.</p>';
+                    echo '</div>';
+                    
+                    // Flush output so user sees the message
+                    if ( ob_get_level() > 0 ) {
+                        ob_flush();
+                    }
+                    flush();
+                    
+                    require_once YATCO_PLUGIN_DIR . 'includes/yatco-api.php';
+                    $processed = 0;
+                    $batch_size = 10; // Process in smaller batches to avoid timeout
+                    
+                    foreach ( $all_vessel_ids as $vessel_id ) {
+                        $processed++;
+                        
+                        // Fetch basic details for price
+                        $basic_details = yatco_fetch_basic_details( $token, $vessel_id );
+                        $price_formatted = '';
+                        
+                        if ( ! is_wp_error( $basic_details ) && ! empty( $basic_details ) ) {
+                            $result = isset( $basic_details['Result'] ) ? $basic_details['Result'] : array();
+                            $basic  = isset( $basic_details['BasicInfo'] ) ? $basic_details['BasicInfo'] : array();
+                            
+                            // Extract price
+                            if ( isset( $basic['AskingPriceUSD'] ) && $basic['AskingPriceUSD'] > 0 ) {
+                                $price_formatted = '$' . number_format( floatval( $basic['AskingPriceUSD'] ), 0 );
+                            } elseif ( isset( $result['AskingPriceCompare'] ) && $result['AskingPriceCompare'] > 0 ) {
+                                $currency = isset( $basic['Currency'] ) ? $basic['Currency'] : ( isset( $result['Currency'] ) ? $result['Currency'] : 'USD' );
+                                if ( isset( $result['AskingPriceFormatted'] ) && ! empty( $result['AskingPriceFormatted'] ) ) {
+                                    $price_formatted = $result['AskingPriceFormatted'];
+                                } else {
+                                    $price_formatted = $currency . ' ' . number_format( floatval( $result['AskingPriceCompare'] ), 0 );
+                                }
+                            } elseif ( isset( $basic['AskingPrice'] ) && $basic['AskingPrice'] > 0 ) {
+                                $currency = isset( $basic['Currency'] ) ? $basic['Currency'] : 'USD';
+                                $price_formatted = $currency . ' ' . number_format( floatval( $basic['AskingPrice'] ), 0 );
+                            }
+                            
+                            // Check for "Price on Application"
+                            if ( ( isset( $result['PriceOnApplication'] ) && $result['PriceOnApplication'] ) || 
+                                 ( isset( $basic['PriceOnApplication'] ) && $basic['PriceOnApplication'] ) ) {
+                                $price_formatted = 'Price on Application';
+                            }
+                            
+                            if ( empty( $price_formatted ) ) {
+                                $price_formatted = 'N/A';
+                            }
+                        } else {
+                            $price_formatted = 'N/A';
+                        }
+                        
+                        $vessels_with_prices[] = array(
+                            'id' => $vessel_id,
+                            'price' => $price_formatted,
+                        );
+                        
+                        // Flush output every batch to show progress
+                        if ( $processed % $batch_size === 0 ) {
+                            if ( ob_get_level() > 0 ) {
+                                ob_flush();
+                            }
+                            flush();
+                        }
+                    }
+                    
+                    echo '<div class="notice notice-success" style="background: #d4edda; border-left: 4px solid #46b450; padding: 15px; margin: 20px 0;">';
+                    echo '<p style="margin: 0;"><strong>✅ Finished fetching prices for ' . number_format( $processed ) . ' vessels!</strong></p>';
+                    echo '</div>';
+                } else {
+                    // Build simple array structure for display without prices
+                    foreach ( $all_vessel_ids as $vessel_id ) {
+                        $vessels_with_prices[] = array(
+                            'id' => $vessel_id,
+                            'price' => null,
+                        );
+                    }
+                }
                 
-                echo '<h3 style="margin-top: 30px;">Full API Response (All Vessel IDs)</h3>';
-                echo '<p style="color: #666; font-size: 13px; margin-bottom: 15px;">View and search the complete list of all active vessel IDs:</p>';
+                // Display the full JSON response with prices (if fetched)
+                $vessels_json = wp_json_encode( $vessels_with_prices, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+                
+                echo '<h3 style="margin-top: 30px;">Full API Response (All Vessel IDs' . ( $fetch_prices ? ' with Prices' : '' ) . ')</h3>';
+                echo '<p style="color: #666; font-size: 13px; margin-bottom: 15px;">View and search the complete list of all active vessel IDs' . ( $fetch_prices ? ' with their prices' : '. Click "Fetch Prices" to also load price information' ) . ':</p>';
+                
+                if ( ! $fetch_prices ) {
+                    echo '<form method="post" style="margin-bottom: 15px;">';
+                    wp_nonce_field( 'yatco_view_all_vessels', 'yatco_view_all_vessels_nonce' );
+                    echo '<input type="hidden" name="yatco_view_all_vessels" value="1" />';
+                    echo '<input type="hidden" name="yatco_fetch_prices" value="1" />';
+                    submit_button( '💰 Fetch Prices for All Vessels', 'primary', 'yatco_fetch_prices_btn', false, array( 'style' => 'font-size: 13px; padding: 8px 16px; height: auto;' ) );
+                    echo '<p class="description" style="margin-top: 5px; color: #666; font-size: 12px;">This will fetch price information for all ' . number_format( $total_count ) . ' vessels. This may take several minutes.</p>';
+                    echo '</form>';
+                }
                 
                 echo '<div style="margin-bottom: 15px;">';
                 echo '<button type="button" id="yatco-toggle-all-vessels-api" class="button button-secondary" style="margin-right: 10px;">📋 View Full API Response</button>';
-                echo '<input type="text" id="yatco-all-vessels-api-search" placeholder="Search vessel IDs (Ctrl+F also works)..." class="regular-text" style="width: 350px; display: none;" />';
+                echo '<input type="text" id="yatco-all-vessels-api-search" placeholder="Search vessel IDs or prices (Ctrl+F also works)..." class="regular-text" style="width: 350px; display: none;" />';
                 echo '</div>';
                 
                 echo '<div id="yatco-all-vessels-api-display" style="background: #1e1e1e; color: #d4d4d4; border: 1px solid #3c3c3c; border-radius: 4px; padding: 20px; max-height: 700px; overflow: auto; font-family: "Courier New", Courier, monospace; font-size: 13px; line-height: 1.6; display: none; position: relative;">';
                 echo '<pre id="yatco-all-vessels-api-content" style="margin: 0; white-space: pre-wrap; word-wrap: break-word; color: #d4d4d4;">';
-                echo esc_html( $vessel_ids_json );
+                echo esc_html( $vessels_json );
                 echo '</pre>';
                 echo '</div>';
                 
@@ -974,7 +1063,7 @@ function yatco_options_page() {
                 echo '    var $searchBox = $("#yatco-all-vessels-api-search");';
                 echo '    var $apiDisplay = $("#yatco-all-vessels-api-display");';
                 echo '    var $apiContent = $("#yatco-all-vessels-api-content");';
-                echo '    var originalContent = ' . wp_json_encode( $vessel_ids_json ) . ';';
+                echo '    var originalContent = ' . wp_json_encode( $vessels_json ) . ';';
                 echo '    var isExpanded = false;';
                 
                 echo '    $toggleBtn.on("click", function() {';
