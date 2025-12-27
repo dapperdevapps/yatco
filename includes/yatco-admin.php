@@ -909,6 +909,107 @@ function yatco_options_page() {
         }
     }
 
+    // View All Vessel IDs Section
+    echo '<hr style="margin: 30px 0;" />';
+    echo '<h2>View All Vessel IDs</h2>';
+    echo '<div style="background: #e7f5ff; border-left: 4px solid #2271b1; padding: 15px; margin: 20px 0;">';
+    echo '<p style="margin: 0; font-weight: bold; color: #004085;"><strong>📊 Get Total Vessel Count:</strong> Fetch all active vessel IDs from the YATCO API to see the complete list and get an accurate count.</p>';
+    echo '</div>';
+    echo '<p>This will fetch all active vessel IDs from the <code>/ForSale/vessel/activevesselmlsid</code> endpoint. This is the same endpoint used by the import process.</p>';
+    echo '<form method="post" id="yatco-view-all-vessels-form">';
+    wp_nonce_field( 'yatco_view_all_vessels', 'yatco_view_all_vessels_nonce' );
+    submit_button( '🔍 Fetch All Vessel IDs', 'primary', 'yatco_view_all_vessels', false, array( 'id' => 'yatco-view-all-vessels-btn' ) );
+    echo '</form>';
+    
+    if ( isset( $_POST['yatco_view_all_vessels'] ) && check_admin_referer( 'yatco_view_all_vessels', 'yatco_view_all_vessels_nonce' ) ) {
+        $token = yatco_get_token();
+        if ( empty( $token ) ) {
+            echo '<div class="notice notice-error"><p>Missing token. Please configure your API token first.</p></div>';
+        } else {
+            echo '<h3 style="margin-top: 30px;">Fetching All Vessel IDs...</h3>';
+            echo '<p style="color: #666; font-size: 13px;">This may take a few moments...</p>';
+            
+            // Fetch all vessel IDs (0 = no limit)
+            $all_vessel_ids = yatco_get_active_vessel_ids( $token, 0 );
+            
+            if ( is_wp_error( $all_vessel_ids ) ) {
+                echo '<div class="notice notice-error"><p>Error fetching vessel IDs: ' . esc_html( $all_vessel_ids->get_error_message() ) . '</p></div>';
+            } elseif ( empty( $all_vessel_ids ) || ! is_array( $all_vessel_ids ) ) {
+                echo '<div class="notice notice-warning"><p>No vessel IDs returned. The API response may be empty or invalid.</p></div>';
+            } else {
+                $total_count = count( $all_vessel_ids );
+                echo '<div class="notice notice-success" style="background: #d4edda; border-left: 4px solid #46b450; padding: 15px; margin: 20px 0;">';
+                echo '<p style="font-size: 18px; font-weight: bold; margin: 0 0 10px 0;"><strong>✅ Success!</strong></p>';
+                echo '<p style="font-size: 16px; margin: 5px 0;"><strong>Total Active Vessels:</strong> <span style="color: #2271b1; font-size: 20px; font-weight: bold;">' . number_format( $total_count ) . '</span></p>';
+                echo '</div>';
+                
+                // Display the full JSON response
+                $vessel_ids_json = wp_json_encode( $all_vessel_ids, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+                
+                echo '<h3 style="margin-top: 30px;">Full API Response (All Vessel IDs)</h3>';
+                echo '<p style="color: #666; font-size: 13px; margin-bottom: 15px;">View and search the complete list of all active vessel IDs:</p>';
+                
+                echo '<div style="margin-bottom: 15px;">';
+                echo '<button type="button" id="yatco-toggle-all-vessels-api" class="button button-secondary" style="margin-right: 10px;">📋 View Full API Response</button>';
+                echo '<input type="text" id="yatco-all-vessels-api-search" placeholder="Search vessel IDs (Ctrl+F also works)..." class="regular-text" style="width: 350px; display: none;" />';
+                echo '</div>';
+                
+                echo '<div id="yatco-all-vessels-api-display" style="background: #1e1e1e; color: #d4d4d4; border: 1px solid #3c3c3c; border-radius: 4px; padding: 20px; max-height: 700px; overflow: auto; font-family: "Courier New", Courier, monospace; font-size: 13px; line-height: 1.6; display: none; position: relative;">';
+                echo '<pre id="yatco-all-vessels-api-content" style="margin: 0; white-space: pre-wrap; word-wrap: break-word; color: #d4d4d4;">';
+                echo esc_html( $vessel_ids_json );
+                echo '</pre>';
+                echo '</div>';
+                
+                // JavaScript for toggle and search functionality
+                echo '<script type="text/javascript">';
+                echo 'jQuery(document).ready(function($) {';
+                echo '    var $toggleBtn = $("#yatco-toggle-all-vessels-api");';
+                echo '    var $searchBox = $("#yatco-all-vessels-api-search");';
+                echo '    var $apiDisplay = $("#yatco-all-vessels-api-display");';
+                echo '    var $apiContent = $("#yatco-all-vessels-api-content");';
+                echo '    var originalContent = ' . wp_json_encode( $vessel_ids_json ) . ';';
+                echo '    var isExpanded = false;';
+                
+                echo '    $toggleBtn.on("click", function() {';
+                echo '        if (isExpanded) {';
+                echo '            $apiDisplay.slideUp(300);';
+                echo '            $searchBox.slideUp(200);';
+                echo '            $toggleBtn.text("📋 View Full API Response");';
+                echo '            isExpanded = false;';
+                echo '            $searchBox.val("");';
+                echo '            $apiContent.text(originalContent);';
+                echo '        } else {';
+                echo '            $apiDisplay.slideDown(300);';
+                echo '            $searchBox.slideDown(200);';
+                echo '            $toggleBtn.text("🔽 Hide Full API Response");';
+                echo '            isExpanded = true;';
+                echo '            $apiContent.html(originalContent);';
+                echo '            $searchBox.focus();';
+                echo '        }';
+                echo '    });';
+                
+                echo '    var searchTimeout;';
+                echo '    $searchBox.on("input keyup", function(e) {';
+                echo '        if (e.ctrlKey && e.key === "f") { return; }';
+                echo '        var searchTerm = $(this).val();';
+                echo '        clearTimeout(searchTimeout);';
+                echo '        if (searchTerm === "") { $apiContent.text(originalContent); return; }';
+                echo '        searchTimeout = setTimeout(function() {';
+                echo '            var regex = new RegExp("(" + searchTerm.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&") + ")", "gi");';
+                echo '            var highlightedContent = originalContent.replace(regex, "<mark style=\'background: #ffeb3b; color: #000; padding: 2px 4px; border-radius: 2px;\'>$1</mark>");';
+                echo '            $apiContent.html(highlightedContent);';
+                echo '            var firstMark = $apiContent.find("mark").first();';
+                echo '            if (firstMark.length) {';
+                echo '                $apiDisplay.animate({ scrollTop: firstMark.offset().top - $apiDisplay.offset().top + $apiDisplay.scrollTop() - 100 }, 300);';
+                echo '            }';
+                echo '        }, 300);';
+                echo '    });';
+                echo '});';
+                echo '</script>';
+            }
+        }
+    }
+
         echo '<hr style="margin: 30px 0;" />';
     echo '<h2>Test Single Vessel & Create Post</h2>';
     echo '<div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; margin: 15px 0;">';
@@ -958,43 +1059,44 @@ function yatco_options_page() {
                 $found_vessel_id = $test_vessel_id;
                 $tried_vessels[] = $test_vessel_id;
                 
-                // Fetch data for the provided vessel ID
+                // Fetch data for the provided vessel ID - try FullSpecsAll first, then fallback to basic details
                 echo '<h3>Step 2: Fetching Vessel Data for ID ' . esc_html( $test_vessel_id ) . '</h3>';
                 
+                // First try FullSpecsAll
+                require_once YATCO_PLUGIN_DIR . 'includes/yatco-api.php';
                 $endpoint = 'https://api.yatcoboss.com/api/v1/ForSale/Vessel/' . intval( $test_vessel_id ) . '/Details/FullSpecsAll';
-                echo '<p style="color: #666; font-size: 13px;">Endpoint: <code>' . esc_html( $endpoint ) . '</code></p>';
+                echo '<p style="color: #666; font-size: 13px;">Trying FullSpecsAll endpoint: <code>' . esc_html( $endpoint ) . '</code></p>';
                 
-                $response = wp_remote_get(
-                    $endpoint,
-                    array(
-                        'headers' => array(
-                            'Authorization' => 'Basic ' . $token,
-                            'Accept'        => 'application/json',
-                        ),
-                        'timeout' => 30,
-                    )
-                );
+                $fullspecs = yatco_fetch_fullspecs( $token, $test_vessel_id );
                 
-                if ( is_wp_error( $response ) ) {
-                    echo '<p style="color: #dc3232;">❌ WP_Remote Error: ' . esc_html( $response->get_error_message() ) . '</p>';
-                } else {
-                    $response_code = wp_remote_retrieve_response_code( $response );
-                    $response_body = wp_remote_retrieve_body( $response );
+                if ( is_wp_error( $fullspecs ) && $fullspecs->get_error_code() !== 'import_stopped' ) {
+                    // FullSpecsAll failed, try basic details as fallback
+                    echo '<p style="color: #ff9800;">⚠️ FullSpecsAll endpoint failed: ' . esc_html( $fullspecs->get_error_message() ) . '</p>';
+                    echo '<p style="color: #666; font-size: 13px;">Trying basic vessel endpoint as fallback...</p>';
                     
-                    if ( 200 !== $response_code ) {
-                        echo '<p style="color: #dc3232;">❌ HTTP Error ' . esc_html( $response_code ) . '</p>';
+                    $fullspecs = yatco_fetch_basic_details( $token, $test_vessel_id );
+                    
+                    if ( is_wp_error( $fullspecs ) ) {
+                        echo '<p style="color: #dc3232;">❌ Both FullSpecsAll and basic endpoints failed: ' . esc_html( $fullspecs->get_error_message() ) . '</p>';
+                        $fullspecs = null;
                     } else {
-                        $fullspecs = json_decode( $response_body, true );
-                        $json_error = json_last_error();
-                        
-                        if ( $json_error !== JSON_ERROR_NONE ) {
-                            echo '<p style="color: #dc3232;">❌ JSON Parse Error: ' . esc_html( json_last_error_msg() ) . '</p>';
-                        } elseif ( $fullspecs === null || empty( $fullspecs ) ) {
-                            echo '<p style="color: #ff9800;">⚠️ API returned null for vessel ID ' . esc_html( $test_vessel_id ) . '</p>';
-                        } else {
-                            echo '<p style="color: #46b450; font-weight: bold;">✅ Successfully retrieved FullSpecsAll data for Vessel ID ' . esc_html( $test_vessel_id ) . '</p>';
-                        }
+                        echo '<p style="color: #46b450; font-weight: bold;">✅ Successfully retrieved basic vessel data for Vessel ID ' . esc_html( $test_vessel_id ) . ' (fallback)</p>';
                     }
+                } elseif ( $fullspecs === null || ( is_array( $fullspecs ) && empty( $fullspecs ) ) ) {
+                    // FullSpecsAll returned null, try basic details
+                    echo '<p style="color: #ff9800;">⚠️ FullSpecsAll returned null for vessel ID ' . esc_html( $test_vessel_id ) . '</p>';
+                    echo '<p style="color: #666; font-size: 13px;">Trying basic vessel endpoint as fallback...</p>';
+                    
+                    $fullspecs = yatco_fetch_basic_details( $token, $test_vessel_id );
+                    
+                    if ( is_wp_error( $fullspecs ) ) {
+                        echo '<p style="color: #dc3232;">❌ Basic vessel endpoint also failed: ' . esc_html( $fullspecs->get_error_message() ) . '</p>';
+                        $fullspecs = null;
+                    } else {
+                        echo '<p style="color: #46b450; font-weight: bold;">✅ Successfully retrieved basic vessel data for Vessel ID ' . esc_html( $test_vessel_id ) . ' (fallback)</p>';
+                    }
+                } else {
+                    echo '<p style="color: #46b450; font-weight: bold;">✅ Successfully retrieved FullSpecsAll data for Vessel ID ' . esc_html( $test_vessel_id ) . '</p>';
                 }
             } else {
                 // Get multiple vessel IDs so we can try different ones if the first doesn't have FullSpecsAll data
@@ -1416,107 +1518,6 @@ function yatco_options_page() {
             }
             
             echo '</div>'; // Close Step 1 div
-        }
-        
-        // View All Vessel IDs Section
-        echo '<hr style="margin: 40px 0;" />';
-        echo '<h2>View All Vessel IDs</h2>';
-        echo '<div style="background: #e7f5ff; border-left: 4px solid #2271b1; padding: 15px; margin: 20px 0;">';
-        echo '<p style="margin: 0; font-weight: bold; color: #004085;"><strong>📊 Get Total Vessel Count:</strong> Fetch all active vessel IDs from the YATCO API to see the complete list and get an accurate count.</p>';
-        echo '</div>';
-        echo '<p>This will fetch all active vessel IDs from the <code>/ForSale/vessel/activevesselmlsid</code> endpoint. This is the same endpoint used by the import process.</p>';
-        echo '<form method="post" id="yatco-view-all-vessels-form">';
-        wp_nonce_field( 'yatco_view_all_vessels', 'yatco_view_all_vessels_nonce' );
-        submit_button( '🔍 Fetch All Vessel IDs', 'primary', 'yatco_view_all_vessels', false, array( 'id' => 'yatco-view-all-vessels-btn' ) );
-        echo '</form>';
-        
-        if ( isset( $_POST['yatco_view_all_vessels'] ) && check_admin_referer( 'yatco_view_all_vessels', 'yatco_view_all_vessels_nonce' ) ) {
-            $token = yatco_get_token();
-            if ( empty( $token ) ) {
-                echo '<div class="notice notice-error"><p>Missing token. Please configure your API token first.</p></div>';
-            } else {
-                echo '<h3 style="margin-top: 30px;">Fetching All Vessel IDs...</h3>';
-                echo '<p style="color: #666; font-size: 13px;">This may take a few moments...</p>';
-                
-                // Fetch all vessel IDs (0 = no limit)
-                $all_vessel_ids = yatco_get_active_vessel_ids( $token, 0 );
-                
-                if ( is_wp_error( $all_vessel_ids ) ) {
-                    echo '<div class="notice notice-error"><p>Error fetching vessel IDs: ' . esc_html( $all_vessel_ids->get_error_message() ) . '</p></div>';
-                } elseif ( empty( $all_vessel_ids ) || ! is_array( $all_vessel_ids ) ) {
-                    echo '<div class="notice notice-warning"><p>No vessel IDs returned. The API response may be empty or invalid.</p></div>';
-                } else {
-                    $total_count = count( $all_vessel_ids );
-                    echo '<div class="notice notice-success" style="background: #d4edda; border-left: 4px solid #46b450; padding: 15px; margin: 20px 0;">';
-                    echo '<p style="font-size: 18px; font-weight: bold; margin: 0 0 10px 0;"><strong>✅ Success!</strong></p>';
-                    echo '<p style="font-size: 16px; margin: 5px 0;"><strong>Total Active Vessels:</strong> <span style="color: #2271b1; font-size: 20px; font-weight: bold;">' . number_format( $total_count ) . '</span></p>';
-                    echo '</div>';
-                    
-                    // Display the full JSON response
-                    $vessel_ids_json = wp_json_encode( $all_vessel_ids, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
-                    
-                    echo '<h3 style="margin-top: 30px;">Full API Response (All Vessel IDs)</h3>';
-                    echo '<p style="color: #666; font-size: 13px; margin-bottom: 15px;">View and search the complete list of all active vessel IDs:</p>';
-                    
-                    echo '<div style="margin-bottom: 15px;">';
-                    echo '<button type="button" id="yatco-toggle-all-vessels-api" class="button button-secondary" style="margin-right: 10px;">📋 View Full API Response</button>';
-                    echo '<input type="text" id="yatco-all-vessels-api-search" placeholder="Search vessel IDs (Ctrl+F also works)..." class="regular-text" style="width: 350px; display: none;" />';
-                    echo '</div>';
-                    
-                    echo '<div id="yatco-all-vessels-api-display" style="background: #1e1e1e; color: #d4d4d4; border: 1px solid #3c3c3c; border-radius: 4px; padding: 20px; max-height: 700px; overflow: auto; font-family: "Courier New", Courier, monospace; font-size: 13px; line-height: 1.6; display: none; position: relative;">';
-                    echo '<pre id="yatco-all-vessels-api-content" style="margin: 0; white-space: pre-wrap; word-wrap: break-word; color: #d4d4d4;">';
-                    echo esc_html( $vessel_ids_json );
-                    echo '</pre>';
-                    echo '</div>';
-                    
-                    // JavaScript for toggle and search functionality
-                    echo '<script type="text/javascript">';
-                    echo 'jQuery(document).ready(function($) {';
-                    echo '    var $toggleBtn = $("#yatco-toggle-all-vessels-api");';
-                    echo '    var $searchBox = $("#yatco-all-vessels-api-search");';
-                    echo '    var $apiDisplay = $("#yatco-all-vessels-api-display");';
-                    echo '    var $apiContent = $("#yatco-all-vessels-api-content");';
-                    echo '    var originalContent = ' . wp_json_encode( $vessel_ids_json ) . ';';
-                    echo '    var isExpanded = false;';
-                    
-                    echo '    $toggleBtn.on("click", function() {';
-                    echo '        if (isExpanded) {';
-                    echo '            $apiDisplay.slideUp(300);';
-                    echo '            $searchBox.slideUp(200);';
-                    echo '            $toggleBtn.text("📋 View Full API Response");';
-                    echo '            isExpanded = false;';
-                    echo '            $searchBox.val("");';
-                    echo '            $apiContent.text(originalContent);';
-                    echo '        } else {';
-                    echo '            $apiDisplay.slideDown(300);';
-                    echo '            $searchBox.slideDown(200);';
-                    echo '            $toggleBtn.text("🔽 Hide Full API Response");';
-                    echo '            isExpanded = true;';
-                    echo '            $apiContent.html(originalContent);';
-                    echo '            $searchBox.focus();';
-                    echo '        }';
-                    echo '    });';
-                    
-                    echo '    var searchTimeout;';
-                    echo '    $searchBox.on("input keyup", function(e) {';
-                    echo '        if (e.ctrlKey && e.key === "f") { return; }';
-                    echo '        var searchTerm = $(this).val();';
-                    echo '        clearTimeout(searchTimeout);';
-                    echo '        if (searchTerm === "") { $apiContent.text(originalContent); return; }';
-                    echo '        searchTimeout = setTimeout(function() {';
-                    echo '            var regex = new RegExp("(" + searchTerm.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&") + ")", "gi");';
-                    echo '            var highlightedContent = originalContent.replace(regex, "<mark style=\'background: #ffeb3b; color: #000; padding: 2px 4px; border-radius: 2px;\'>$1</mark>");';
-                    echo '            $apiContent.html(highlightedContent);';
-                    echo '            var firstMark = $apiContent.find("mark").first();';
-                    echo '            if (firstMark.length) {';
-                    echo '                $apiDisplay.animate({ scrollTop: firstMark.offset().top - $apiDisplay.offset().top + $apiDisplay.scrollTop() - 100 }, 300);';
-                    echo '            }';
-                    echo '        }, 300);';
-                    echo '    });';
-                    echo '});';
-                    echo '</script>';
-                }
-            }
         }
         
         // Browse Vessel API Section
