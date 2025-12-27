@@ -228,13 +228,12 @@ function yatco_ajax_get_import_status() {
         return;
     }
     
-    // Get all progress data - bypass object cache to get fresh data FIRST
-    wp_cache_delete( 'yatco_import_progress', 'transient' );
-    wp_cache_delete( 'yatco_cache_warming_status', 'transient' );
-    wp_cache_delete( 'yatco_daily_sync_progress', 'transient' );
-    wp_cache_flush(); // Force full cache flush to ensure fresh data
-    $import_progress = get_transient( 'yatco_import_progress' );
-    $daily_sync_progress = get_transient( 'yatco_daily_sync_progress' );
+    // Load progress functions
+    require_once YATCO_PLUGIN_DIR . 'includes/yatco-progress.php';
+    
+    // Get all progress data using wp_options (more reliable than transients)
+    $import_progress = yatco_get_import_status( 'full' );
+    $daily_sync_progress = yatco_get_import_status( 'daily_sync' );
     $cache_status_raw = get_transient( 'yatco_cache_warming_status' );
     $stop_flag = get_option( 'yatco_import_stop_flag', false );
     

@@ -767,7 +767,7 @@ function yatco_full_import( $token ) {
     
     // Build lookup map for existing vessels to avoid expensive queries during import
     // This is a one-time query that builds vessel_id -> post_id and mlsid -> post_id maps
-    set_transient( 'yatco_cache_warming_status', 'Full Import: Building vessel lookup map...', 600 );
+    yatco_update_import_status_message( 'Full Import: Building vessel lookup map...', 600 );
     yatco_log( 'Full Import: Building vessel lookup map for faster imports', 'info' );
     
     global $wpdb;
@@ -920,9 +920,8 @@ function yatco_full_import( $token ) {
             }
             if ( $stop_flag !== false ) {
                 yatco_log( '🛑 Full Import: Stop flag detected before vessel import, cancelling immediately', 'warning' );
-                delete_transient( 'yatco_import_progress' );
-                wp_cache_delete( 'yatco_import_progress', 'transient' );
-                set_transient( 'yatco_cache_warming_status', 'Full Import stopped by user.', 60 );
+                yatco_clear_import_status( 'full' );
+                yatco_update_import_status_message( 'Full Import stopped by user.', 60 );
                 // DON'T delete stop flag - keep it so it can be checked again
                 return;
             }
@@ -947,9 +946,8 @@ function yatco_full_import( $token ) {
                     }
                     if ( $stop_flag !== false ) {
                         yatco_log( '🛑 Full Import: Stop flag detected during delay, cancelling immediately', 'warning' );
-                        delete_transient( 'yatco_import_progress' );
-                        wp_cache_delete( 'yatco_import_progress', 'transient' );
-                        set_transient( 'yatco_cache_warming_status', 'Full Import stopped by user.', 60 );
+                        yatco_clear_import_status( 'full' );
+                        yatco_update_import_status_message( 'Full Import stopped by user.', 60 );
                         // DON'T delete stop flag - keep it so it can be checked again
                         return;
                     }
@@ -964,9 +962,8 @@ function yatco_full_import( $token ) {
             }
             if ( $stop_flag !== false ) {
                 yatco_log( '🛑 Full Import: Stop flag detected right before vessel import, cancelling immediately', 'warning' );
-                delete_transient( 'yatco_import_progress' );
-                wp_cache_delete( 'yatco_import_progress', 'transient' );
-                set_transient( 'yatco_cache_warming_status', 'Full Import stopped by user.', 60 );
+                yatco_clear_import_status( 'full' );
+                yatco_update_import_status_message( 'Full Import stopped by user.', 60 );
                 delete_option( 'yatco_import_lock' );
                 delete_option( 'yatco_import_process_id' );
                 return;
@@ -1030,9 +1027,8 @@ function yatco_full_import( $token ) {
                         'percent'          => $percent,
                         'last_vessel_id'   => $vessel_id,        // Save last vessel ID for debugging
                     );
-                    delete_transient( 'yatco_import_progress' );
-                    set_transient( 'yatco_import_progress', $progress_data, 3600 );
-                    wp_cache_flush(); // Force immediate write
+                    // Use wp_options for more reliable progress storage
+                    yatco_update_import_status( $progress_data, 'full' );
                     set_transient( 'yatco_cache_warming_status', "Full Import: Connection lost. Attempted {$attempted} of {$total_to_process} vessels ({$percent}%), {$processed} successful. Progress saved - auto-resume enabled.", 600 );
                     yatco_log( "Full Import: Progress saved before connection abort: position {$current_position}, attempted {$attempted}, processed {$processed}, last vessel {$vessel_id}", 'info' );
                     update_option( 'yatco_import_auto_resume', time(), false ); // Enable auto-resume
@@ -1058,8 +1054,8 @@ function yatco_full_import( $token ) {
                     'timestamp'        => time(),
                     'percent'          => $percent,
                 );
-                set_transient( 'yatco_import_progress', $progress_data, 3600 );
-                wp_cache_flush();
+                // Use wp_options for more reliable progress storage
+                yatco_update_import_status( $progress_data, 'full' );
             } catch ( Error $e ) {
                 // PHP 7+ Error class (fatal errors that can be caught)
                 yatco_log( "Full Import: Fatal error while importing vessel {$vessel_id}: " . $e->getMessage() . ' | Trace: ' . $e->getTraceAsString(), 'error' );
@@ -1081,8 +1077,8 @@ function yatco_full_import( $token ) {
                     'timestamp'        => time(),
                     'percent'          => $percent,
                 );
-                set_transient( 'yatco_import_progress', $progress_data, 3600 );
-                wp_cache_flush();
+                // Use wp_options for more reliable progress storage
+                yatco_update_import_status( $progress_data, 'full' );
             }
             
             // Check if vessel import is taking too long and skip if needed
@@ -1107,8 +1103,8 @@ function yatco_full_import( $token ) {
                     'timestamp'        => time(),
                     'percent'          => $percent,
                 );
-                set_transient( 'yatco_import_progress', $progress_data, 3600 );
-                wp_cache_flush();
+                // Use wp_options for more reliable progress storage
+                yatco_update_import_status( $progress_data, 'full' );
             }
             
             // Check stop flag after import (check both option and transient) - DON'T DELETE IT
@@ -1259,12 +1255,10 @@ function yatco_full_import( $token ) {
             'timestamp'        => time(),
             'percent'          => $percent,
         );
-        set_transient( 'yatco_import_progress', $progress_data, 3600 );
+        // Use wp_options for more reliable progress storage
+        yatco_update_import_status( $progress_data, 'full' );
         $status_message = "Full Import: {$total_from_api} total from API | {$already_imported_count} already imported | {$processed} successful | {$failed} failed | {$pending} pending";
-        set_transient( 'yatco_cache_warming_status', $status_message, 600 );
-        
-        // Force flush transients to database immediately
-        wp_cache_flush();
+        yatco_update_import_status_message( $status_message, 600 );
         
         yatco_log( "Full Import: Batch {$batch_number} complete - {$total_from_api} total from API | {$already_imported_count} already imported | {$processed} successful | {$failed} failed | {$pending} pending | Position: {$current_position}", 'info' );
         
