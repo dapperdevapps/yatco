@@ -229,6 +229,8 @@ function yatco_ajax_get_import_status() {
     // Get all progress data - bypass object cache to get fresh data
     wp_cache_delete( 'yatco_import_progress', 'transient' );
     wp_cache_delete( 'yatco_cache_warming_status', 'transient' );
+    wp_cache_delete( 'yatco_daily_sync_progress', 'transient' );
+    wp_cache_flush(); // Force full cache flush to ensure fresh data
     $import_progress = get_transient( 'yatco_import_progress' );
     $daily_sync_progress = get_transient( 'yatco_daily_sync_progress' );
     $cache_status = get_transient( 'yatco_cache_warming_status' );
@@ -396,8 +398,10 @@ function yatco_heartbeat_received( $response, $data ) {
     }
     
     // Add progress data to heartbeat response for real-time updates
+    // Force fresh data by bypassing object cache
     wp_cache_delete( 'yatco_import_progress', 'transient' );
     wp_cache_delete( 'yatco_cache_warming_status', 'transient' );
+    wp_cache_flush(); // Force full cache flush to ensure fresh data
     $import_progress = get_transient( 'yatco_import_progress' );
     $cache_status = get_transient( 'yatco_cache_warming_status' );
     

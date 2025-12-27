@@ -725,7 +725,8 @@ function yatco_full_import( $token ) {
     
     // After fetching vessel IDs, verify we still own the lock
     $lock_process_id_after_fetch = get_option( 'yatco_import_process_id', false );
-    if ( $lock_process_id_after_fetch !== false && $lock_process_id_after_fetch !== $process_id ) {
+    // Use strval() comparison to handle string vs int PID differences (like other lock checks)
+    if ( $lock_process_id_after_fetch !== false && strval( $lock_process_id_after_fetch ) !== strval( $process_id ) ) {
         yatco_log( "Full Import: Lock ownership changed after fetching vessel IDs ({$lock_process_id_after_fetch} vs {$process_id}), stopping", 'warning' );
         delete_option( 'yatco_import_lock' );
         delete_option( 'yatco_import_process_id' );
