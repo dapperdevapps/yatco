@@ -343,6 +343,9 @@ function yatco_options_page() {
                     ), 3600 );
                     wp_cache_flush();
                     
+                    // Set a flag to indicate we're using fastcgi_finish_request (expected connection close)
+                    update_option( 'yatco_import_using_fastcgi', time(), false );
+                    
                     // Send response to user and close connection
                     header( 'Content-Type: text/html; charset=utf-8' );
                     header( 'Connection: close' );
@@ -387,6 +390,7 @@ function yatco_options_page() {
                     // Release lock when done
                     delete_option( 'yatco_import_lock' );
                     delete_option( 'yatco_import_process_id' );
+                    delete_option( 'yatco_import_using_fastcgi' ); // Clean up fastcgi flag
                     yatco_log( 'Full Import Direct: Import completed, lock released', 'info' );
                     
                     exit;

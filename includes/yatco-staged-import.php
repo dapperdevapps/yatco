@@ -595,7 +595,9 @@ function yatco_full_import( $token ) {
         }
         
         // Check if connection was aborted (browser closed, timeout, etc.)
-        if ( connection_aborted() ) {
+        // BUT: Ignore if we're using fastcgi_finish_request (expected connection close)
+        $using_fastcgi = get_option( 'yatco_import_using_fastcgi', false );
+        if ( connection_aborted() && $using_fastcgi === false ) {
             if ( $progress !== false && is_array( $progress ) ) {
                 $processed = isset( $progress['processed'] ) ? intval( $progress['processed'] ) : ( isset( $progress['last_processed'] ) ? intval( $progress['last_processed'] ) : 0 );
                 $total = isset( $progress['total'] ) ? intval( $progress['total'] ) : 0;
@@ -614,6 +616,9 @@ function yatco_full_import( $token ) {
             delete_option( 'yatco_import_lock' ); // Release lock
             delete_option( 'yatco_import_process_id' ); // Release process ID
             return;
+        } elseif ( connection_aborted() && $using_fastcgi !== false ) {
+            // Connection was closed but it's expected (fastcgi_finish_request), just log it
+            yatco_log( 'Full Import: Connection closed (expected - using fastcgi_finish_request), continuing in background', 'debug' );
         }
         
         // Check if we hit execution time limit
@@ -898,6 +903,38 @@ function yatco_full_import( $token ) {
     foreach ( array_chunk( $vessel_ids, $batch_size ) as $batch ) {
         $batch_number++;
         
+        // CRITICAL: Check stop flag FIRST before each batch (check both option and transient)
+        $stop_flag = get_option( 'yatco_import_stop_flag', false );
+        if ( $stop_flag === false ) {
+            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+        }
+        if ( $stop_flag !== false ) {
+            yatco_log( "🛑 Full Import: Stop flag detected at batch {$batch_number}, stopping immediately", 'warning' );
+            // Save progress before stopping
+            $current_position = $resume_from_index + $attempted;
+            $percent = $total_to_process > 0 ? round( ( $attempted / $total_to_process ) * 100, 1 ) : 0;
+            $pending = $total_to_process - $attempted;
+            $progress_data = array(
+                'last_processed'   => $current_position,
+                'processed'        => $processed,
+                'failed'           => $failed,
+                'attempted'        => $attempted,
+                'pending'          => $pending,
+                'total'            => $total_to_process,
+                'total_from_api'   => $total_from_api,
+                'already_imported' => $already_imported_count,
+                'timestamp'        => time(),
+                'percent'          => $percent,
+                'last_vessel_id'   => isset( $batch[0] ) ? $batch[0] : 'none',
+            );
+            yatco_update_import_status( $progress_data, 'full' );
+            yatco_update_import_status_message( "Full Import: Stopped by user at batch {$batch_number}. Attempted {$attempted} of {$total_to_process} vessels ({$percent}%)." );
+            delete_option( 'yatco_import_lock' );
+            delete_option( 'yatco_import_process_id' );
+            delete_option( 'yatco_import_using_fastcgi' );
+            return;
+        }
+        
         // CRITICAL: Check if this process still owns the lock before each batch
         // This prevents multiple imports from running simultaneously
         $lock_process_id = get_option( 'yatco_import_process_id', false );
@@ -1028,7 +1065,9 @@ function yatco_full_import( $token ) {
                 }
                 
                 // Check if connection was aborted (browser closed, timeout, etc.)
-                if ( connection_aborted() ) {
+                // BUT: Ignore if we're using fastcgi_finish_request (expected connection close)
+                $using_fastcgi = get_option( 'yatco_import_using_fastcgi', false );
+                if ( connection_aborted() && $using_fastcgi === false ) {
                     yatco_log( "Full Import: Connection aborted while processing vessel {$vessel_id}. Saving progress...", 'warning' );
                     // Save progress before returning (using current attempted count for position)
                     $current_position = $resume_from_index + $attempted;
@@ -1327,6 +1366,7 @@ function yatco_full_import( $token ) {
         // Release import lock and process ID
         delete_option( 'yatco_import_lock' );
         delete_option( 'yatco_import_process_id' );
+        delete_option( 'yatco_import_using_fastcgi' ); // Clean up fastcgi flag
         yatco_log( "Full Import: Import lock released (Process ID: {$process_id})", 'info' );
     } else {
         // Import incomplete - save progress and set auto-resume flag
