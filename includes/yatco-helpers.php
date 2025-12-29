@@ -210,100 +210,78 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
         $stop_flag = get_transient( 'yatco_cache_warming_stop' );
         $stop_flag_source = 'transient';
     }
+    // Store original lookup ID for logging only (not for identity)
+    // The parameter $vessel_id is just a lookup key - NOT an authoritative identifier
+    $lookup_id = $vessel_id;
+    
     if ( $stop_flag !== false ) {
-        yatco_log( "Import: Stop flag detected before starting import for vessel {$vessel_id} (source: {$stop_flag_source}, value: {$stop_flag}), returning immediately", 'warning' );
+        yatco_log( "Import: Stop flag detected before starting import for lookup ID {$lookup_id} (source: {$stop_flag_source}, value: {$stop_flag}), returning immediately", 'warning' );
         return new WP_Error( 'import_stopped', 'Import stopped by user.' );
     }
     
-    yatco_log( "Import: ========== Starting import for vessel {$vessel_id} ==========", 'debug' );
+    yatco_log( "Import: ========== Starting import for lookup ID {$lookup_id} ==========", 'debug' );
     $api_start_time = time();
     
-    // Try Vessel ID first - this is the primary method
-    // IMPORTANT: We only use MLS ID as a fallback if Vessel ID returns null/empty
-    $full = yatco_fetch_fullspecs( $token, $vessel_id );
+    // Try fetching with the lookup ID first (it might be a vessel ID or MLS ID)
+    $full = yatco_fetch_fullspecs( $token, $lookup_id );
     
-    // Only try MLS ID conversion if Vessel ID failed (null, empty, or error)
-    // This ensures we don't duplicate imports - if Vessel ID has data, we use it
+    // If that failed, try conversion endpoints to see if lookup ID is the other type
     if ( is_wp_error( $full ) || $full === null || ( is_array( $full ) && empty( $full ) ) ) {
-        yatco_log( "Import: Vessel ID {$vessel_id} returned null/empty, trying conversion endpoints to get other ID type", 'info' );
+        yatco_log( "Import: Lookup ID {$lookup_id} returned null/empty, trying conversion endpoints", 'info' );
         
-        // Try converting to get Vessel ID (in case the ID we have is an MLS ID)
-        $converted_vessel_id = yatco_convert_mlsid_to_vessel_id( $token, $vessel_id );
-        if ( ! is_wp_error( $converted_vessel_id ) && $converted_vessel_id != $vessel_id ) {
-            yatco_log( "Import: Converted MLS ID {$vessel_id} to Vessel ID {$converted_vessel_id}, trying fetch with Vessel ID", 'info' );
-            $full = yatco_fetch_fullspecs( $token, $converted_vessel_id, $vessel_id );
-            if ( ! is_wp_error( $full ) && ! empty( $full ) ) {
-                yatco_log( "Import: Successfully fetched using converted Vessel ID {$converted_vessel_id}", 'info' );
+        // Try converting to get Vessel ID (in case lookup ID is an MLS ID)
+        $converted_vessel_id = yatco_convert_mlsid_to_vessel_id( $token, $lookup_id );
+        if ( ! is_wp_error( $converted_vessel_id ) && $converted_vessel_id != $lookup_id ) {
+            yatco_log( "Import: Converted MLS ID {$lookup_id} to Vessel ID {$converted_vessel_id}, trying fetch", 'info' );
+            $full = yatco_fetch_fullspecs( $token, $converted_vessel_id, $lookup_id );
+        }
+        
+        // If still failed, try converting to get MLS ID (in case lookup ID is a Vessel ID)
+        if ( ( is_wp_error( $full ) || $full === null || ( is_array( $full ) && empty( $full ) ) ) ) {
+            $converted_mls_id = yatco_convert_vessel_id_to_mlsid( $token, $lookup_id );
+            if ( ! is_wp_error( $converted_mls_id ) && $converted_mls_id != $lookup_id ) {
+                yatco_log( "Import: Converted Vessel ID {$lookup_id} to MLS ID {$converted_mls_id}, trying fetch", 'info' );
+                $full = yatco_fetch_fullspecs( $token, $lookup_id, $converted_mls_id );
             }
         }
         
-        // If still failed, try converting to get MLS ID (in case the ID we have is a Vessel ID)
-        if ( ( is_wp_error( $full ) || $full === null || ( is_array( $full ) && empty( $full ) ) ) && ( is_wp_error( $converted_vessel_id ) || $converted_vessel_id == $vessel_id ) ) {
-            $converted_mls_id = yatco_convert_vessel_id_to_mlsid( $token, $vessel_id );
-            if ( ! is_wp_error( $converted_mls_id ) && $converted_mls_id != $vessel_id ) {
-                yatco_log( "Import: Converted Vessel ID {$vessel_id} to MLS ID {$converted_mls_id}, trying fetch with MLS ID", 'info' );
-                $full = yatco_fetch_fullspecs( $token, $vessel_id, $converted_mls_id );
-                if ( ! is_wp_error( $full ) && ! empty( $full ) ) {
-                    yatco_log( "Import: Successfully fetched using converted MLS ID {$converted_mls_id}", 'info' );
-                }
-            }
-        }
-        
-        // Final fallback: try treating the original ID as both Vessel ID and MLS ID
+        // Final fallback: try treating lookup ID as both Vessel ID and MLS ID
         if ( is_wp_error( $full ) || $full === null || ( is_array( $full ) && empty( $full ) ) ) {
-            yatco_log( "Import: Conversion endpoints failed, trying original ID {$vessel_id} as both Vessel ID and MLS ID", 'info' );
-            $full = yatco_fetch_fullspecs( $token, $vessel_id, $vessel_id ); // Pass same ID as both vessel_id and mls_id
+            yatco_log( "Import: Conversion endpoints failed, trying lookup ID {$lookup_id} as both types", 'info' );
+            $full = yatco_fetch_fullspecs( $token, $lookup_id, $lookup_id );
         }
     }
-    
-    // NOTE: We do NOT try MLS ID as a fallback here if Vessel ID succeeded
-    // We only use MLS ID when Vessel ID returns null/empty (handled above)
-    // If Vessel ID has data, we use it to prevent duplicates
     
     $api_elapsed = time() - $api_start_time;
     
-    // Extract vessel name early so we can include it in logs
-    $vessel_name_for_log = '';
-    if ( ! is_wp_error( $full ) && is_array( $full ) ) {
-        $result_temp = isset( $full['Result'] ) ? $full['Result'] : array();
-        $basic_temp  = isset( $full['BasicInfo'] ) ? $full['BasicInfo'] : array();
-        if ( ! empty( $basic_temp['BoatName'] ) ) {
-            $vessel_name_for_log = $basic_temp['BoatName'];
-        } elseif ( ! empty( $result_temp['VesselName'] ) ) {
-            $vessel_name_for_log = $result_temp['VesselName'];
-        }
-    }
-    
-    $name_display_log = ! empty( $vessel_name_for_log ) ? " ({$vessel_name_for_log})" : '';
-    yatco_log( "Import: API fetch for vessel {$vessel_id}{$name_display_log} completed in {$api_elapsed} seconds", 'debug' );
-    
     if ( is_wp_error( $full ) ) {
         $error_message = $full->get_error_message();
-        yatco_log( "Import: API fetch failed for vessel {$vessel_id}{$name_display_log}: {$error_message}", 'error' );
+        yatco_log( "Import: API fetch failed for lookup ID {$lookup_id}: {$error_message}", 'error' );
         return $full;
     }
     
+    if ( $full === null || ( is_array( $full ) && empty( $full ) ) ) {
+        yatco_log( "Import: API returned empty/null response for lookup ID {$lookup_id}", 'error' );
+        return new WP_Error( 'empty_response', 'API returned empty response - cannot identify listing' );
+    }
     
-    // Check stop flag after fetching data (check both option and transient) - DON'T DELETE IT
+    // Check stop flag after fetching data
     $stop_flag = get_option( 'yatco_import_stop_flag', false );
     if ( $stop_flag === false ) {
         $stop_flag = get_transient( 'yatco_cache_warming_stop' );
     }
     if ( $stop_flag !== false ) {
-        yatco_log( "🛑 Import: Stop flag detected after fetching data for vessel {$vessel_id}, cancelling immediately", 'warning' );
+        yatco_log( "🛑 Import: Stop flag detected after fetching data for lookup ID {$lookup_id}, cancelling immediately", 'warning' );
         return new WP_Error( 'import_stopped', 'Import stopped by user.' );
     }
 
     // Check if this is partial/basic data (from fallback endpoint)
     $is_partial_data = isset( $full['_is_partial_data'] ) && $full['_is_partial_data'] === true;
     
-    // Get Result and BasicInfo for easier access.
-    // For partial data, the structure might be different - handle both cases
+    // Get Result and BasicInfo for easier access
     if ( $is_partial_data ) {
-        // Partial data: Result might contain all data, BasicInfo might be in Result or separate
         $result = isset( $full['Result'] ) ? $full['Result'] : array();
         $basic  = isset( $full['BasicInfo'] ) ? $full['BasicInfo'] : ( isset( $result['BasicInfo'] ) ? $result['BasicInfo'] : array() );
-        // For partial data, we might not have all sections, so use empty arrays
         $dims   = isset( $full['Dimensions'] ) ? $full['Dimensions'] : ( isset( $result['Dimensions'] ) ? $result['Dimensions'] : array() );
         $vd     = array();
         $misc   = isset( $full['MiscInfo'] ) ? $full['MiscInfo'] : ( isset( $result['MiscInfo'] ) ? $result['MiscInfo'] : array() );
@@ -314,7 +292,6 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
         $hull_deck = array();
         $seo = array();
     } else {
-        // Full data: standard structure
         $result = isset( $full['Result'] ) ? $full['Result'] : array();
         $basic  = isset( $full['BasicInfo'] ) ? $full['BasicInfo'] : array();
         $dims   = isset( $full['Dimensions'] ) ? $full['Dimensions'] : array();
@@ -328,22 +305,72 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
         $seo = isset( $full['SEO'] ) ? $full['SEO'] : array();
     }
 
-    // Basic fields – updated to match actual API structure.
+    // CRITICAL DATA INTEGRITY RULE: Extract IDs ONLY from API response payload
+    // The original $vessel_id parameter is NOT a valid identifier - it's just a lookup key
+    // Only the API payload can define identity - if it's not in the payload, it doesn't exist
+    $api_vessel_id = null;
+    $api_mlsid = null;
+    
+    // Extract Vessel ID from API response ONLY (never from parameter, title, index, etc.)
+    if ( ! empty( $result['VesselID'] ) ) {
+        $api_vessel_id = intval( $result['VesselID'] );
+    } elseif ( ! empty( $basic['VesselID'] ) ) {
+        $api_vessel_id = intval( $basic['VesselID'] );
+    }
+    
+    // Extract MLS ID from API response ONLY (never from parameter, title, index, etc.)
+    if ( ! empty( $result['MLSID'] ) ) {
+        $api_mlsid = $result['MLSID'];
+    } elseif ( ! empty( $basic['MLSID'] ) ) {
+        $api_mlsid = $basic['MLSID'];
+    }
+    
+    // CRITICAL: Choose exactly ONE identifier from API payload RIGHT NOW
+    // If API says vessel_id is NULL, then vessel_id does NOT exist - no fallback numbers allowed
+    $primary_identifier = null;
+    $primary_identifier_type = null;
+    
+    if ( ! empty( $api_vessel_id ) ) {
+        // API explicitly provided Vessel ID - this is the authoritative identifier
+        $primary_identifier = $api_vessel_id;
+        $primary_identifier_type = 'vessel_id';
+    } elseif ( ! empty( $api_mlsid ) ) {
+        // API explicitly provided MLS ID but NOT Vessel ID - MLS ID is the authoritative identifier
+        $primary_identifier = $api_mlsid;
+        $primary_identifier_type = 'mlsid';
+    } else {
+        // API provided neither ID - this listing cannot be identified, skip it
+        yatco_log( "Import: CRITICAL - API payload contains no Vessel ID or MLS ID fields (lookup ID was: {$lookup_id}). Skipping listing.", 'warning' );
+        return new WP_Error( 'no_identifier', 'API response payload contains no Vessel ID or MLS ID - cannot identify listing' );
+    }
+    
+    // Extract vessel name for logging (using the authoritative identifier)
+    $vessel_name_for_log = '';
+    if ( ! empty( $basic['BoatName'] ) ) {
+        $vessel_name_for_log = $basic['BoatName'];
+    } elseif ( ! empty( $result['VesselName'] ) ) {
+        $vessel_name_for_log = $result['VesselName'];
+    }
+    
+    $name_display_log = ! empty( $vessel_name_for_log ) ? " ({$vessel_name_for_log})" : '';
+    $identifier_display = $primary_identifier_type === 'vessel_id' ? "Vessel ID {$primary_identifier}" : "MLS ID {$primary_identifier}";
+    yatco_log( "Import: API fetch completed in {$api_elapsed} seconds - Identified as {$identifier_display}{$name_display_log}", 'debug' );
+    
+    // Set variables for rest of function - ONLY use IDs from API payload
+    $vessel_id = ( $primary_identifier_type === 'vessel_id' ) ? $primary_identifier : null;
+    $mlsid = $api_mlsid; // May be null if API didn't provide it
+
+    // Basic fields – extract from API structure
     $name   = '';
     $price  = '';
     $year   = '';
     $loa    = '';
-    $mlsid  = '';
     $make   = '';
     $class  = '';
     $desc   = '';
 
-    // Vessel name: Prefer BasicInfo.BoatName (better case formatting), then Result.VesselName.
-    // BasicInfo.BoatName usually has proper case like "25' Scarab 255 Open ID"
-    // Result.VesselName is often all caps like "25' SCARAB 255 OPEN ID"
-    // For partial data, check Result first since BasicInfo might be nested or missing
+    // Vessel name: Prefer BasicInfo.BoatName, then Result.VesselName
     if ( $is_partial_data ) {
-        // Try Result.VesselName first for partial data
         if ( ! empty( $result['VesselName'] ) ) {
             $name = $result['VesselName'];
         } elseif ( ! empty( $basic['BoatName'] ) ) {
@@ -352,7 +379,6 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
             $name = $result['BoatName'];
         }
     } else {
-        // Full data: prefer BasicInfo.BoatName
         if ( ! empty( $basic['BoatName'] ) ) {
             $name = $basic['BoatName'];
         } elseif ( ! empty( $result['VesselName'] ) ) {
@@ -360,7 +386,7 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
         }
     }
 
-    // Price: Prefer USD price from BasicInfo, fallback to Result.AskingPriceCompare.
+    // Price: Prefer USD price from BasicInfo, fallback to Result.AskingPriceCompare
     if ( isset( $basic['AskingPriceUSD'] ) && $basic['AskingPriceUSD'] > 0 ) {
         $price = $basic['AskingPriceUSD'];
     } elseif ( isset( $result['AskingPriceCompare'] ) && $result['AskingPriceCompare'] > 0 ) {
@@ -369,7 +395,7 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
         $price = $basic['AskingPrice'];
     }
 
-    // Year: Check BasicInfo first, then Result. Check multiple field names for partial data.
+    // Year: Check BasicInfo first, then Result
     if ( ! empty( $basic['YearBuilt'] ) ) {
         $year = $basic['YearBuilt'];
     } elseif ( ! empty( $basic['ModelYear'] ) ) {
@@ -382,7 +408,7 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
         $year = $result['ModelYear'];
     }
 
-    // LOA: Use LOAFeet if available, otherwise formatted LOA string. Check multiple sources for partial data.
+    // LOA: Use LOAFeet if available
     if ( isset( $result['LOAFeet'] ) && $result['LOAFeet'] > 0 ) {
         $loa = $result['LOAFeet'];
     } elseif ( ! empty( $dims['LOAFeet'] ) ) {
@@ -394,50 +420,6 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
     } elseif ( ! empty( $basic['LOAFeet'] ) ) {
         $loa = $basic['LOAFeet'];
     }
-
-    // DATA INTEGRITY FIX: Extract IDs ONLY from what the API actually provides
-    // Never assume defaults or use historical values - trust the API payload RIGHT NOW
-    $api_vessel_id = null;
-    $api_mlsid = null;
-    
-    // Extract Vessel ID from API response ONLY if provided
-    if ( ! empty( $result['VesselID'] ) ) {
-        $api_vessel_id = intval( $result['VesselID'] );
-    } elseif ( ! empty( $basic['VesselID'] ) ) {
-        $api_vessel_id = intval( $basic['VesselID'] );
-    }
-    
-    // Extract MLS ID from API response ONLY if provided
-    if ( ! empty( $result['MLSID'] ) ) {
-        $api_mlsid = $result['MLSID'];
-    } elseif ( ! empty( $basic['MLSID'] ) ) {
-        $api_mlsid = $basic['MLSID'];
-    }
-    
-    // CRITICAL: Choose exactly ONE identifier for this listing RIGHT NOW
-    // Rule: Use Vessel ID if available, otherwise use MLS ID, otherwise skip
-    $primary_identifier = null;
-    $primary_identifier_type = null;
-    
-    if ( ! empty( $api_vessel_id ) ) {
-        // API provided a Vessel ID - use it as the primary identifier
-        $primary_identifier = $api_vessel_id;
-        $primary_identifier_type = 'vessel_id';
-        $vessel_id = $api_vessel_id;
-    } elseif ( ! empty( $api_mlsid ) ) {
-        // API did NOT provide Vessel ID, but provided MLS ID - use MLS ID as primary
-        $primary_identifier = $api_mlsid;
-        $primary_identifier_type = 'mlsid';
-        $vessel_id = null; // Explicitly set to null since API didn't provide it
-    } else {
-        // API provided neither ID - skip this listing entirely
-        yatco_log( "Import: Skipping vessel listing - API provided neither Vessel ID nor MLS ID (original ID passed in: {$vessel_id})", 'warning' );
-        return new WP_Error( 'no_identifier', 'API response contains no Vessel ID or MLS ID - cannot identify listing' );
-    }
-    
-    // Store both IDs as provided by API (may be null, that's OK)
-    // We'll preserve existing values when saving if API sends null
-    $mlsid = $api_mlsid; // May be null if API didn't provide it
 
     // Builder/Make: From BasicInfo or Result. Check multiple possible field names for partial data support.
     if ( ! empty( $basic['Builder'] ) ) {
