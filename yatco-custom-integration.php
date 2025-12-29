@@ -89,6 +89,10 @@ add_action( 'yatco_full_import_hook', function() {
         return;
     }
     
+    // Clear any existing stop flag before starting new import
+    delete_option( 'yatco_import_stop_flag' );
+    delete_transient( 'yatco_cache_warming_stop' );
+    
     // Set import lock
     update_option( 'yatco_import_lock', time(), false );
     update_option( 'yatco_import_process_id', $process_id, false );

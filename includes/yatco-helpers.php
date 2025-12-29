@@ -216,14 +216,40 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
     yatco_log( "Import: Starting API fetch for vessel {$vessel_id}", 'debug' );
     $api_start_time = time();
     
-    // Try to get MLS ID from active list if available (activevesselmlsid might return MLS IDs)
-    // First try as Vessel ID, then if that fails and we have an MLS ID, try that
+    // Try Vessel ID first (activevesselmlsid might return Vessel IDs or MLS IDs)
     $full = yatco_fetch_fullspecs( $token, $vessel_id );
     
     // If Vessel ID failed, try treating the ID as an MLS ID
+    // This handles cases where activevesselmlsid returns MLS IDs instead of Vessel IDs
     if ( is_wp_error( $full ) || $full === null || ( is_array( $full ) && empty( $full ) ) ) {
-        yatco_log( "Import: Vessel ID {$vessel_id} failed, trying as MLS ID", 'info' );
+        yatco_log( "Import: Vessel ID {$vessel_id} returned null/empty, trying same ID as MLS ID", 'info' );
         $full = yatco_fetch_fullspecs( $token, $vessel_id, $vessel_id ); // Pass same ID as both vessel_id and mls_id
+    }
+    
+    // If we got data but it might be partial, try to extract MLS ID and use it if Vessel ID lookup failed
+    // This handles cases where we get basic data with MLS ID but Vessel ID endpoints don't work
+    if ( ! is_wp_error( $full ) && is_array( $full ) && ! empty( $full ) ) {
+        $result_temp = isset( $full['Result'] ) ? $full['Result'] : array();
+        $basic_temp  = isset( $full['BasicInfo'] ) ? $full['BasicInfo'] : array();
+        $extracted_mlsid = '';
+        
+        // Try to extract MLS ID from the response
+        if ( ! empty( $result_temp['MLSID'] ) ) {
+            $extracted_mlsid = $result_temp['MLSID'];
+        } elseif ( ! empty( $basic_temp['MLSID'] ) ) {
+            $extracted_mlsid = $basic_temp['MLSID'];
+        }
+        
+        // If we extracted an MLS ID that's different from the Vessel ID, and we only got partial data,
+        // try fetching full data using the MLS ID
+        if ( ! empty( $extracted_mlsid ) && $extracted_mlsid != $vessel_id && isset( $full['_is_partial_data'] ) && $full['_is_partial_data'] === true ) {
+            yatco_log( "Import: Got partial data for Vessel ID {$vessel_id}, extracted MLS ID {$extracted_mlsid}, trying to fetch full data with MLS ID", 'info' );
+            $mlsid_full = yatco_fetch_fullspecs_by_mlsid( $token, $extracted_mlsid );
+            if ( ! is_wp_error( $mlsid_full ) && ! empty( $mlsid_full ) && ! isset( $mlsid_full['_is_partial_data'] ) ) {
+                yatco_log( "Import: Successfully fetched full data using extracted MLS ID {$extracted_mlsid}", 'info' );
+                $full = $mlsid_full;
+            }
+        }
     }
     
     $api_elapsed = time() - $api_start_time;

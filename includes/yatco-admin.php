@@ -375,6 +375,10 @@ function yatco_options_page() {
                         }
                     }
                     
+                    // Clear any existing stop flag before starting new import
+                    delete_option( 'yatco_import_stop_flag' );
+                    delete_transient( 'yatco_cache_warming_stop' );
+                    
                     // Set import lock
                     update_option( 'yatco_import_lock', time(), false );
                     $process_id = getmypid();
@@ -722,9 +726,16 @@ function yatco_options_page() {
             // Release import lock
             delete_option( 'yatco_import_lock' );
             delete_option( 'yatco_import_process_id' );
+            delete_option( 'yatco_import_using_fastcgi' );
+            
+            // Clear progress from wp_options (not just transients)
+            require_once YATCO_PLUGIN_DIR . 'includes/yatco-progress.php';
+            yatco_clear_import_status( 'full' );
+            yatco_clear_import_status( 'daily_sync' );
+            yatco_clear_import_status_message();
             
             // Update status
-            set_transient( 'yatco_cache_warming_status', 'Import stopped by user.', 300 );
+            yatco_update_import_status_message( 'Import stopped by user.', 300 );
             yatco_log( '🛑 IMPORT STOP COMPLETE: All stop actions completed. Import will stop at next checkpoint.', 'warning' );
             
             // Redirect to prevent form resubmission
