@@ -241,7 +241,14 @@ function yatco_ajax_run_full_import_direct() {
 // AJAX handler to trigger Full Import hook (new method - since wp-cron.php returns 404)
 add_action( 'wp_ajax_yatco_run_full_import_ajax', 'yatco_ajax_run_full_import_ajax' );
 function yatco_ajax_run_full_import_ajax() {
-    check_ajax_referer( 'yatco_run_full_import_ajax', 'nonce' );
+    yatco_log( 'Full Import AJAX: Handler called (before nonce check)', 'info' );
+    
+    // Verify nonce
+    if ( ! isset( $_POST['nonce'] ) || ! wp_verify_nonce( $_POST['nonce'], 'yatco_run_full_import_ajax' ) ) {
+        yatco_log( 'Full Import AJAX: Nonce verification failed', 'error' );
+        wp_send_json_error( array( 'message' => 'Security check failed' ) );
+        return;
+    }
     
     if ( ! current_user_can( 'manage_options' ) ) {
         yatco_log( 'Full Import AJAX: Unauthorized access attempt', 'error' );
@@ -249,7 +256,7 @@ function yatco_ajax_run_full_import_ajax() {
         return;
     }
     
-    yatco_log( 'Full Import AJAX: Handler called, triggering hook', 'info' );
+    yatco_log( 'Full Import AJAX: Handler authenticated, triggering hook', 'info' );
     
     // Send minimal response and close connection to allow background processing
     // Don't use wp_send_json_success() because it exits - we need to continue processing

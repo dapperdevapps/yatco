@@ -365,22 +365,39 @@ function yatco_options_page() {
                 yatco_update_import_status_message( 'Full Import: Starting import in background...' );
                 yatco_log( 'Full Import Direct: Initial progress saved for UI display', 'info' );
                 
-                // Trigger the import hook directly via AJAX (non-blocking)
-                // This will execute in the background without blocking the page load
+                // Trigger the import hook directly via AJAX
+                // Use a blocking request with short timeout to ensure it starts, then redirect
                 $ajax_url = admin_url( 'admin-ajax.php' );
                 $ajax_nonce = wp_create_nonce( 'yatco_run_full_import_ajax' );
                 
                 yatco_log( 'Full Import Direct: Triggering import via AJAX (immediate execution)', 'info' );
                 
-                // Make non-blocking AJAX request to trigger the import
-                wp_remote_post( $ajax_url, array(
-                    'timeout' => 0.1,
-                    'blocking' => false,
+                // Include cookies for authentication in AJAX request
+                $cookies = array();
+                foreach ( $_COOKIE as $name => $value ) {
+                    $cookies[] = new WP_Http_Cookie( array(
+                        'name' => $name,
+                        'value' => $value,
+                    ) );
+                }
+                
+                // Make AJAX request (blocking with 1s timeout to ensure it starts processing)
+                $ajax_result = wp_remote_post( $ajax_url, array(
+                    'timeout' => 1,
+                    'blocking' => true,
+                    'cookies' => $cookies,
                     'body' => array(
                         'action' => 'yatco_run_full_import_ajax',
                         'nonce' => $ajax_nonce,
                     ),
                 ) );
+                
+                if ( is_wp_error( $ajax_result ) ) {
+                    yatco_log( 'Full Import Direct: AJAX request error: ' . $ajax_result->get_error_message(), 'warning' );
+                } else {
+                    $code = wp_remote_retrieve_response_code( $ajax_result );
+                    yatco_log( "Full Import Direct: AJAX request completed (HTTP {$code})", 'info' );
+                }
                 
                 yatco_log( 'Full Import Direct: AJAX request sent, redirecting to status page', 'info' );
                 
