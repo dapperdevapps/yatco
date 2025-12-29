@@ -355,9 +355,12 @@ function yatco_options_page() {
                     update_option( 'yatco_import_using_fastcgi', time(), false );
                     
                     // Send response to user and close connection
-                    header( 'Content-Type: text/html; charset=utf-8' );
-                    header( 'Connection: close' );
-                    header( 'Content-Length: 0' );
+                    // Only send headers if they haven't been sent yet (avoid warnings in admin context)
+                    if ( ! headers_sent() ) {
+                        header( 'Content-Type: text/html; charset=utf-8' );
+                        header( 'Connection: close' );
+                        header( 'Content-Length: 0' );
+                    }
                     fastcgi_finish_request();
                     
                     // Now run the import in the background
@@ -401,14 +404,12 @@ function yatco_options_page() {
                     update_option( 'yatco_import_process_id', $process_id, false );
                     yatco_log( "Full Import Direct: Import lock acquired (Process ID: {$process_id})", 'info' );
                     
-                    // Run the import
+                    // Run the import - it will manage its own cleanup
                     yatco_full_import( $token );
                     
-                    // Release lock when done
-                    delete_option( 'yatco_import_lock' );
-                    delete_option( 'yatco_import_process_id' );
-                    delete_option( 'yatco_import_using_fastcgi' ); // Clean up fastcgi flag
-                    yatco_log( 'Full Import Direct: Import completed, lock released', 'info' );
+                    // Cleanup after import completes
+                    delete_option( 'yatco_import_using_fastcgi' );
+                    yatco_log( 'Full Import Direct: Import function completed', 'info' );
                     
                     exit;
                 } else {

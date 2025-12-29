@@ -624,8 +624,10 @@ function yatco_full_import( $token ) {
             delete_option( 'yatco_import_process_id' ); // Release process ID
             return;
         } elseif ( connection_aborted() && $using_fastcgi !== false ) {
-            // Connection was closed but it's expected (fastcgi_finish_request), just log it
+            // Connection was closed but it's expected (fastcgi_finish_request), just log it and continue
+            // Don't return here - let the import continue in the background
             yatco_log( 'Full Import: Connection closed (expected - using fastcgi_finish_request), continuing in background', 'debug' );
+            // DO NOT return here - the import should continue running
         }
         
         // Check if we hit execution time limit
@@ -923,6 +925,24 @@ function yatco_full_import( $token ) {
     
     yatco_log( "Full Import: Processing {$total_to_process} vessels. Batch size: {$batch_size}, Delay between batches: {$delay_seconds}s, Delay between items: {$delay_between_items}s", 'info' );
     
+    // Save initial progress BEFORE starting batch loop
+    $initial_progress = array(
+        'last_processed'   => $resume_from_index,
+        'processed'        => 0,
+        'failed'           => 0,
+        'attempted'        => 0,
+        'pending'          => $total_to_process,
+        'total'            => $total_to_process,
+        'total_from_api'   => $total_from_api,
+        'already_imported' => $already_imported_count,
+        'timestamp'        => time(),
+        'percent'          => 0,
+        'last_vessel_id'   => 'none',
+    );
+    yatco_update_import_status( $initial_progress, 'full' );
+    yatco_update_import_status_message( "Full Import: Starting import of {$total_to_process} vessels..." );
+    yatco_log( "Full Import: Initial progress saved - {$total_to_process} vessels to process", 'info' );
+    
     $batch_number = 0;
     yatco_log( "Full Import: Starting batch loop - {$total_to_process} vessels to process, batch size: {$batch_size}", 'info' );
     
@@ -984,8 +1004,10 @@ function yatco_full_import( $token ) {
         @set_time_limit( 300 ); // Reset to 5 minutes for each batch
         
         yatco_log( "Full Import: Starting batch {$batch_number} (" . count( $batch ) . " vessels) - Vessel IDs: " . implode( ', ', $batch ), 'info' );
+        yatco_log( "Full Import: About to start foreach loop for batch {$batch_number}", 'debug' );
         
         foreach ( $batch as $vessel_id ) {
+            yatco_log( "Full Import: Foreach loop iteration - vessel_id: {$vessel_id}", 'debug' );
             // Check stop flag (check both option and transient) - DON'T DELETE IT
             $stop_flag = get_option( 'yatco_import_stop_flag', false );
             $stop_flag_source = 'option';
@@ -1006,6 +1028,23 @@ function yatco_full_import( $token ) {
             }
             
             yatco_log( "Full Import: Processing vessel {$vessel_id} (batch {$batch_number}, position {$attempted}/{$total_to_process})", 'debug' );
+            
+            // Save progress BEFORE processing vessel (so we have progress even if it fails)
+            $current_position_before = $resume_from_index + $attempted;
+            $progress_data_before = array(
+                'last_processed'   => $current_position_before,
+                'processed'        => $processed,
+                'failed'           => $failed,
+                'attempted'        => $attempted,
+                'pending'          => $total_to_process - $attempted,
+                'total'            => $total_to_process,
+                'total_from_api'   => $total_from_api,
+                'already_imported' => $already_imported_count,
+                'timestamp'        => time(),
+                'percent'          => $total_to_process > 0 ? round( ( $attempted / $total_to_process ) * 100, 1 ) : 0,
+                'last_vessel_id'   => $vessel_id,
+            );
+            yatco_update_import_status( $progress_data_before, 'full' );
             
             // Flush output so stop button can be processed (when running directly)
             if ( ob_get_level() > 0 ) {

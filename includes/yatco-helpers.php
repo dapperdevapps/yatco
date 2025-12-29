@@ -221,11 +221,38 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
     // Try Vessel ID first (activevesselmlsid might return Vessel IDs or MLS IDs)
     $full = yatco_fetch_fullspecs( $token, $vessel_id );
     
-    // If Vessel ID failed, try treating the ID as an MLS ID
+    // If Vessel ID failed, try using conversion endpoints to get the other ID type
     // This handles cases where activevesselmlsid returns MLS IDs instead of Vessel IDs
     if ( is_wp_error( $full ) || $full === null || ( is_array( $full ) && empty( $full ) ) ) {
-        yatco_log( "Import: Vessel ID {$vessel_id} returned null/empty, trying same ID as MLS ID", 'info' );
-        $full = yatco_fetch_fullspecs( $token, $vessel_id, $vessel_id ); // Pass same ID as both vessel_id and mls_id
+        yatco_log( "Import: Vessel ID {$vessel_id} returned null/empty, trying conversion endpoints to get other ID type", 'info' );
+        
+        // Try converting to get Vessel ID (in case the ID we have is an MLS ID)
+        $converted_vessel_id = yatco_convert_mlsid_to_vessel_id( $token, $vessel_id );
+        if ( ! is_wp_error( $converted_vessel_id ) && $converted_vessel_id != $vessel_id ) {
+            yatco_log( "Import: Converted MLS ID {$vessel_id} to Vessel ID {$converted_vessel_id}, trying fetch with Vessel ID", 'info' );
+            $full = yatco_fetch_fullspecs( $token, $converted_vessel_id, $vessel_id );
+            if ( ! is_wp_error( $full ) && ! empty( $full ) ) {
+                yatco_log( "Import: Successfully fetched using converted Vessel ID {$converted_vessel_id}", 'info' );
+            }
+        }
+        
+        // If still failed, try converting to get MLS ID (in case the ID we have is a Vessel ID)
+        if ( ( is_wp_error( $full ) || $full === null || ( is_array( $full ) && empty( $full ) ) ) && ( is_wp_error( $converted_vessel_id ) || $converted_vessel_id == $vessel_id ) ) {
+            $converted_mls_id = yatco_convert_vessel_id_to_mlsid( $token, $vessel_id );
+            if ( ! is_wp_error( $converted_mls_id ) && $converted_mls_id != $vessel_id ) {
+                yatco_log( "Import: Converted Vessel ID {$vessel_id} to MLS ID {$converted_mls_id}, trying fetch with MLS ID", 'info' );
+                $full = yatco_fetch_fullspecs( $token, $vessel_id, $converted_mls_id );
+                if ( ! is_wp_error( $full ) && ! empty( $full ) ) {
+                    yatco_log( "Import: Successfully fetched using converted MLS ID {$converted_mls_id}", 'info' );
+                }
+            }
+        }
+        
+        // Final fallback: try treating the original ID as both Vessel ID and MLS ID
+        if ( is_wp_error( $full ) || $full === null || ( is_array( $full ) && empty( $full ) ) ) {
+            yatco_log( "Import: Conversion endpoints failed, trying original ID {$vessel_id} as both Vessel ID and MLS ID", 'info' );
+            $full = yatco_fetch_fullspecs( $token, $vessel_id, $vessel_id ); // Pass same ID as both vessel_id and mls_id
+        }
     }
     
     // If we got data but it might be partial, try to extract MLS ID and use it if Vessel ID lookup failed
