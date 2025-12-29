@@ -678,23 +678,35 @@ function yatco_full_import( $token ) {
     
     // Check stop flag (check both option and transient for reliability)
     // Check if import is already running (lock mechanism to prevent multiple imports)
+    // Get process ID first to check if lock belongs to this process
+    $process_id = getmypid() ?: uniqid( 'import_', true );
     $import_lock = get_option( 'yatco_import_lock', false );
+    $lock_process_id = get_option( 'yatco_import_process_id', false );
+    
     if ( $import_lock !== false ) {
         $lock_time = intval( $import_lock );
         $lock_age = time() - $lock_time;
+        
+        // Check if lock belongs to this process (same process ID)
+        $is_same_process = ( $lock_process_id !== false && strval( $lock_process_id ) === strval( $process_id ) );
+        
         // If lock is older than 10 minutes, assume the import process died and release the lock
         if ( $lock_age > 600 ) {
             yatco_log( "Full Import: Import lock expired (age: {$lock_age}s), releasing lock and continuing", 'warning' );
             delete_option( 'yatco_import_lock' );
+            delete_option( 'yatco_import_process_id' );
+        } elseif ( $is_same_process ) {
+            // Lock belongs to this process - continue (lock was just set by calling code)
+            yatco_log( "Full Import: Lock belongs to this process (PID: {$process_id}), continuing", 'debug' );
         } else {
-            yatco_log( "Full Import: Import already running (lock age: {$lock_age}s), skipping to prevent duplicate imports", 'info' );
+            // Lock belongs to a different process and is recent - skip
+            yatco_log( "Full Import: Import already running (lock age: {$lock_age}s, lock PID: {$lock_process_id}, this PID: {$process_id}), skipping to prevent duplicate imports", 'info' );
             return; // Another import is already running, don't start a new one
         }
     }
     
     // Set import lock to prevent multiple imports from running simultaneously
     // Include process ID (PID) to track which import is running
-    $process_id = getmypid() ?: uniqid( 'import_', true );
     update_option( 'yatco_import_lock', time(), false );
     update_option( 'yatco_import_process_id', $process_id, false );
     yatco_log( "Full Import: Import lock acquired (Process ID: {$process_id})", 'info' );
