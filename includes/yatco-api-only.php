@@ -118,7 +118,14 @@ function yatco_api_only_get_vessel_data( $token, $vessel_id, $force_refresh = fa
     }
     
     // Fetch full specs from API (always gets latest data)
+    // Try Vessel ID first, then try as MLS ID if that fails
     $full = yatco_fetch_fullspecs( $token, $vessel_id );
+    
+    // If Vessel ID failed, try treating the ID as an MLS ID
+    if ( is_wp_error( $full ) || $full === null || ( is_array( $full ) && empty( $full ) ) ) {
+        yatco_log( "API Only: Vessel ID {$vessel_id} failed, trying as MLS ID", 'info' );
+        $full = yatco_fetch_fullspecs( $token, $vessel_id, $vessel_id ); // Pass same ID as both vessel_id and mls_id
+    }
     
     if ( is_wp_error( $full ) ) {
         return $full;

@@ -1130,6 +1130,40 @@ function yatco_options_page() {
     echo '</table>';
     submit_button( '🔍 Fetch Vessel & Create Test Post', 'secondary', 'yatco_test_vessel_data_only', false, array( 'id' => 'yatco-test-vessel-btn' ) );
     echo '</form>';
+    
+    // Add debug vessel ID section
+    echo '<hr style="margin: 30px 0;">';
+    echo '<h2>Debug Vessel ID</h2>';
+    echo '<div style="background: #e3f2fd; border-left: 4px solid #2196f3; padding: 12px; margin: 15px 0;">';
+    echo '<p style="margin: 0; font-weight: bold; color: #1565c0;"><strong>🔧 Debug Tool:</strong> Test a specific vessel ID to see which API endpoints work and get detailed response information.</p>';
+    echo '</div>';
+    echo '<p>Use this to debug why a specific vessel ID returns null. This will test all available API endpoints and show you exactly what responses you\'re getting.</p>';
+    echo '<form method="post" id="yatco-debug-vessel-form">';
+    wp_nonce_field( 'yatco_debug_vessel', 'yatco_debug_vessel_nonce' );
+    echo '<table class="form-table">';
+    echo '<tr>';
+    echo '<th scope="row"><label for="yatco_debug_vessel_id">Vessel ID</label></th>';
+    echo '<td><input type="number" id="yatco_debug_vessel_id" name="yatco_debug_vessel_id" value="' . ( isset( $_POST['yatco_debug_vessel_id'] ) ? esc_attr( intval( $_POST['yatco_debug_vessel_id'] ) ) : '456057' ) . '" class="regular-text" required /></td>';
+    echo '</tr>';
+    echo '</table>';
+    submit_button( '🔍 Debug Vessel ID', 'secondary', 'yatco_debug_vessel', false );
+    echo '</form>';
+    
+    if ( isset( $_POST['yatco_debug_vessel'] ) && ! empty( $_POST['yatco_debug_vessel'] ) ) {
+        if ( ! isset( $_POST['yatco_debug_vessel_nonce'] ) || ! wp_verify_nonce( $_POST['yatco_debug_vessel_nonce'], 'yatco_debug_vessel' ) ) {
+            echo '<div class="notice notice-error"><p>Security check failed. Please refresh the page and try again.</p></div>';
+        } elseif ( empty( $token ) ) {
+            echo '<div class="notice notice-error"><p>Missing token. Please configure your API token first.</p></div>';
+        } else {
+            $debug_vessel_id = isset( $_POST['yatco_debug_vessel_id'] ) ? intval( $_POST['yatco_debug_vessel_id'] ) : 0;
+            if ( $debug_vessel_id > 0 ) {
+                require_once YATCO_PLUGIN_DIR . 'includes/yatco-api.php';
+                echo yatco_debug_vessel_id( $token, $debug_vessel_id );
+            } else {
+                echo '<div class="notice notice-error"><p>Please enter a valid vessel ID.</p></div>';
+            }
+        }
+    }
 
     if ( isset( $_POST['yatco_test_vessel_data_only'] ) && ! empty( $_POST['yatco_test_vessel_data_only'] ) ) {
         if ( ! isset( $_POST['yatco_test_vessel_nonce'] ) || ! wp_verify_nonce( $_POST['yatco_test_vessel_nonce'], 'yatco_test_vessel' ) ) {

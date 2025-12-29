@@ -215,7 +215,17 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
     
     yatco_log( "Import: Starting API fetch for vessel {$vessel_id}", 'debug' );
     $api_start_time = time();
+    
+    // Try to get MLS ID from active list if available (activevesselmlsid might return MLS IDs)
+    // First try as Vessel ID, then if that fails and we have an MLS ID, try that
     $full = yatco_fetch_fullspecs( $token, $vessel_id );
+    
+    // If Vessel ID failed, try treating the ID as an MLS ID
+    if ( is_wp_error( $full ) || $full === null || ( is_array( $full ) && empty( $full ) ) ) {
+        yatco_log( "Import: Vessel ID {$vessel_id} failed, trying as MLS ID", 'info' );
+        $full = yatco_fetch_fullspecs( $token, $vessel_id, $vessel_id ); // Pass same ID as both vessel_id and mls_id
+    }
+    
     $api_elapsed = time() - $api_start_time;
     
     // Extract vessel name early so we can include it in logs
