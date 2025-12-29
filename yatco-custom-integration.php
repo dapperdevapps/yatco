@@ -317,6 +317,14 @@ function yatco_ajax_get_import_status() {
         'progress' => null,
     );
     
+    // If import is stopped, include status in progress object for UI updates
+    if ( $stop_flag !== false && $active_stage === 0 ) {
+        $response_data['progress'] = array(
+            'active' => false,
+            'status' => 'Import stopped by user.',
+        );
+    }
+    
     if ( $active_stage === 'full' && $active_progress ) {
         // Get all progress counts
         $processed = isset( $active_progress['processed'] ) ? intval( $active_progress['processed'] ) : 0;

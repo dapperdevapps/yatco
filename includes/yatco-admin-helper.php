@@ -287,7 +287,13 @@ function yatco_display_import_status_section() {
     echo '        if (progressData.eta_minutes !== undefined && $("#yatco-eta-text").length) {';
     echo '            $("#yatco-eta-text").text(progressData.eta_minutes + " minutes");';
     echo '        } else if ($("#yatco-eta-text").length) {';
-    echo '            $("#yatco-eta-text").text("calculating...");';
+    echo '            // Check if import is stopped';
+    echo '            var statusText = progressData.status || "";';
+    echo '            if (statusText.toLowerCase().indexOf("stopped") !== -1 || !progressData.active) {';
+    echo '                $("#yatco-eta-text").text("stopped");';
+    echo '            } else {';
+    echo '                $("#yatco-eta-text").text("calculating...");';
+    echo '            }';
     echo '        }';
     echo '        ';
     echo '        // Update stage name if provided';
