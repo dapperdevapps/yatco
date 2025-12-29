@@ -355,12 +355,12 @@ function yatco_options_page() {
                 wp_cache_delete( 'yatco_import_stop_flag', 'options' );
                 yatco_log( "Full Import Direct: Cleared stop flags before starting - Had stop flag: " . ( $had_stop_flag !== false ? 'YES (' . $had_stop_flag . ')' : 'NO' ) . ", Had transient: " . ( $had_stop_transient !== false ? 'YES' : 'NO' ), 'info' );
                 
-                // Clear any stale locks older than 10 minutes
+                // Clear any stale locks older than 5 minutes (shorter timeout for more responsive imports)
                 $import_lock = get_option( 'yatco_import_lock', false );
                 if ( $import_lock !== false ) {
                     $lock_time = intval( $import_lock );
                     $lock_age = time() - $lock_time;
-                    if ( $lock_age > 600 ) {
+                    if ( $lock_age > 300 ) {
                         yatco_log( "Full Import Direct: Clearing stale lock (age: {$lock_age}s)", 'info' );
                         delete_option( 'yatco_import_lock' );
                         delete_option( 'yatco_import_process_id' );
@@ -375,10 +375,19 @@ function yatco_options_page() {
                 // Schedule the import to run immediately via wp-cron
                 wp_schedule_single_event( time(), 'yatco_full_import_hook' );
                 
-                // Try to trigger wp-cron immediately (may not work on all servers, but server cron will pick it up)
+                // Trigger wp-cron immediately by making an async HTTP request
+                // This ensures the cron runs instantly instead of waiting for server cron
+                $cron_url = site_url( 'wp-cron.php?doing_wp_cron=' . time() );
+                wp_remote_get( $cron_url, array(
+                    'timeout' => 0.01,
+                    'blocking' => false,
+                    'sslverify' => false,
+                ) );
+                
+                // Also try spawn_cron() as a backup
                 spawn_cron();
                 
-                yatco_log( 'Full Import Direct: Import scheduled via wp-cron, redirecting to status page', 'info' );
+                yatco_log( 'Full Import Direct: Import scheduled via wp-cron and triggered immediately, redirecting to status page', 'info' );
                 
                 // Redirect immediately to status page
                 wp_safe_redirect( admin_url( 'options-general.php?page=yatco_api&tab=status&import_started=1' ) );

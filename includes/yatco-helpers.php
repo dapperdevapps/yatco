@@ -218,11 +218,12 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
     yatco_log( "Import: ========== Starting import for vessel {$vessel_id} ==========", 'debug' );
     $api_start_time = time();
     
-    // Try Vessel ID first (activevesselmlsid might return Vessel IDs or MLS IDs)
+    // Try Vessel ID first - this is the primary method
+    // IMPORTANT: We only use MLS ID as a fallback if Vessel ID returns null/empty
     $full = yatco_fetch_fullspecs( $token, $vessel_id );
     
-    // If Vessel ID failed, try using conversion endpoints to get the other ID type
-    // This handles cases where activevesselmlsid returns MLS IDs instead of Vessel IDs
+    // Only try MLS ID conversion if Vessel ID failed (null, empty, or error)
+    // This ensures we don't duplicate imports - if Vessel ID has data, we use it
     if ( is_wp_error( $full ) || $full === null || ( is_array( $full ) && empty( $full ) ) ) {
         yatco_log( "Import: Vessel ID {$vessel_id} returned null/empty, trying conversion endpoints to get other ID type", 'info' );
         
@@ -255,31 +256,9 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
         }
     }
     
-    // If we got data but it might be partial, try to extract MLS ID and use it if Vessel ID lookup failed
-    // This handles cases where we get basic data with MLS ID but Vessel ID endpoints don't work
-    if ( ! is_wp_error( $full ) && is_array( $full ) && ! empty( $full ) ) {
-        $result_temp = isset( $full['Result'] ) ? $full['Result'] : array();
-        $basic_temp  = isset( $full['BasicInfo'] ) ? $full['BasicInfo'] : array();
-        $extracted_mlsid = '';
-        
-        // Try to extract MLS ID from the response
-        if ( ! empty( $result_temp['MLSID'] ) ) {
-            $extracted_mlsid = $result_temp['MLSID'];
-        } elseif ( ! empty( $basic_temp['MLSID'] ) ) {
-            $extracted_mlsid = $basic_temp['MLSID'];
-        }
-        
-        // If we extracted an MLS ID that's different from the Vessel ID, and we only got partial data,
-        // try fetching full data using the MLS ID
-        if ( ! empty( $extracted_mlsid ) && $extracted_mlsid != $vessel_id && isset( $full['_is_partial_data'] ) && $full['_is_partial_data'] === true ) {
-            yatco_log( "Import: Got partial data for Vessel ID {$vessel_id}, extracted MLS ID {$extracted_mlsid}, trying to fetch full data with MLS ID", 'info' );
-            $mlsid_full = yatco_fetch_fullspecs_by_mlsid( $token, $extracted_mlsid );
-            if ( ! is_wp_error( $mlsid_full ) && ! empty( $mlsid_full ) && ! isset( $mlsid_full['_is_partial_data'] ) ) {
-                yatco_log( "Import: Successfully fetched full data using extracted MLS ID {$extracted_mlsid}", 'info' );
-                $full = $mlsid_full;
-            }
-        }
-    }
+    // NOTE: We do NOT try MLS ID as a fallback here if Vessel ID succeeded
+    // We only use MLS ID when Vessel ID returns null/empty (handled above)
+    // If Vessel ID has data, we use it to prevent duplicates
     
     $api_elapsed = time() - $api_start_time;
     
@@ -416,16 +395,25 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
         $loa = $basic['LOAFeet'];
     }
 
+    // Extract Vessel ID from API response (to ensure we have the correct one)
+    // Use the one from API response if available, otherwise use the one passed in
+    $extracted_vessel_id = $vessel_id; // Default to the one we passed in
+    if ( ! empty( $result['VesselID'] ) ) {
+        $extracted_vessel_id = intval( $result['VesselID'] );
+    } elseif ( ! empty( $basic['VesselID'] ) ) {
+        $extracted_vessel_id = intval( $basic['VesselID'] );
+    }
+    // Update vessel_id to use the extracted one (in case API returns a different/corrected ID)
+    $vessel_id = $extracted_vessel_id;
+    
     // MLSID: From Result or BasicInfo. Check multiple sources for partial data.
+    // IMPORTANT: Extract MLS ID separately - we want BOTH IDs for duplicate prevention
     if ( ! empty( $result['MLSID'] ) ) {
         $mlsid = $result['MLSID'];
-    } elseif ( ! empty( $result['VesselID'] ) ) {
-        $mlsid = $result['VesselID'];
     } elseif ( ! empty( $basic['MLSID'] ) ) {
         $mlsid = $basic['MLSID'];
-    } elseif ( ! empty( $basic['VesselID'] ) ) {
-        $mlsid = $basic['VesselID'];
     }
+    // Note: We do NOT fallback to VesselID for MLSID - they are different identifiers
 
     // Builder/Make: From BasicInfo or Result. Check multiple possible field names for partial data support.
     if ( ! empty( $basic['Builder'] ) ) {
