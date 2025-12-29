@@ -238,6 +238,51 @@ function yatco_ajax_run_full_import_direct() {
     }
 }
 
+// AJAX handler to trigger Full Import hook (new method - since wp-cron.php returns 404)
+add_action( 'wp_ajax_yatco_run_full_import_ajax', 'yatco_ajax_run_full_import_ajax' );
+function yatco_ajax_run_full_import_ajax() {
+    check_ajax_referer( 'yatco_run_full_import_ajax', 'nonce' );
+    
+    if ( ! current_user_can( 'manage_options' ) ) {
+        yatco_log( 'Full Import AJAX: Unauthorized access attempt', 'error' );
+        wp_send_json_error( array( 'message' => 'Unauthorized' ) );
+        return;
+    }
+    
+    yatco_log( 'Full Import AJAX: Handler called, triggering hook', 'info' );
+    
+    // Send minimal response and close connection to allow background processing
+    // Don't use wp_send_json_success() because it exits - we need to continue processing
+    ignore_user_abort( true );
+    
+    // Send quick response
+    if ( ! headers_sent() ) {
+        header( 'Content-Type: application/json; charset=utf-8' );
+        header( 'Connection: close' );
+        echo json_encode( array( 'success' => true, 'message' => 'Full Import started' ) );
+        
+        // Close connection immediately
+        if ( function_exists( 'fastcgi_finish_request' ) ) {
+            fastcgi_finish_request();
+            yatco_log( 'Full Import AJAX: Connection closed via fastcgi_finish_request(), continuing in background', 'info' );
+        } else {
+            // Fallback: flush and continue
+            flush();
+            yatco_log( 'Full Import AJAX: Connection closed (flush), continuing in background', 'info' );
+        }
+    }
+    
+    // Increase execution time for background processing
+    @set_time_limit( 0 );
+    @ini_set( 'max_execution_time', 0 );
+    @ini_set( 'memory_limit', '512M' );
+    
+    // Trigger the import hook directly (same as wp-cron would)
+    do_action( 'yatco_full_import_hook' );
+    
+    yatco_log( 'Full Import AJAX: Hook execution completed', 'info' );
+}
+
 // AJAX handler for import status
 add_action( 'wp_ajax_yatco_get_import_status', 'yatco_ajax_get_import_status' );
 function yatco_ajax_get_import_status() {
