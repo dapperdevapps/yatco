@@ -625,7 +625,7 @@ function yatco_full_import( $token ) {
             return;
         } elseif ( connection_aborted() && $using_fastcgi !== false ) {
             // Connection was closed but it's expected (fastcgi_finish_request), just log it and continue
-            // Don't return here - let the import continue in the background
+            // Note: This code path shouldn't be hit anymore since we're using wp-cron instead of fastcgi
             yatco_log( 'Full Import: Connection closed (expected - using fastcgi_finish_request), continuing in background', 'debug' );
             // DO NOT return here - the import should continue running
         }
