@@ -352,22 +352,47 @@ function yatco_options_page() {
                     }
                 }
                 
+                // Save initial progress immediately so UI shows activity
+                require_once YATCO_PLUGIN_DIR . 'includes/yatco-progress.php';
+                yatco_update_import_status( array(
+                    'processed' => 0,
+                    'total' => 0,
+                    'last_processed' => 0,
+                    'status' => 'starting',
+                    'timestamp' => time(),
+                    'updated' => time(),
+                ), 'full' );
+                yatco_update_import_status_message( 'Full Import: Starting import...' );
+                yatco_log( 'Full Import Direct: Initial progress saved for UI display', 'info' );
+                
                 // Schedule the import to run immediately via wp-cron
                 wp_schedule_single_event( time(), 'yatco_full_import_hook' );
+                yatco_log( 'Full Import Direct: Import scheduled via wp-cron hook', 'info' );
                 
-                // Trigger wp-cron immediately by making an async HTTP request
-                // This ensures the cron runs instantly instead of waiting for server cron
+                // Trigger wp-cron immediately using multiple methods for maximum reliability
+                // Method 1: spawn_cron() - WordPress's built-in method (most reliable)
+                if ( function_exists( 'spawn_cron' ) ) {
+                    yatco_log( 'Full Import Direct: Triggering wp-cron via spawn_cron()', 'info' );
+                    spawn_cron();
+                }
+                
+                // Method 2: Direct HTTP request to wp-cron.php (async, doesn't block)
+                // Use longer timeout to ensure request is sent (0.1s instead of 0.01s)
                 $cron_url = site_url( 'wp-cron.php?doing_wp_cron=' . time() );
-                wp_remote_get( $cron_url, array(
-                    'timeout' => 0.01,
+                $cron_result = wp_remote_get( $cron_url, array(
+                    'timeout' => 0.1,
                     'blocking' => false,
                     'sslverify' => false,
+                    'httpversion' => '1.1',
                 ) );
                 
-                // Also try spawn_cron() as a backup
-                spawn_cron();
+                if ( is_wp_error( $cron_result ) ) {
+                    yatco_log( 'Full Import Direct: wp_remote_get error: ' . $cron_result->get_error_message(), 'warning' );
+                } else {
+                    yatco_log( 'Full Import Direct: wp-cron HTTP request sent (non-blocking)', 'info' );
+                }
                 
-                yatco_log( 'Full Import Direct: Import scheduled via wp-cron and triggered immediately, redirecting to status page', 'info' );
+                yatco_log( 'Full Import Direct: wp-cron triggered via multiple methods, redirecting to status page', 'info' );
                 
                 // Redirect immediately to status page
                 wp_safe_redirect( admin_url( 'options-general.php?page=yatco_api&tab=status&import_started=1' ) );
@@ -1115,6 +1140,121 @@ function yatco_options_page() {
                 echo yatco_debug_vessel_id( $token, $debug_vessel_id );
             } else {
                 echo '<div class="notice notice-error"><p>Please enter a valid vessel ID.</p></div>';
+            }
+        }
+    }
+    
+    // Add ID Conversion Testing section
+    echo '<hr style="margin: 30px 0;">';
+    echo '<h2>Test Vessel ID & MLS ID Conversion</h2>';
+    echo '<div style="background: #e8f5e9; border-left: 4px solid #4caf50; padding: 12px; margin: 15px 0;">';
+    echo '<p style="margin: 0; font-weight: bold; color: #2e7d32;"><strong>🔄 ID Conversion Tool:</strong> Test the conversion between Vessel ID and MLS ID to verify the conversion endpoints are working correctly.</p>';
+    echo '</div>';
+    echo '<p>Enter either a Vessel ID or MLS ID to test bidirectional conversion. This helps verify that the conversion endpoints are working and that IDs can be converted in both directions.</p>';
+    echo '<form method="post" id="yatco-test-id-conversion-form">';
+    wp_nonce_field( 'yatco_test_id_conversion', 'yatco_test_id_conversion_nonce' );
+    echo '<table class="form-table">';
+    echo '<tr>';
+    echo '<th scope="row"><label for="yatco_test_conversion_id">Vessel ID or MLS ID</label></th>';
+    echo '<td><input type="number" id="yatco_test_conversion_id" name="yatco_test_conversion_id" value="' . ( isset( $_POST['yatco_test_conversion_id'] ) ? esc_attr( intval( $_POST['yatco_test_conversion_id'] ) ) : '' ) . '" class="regular-text" placeholder="Enter Vessel ID or MLS ID" required /></td>';
+    echo '</tr>';
+    echo '</table>';
+    submit_button( '🔄 Test ID Conversion', 'secondary', 'yatco_test_id_conversion', false );
+    echo '</form>';
+    
+    if ( isset( $_POST['yatco_test_id_conversion'] ) && ! empty( $_POST['yatco_test_id_conversion'] ) ) {
+        if ( ! isset( $_POST['yatco_test_id_conversion_nonce'] ) || ! wp_verify_nonce( $_POST['yatco_test_id_conversion_nonce'], 'yatco_test_id_conversion' ) ) {
+            echo '<div class="notice notice-error"><p>Security check failed. Please refresh the page and try again.</p></div>';
+        } elseif ( empty( $token ) ) {
+            echo '<div class="notice notice-error"><p>Missing token. Please configure your API token first.</p></div>';
+        } else {
+            $test_id = isset( $_POST['yatco_test_conversion_id'] ) ? intval( $_POST['yatco_test_conversion_id'] ) : 0;
+            if ( $test_id > 0 ) {
+                require_once YATCO_PLUGIN_DIR . 'includes/yatco-api.php';
+                
+                echo '<div style="background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; padding: 20px; margin: 20px 0;">';
+                echo '<h3>Testing ID Conversion for: ' . esc_html( $test_id ) . '</h3>';
+                
+                // Test 1: Try converting as MLS ID to Vessel ID
+                echo '<h4>Test 1: Convert MLS ID → Vessel ID</h4>';
+                echo '<p style="color: #666; font-size: 13px;">Endpoint: <code>https://api.yatcoboss.com/api/v1/ForSale/Vessel/VesselID/' . esc_html( $test_id ) . '</code></p>';
+                $vessel_id_result = yatco_convert_mlsid_to_vessel_id( $token, $test_id );
+                
+                if ( is_wp_error( $vessel_id_result ) ) {
+                    echo '<p style="color: #dc3232; font-weight: bold;">❌ Failed: ' . esc_html( $vessel_id_result->get_error_message() ) . '</p>';
+                    $converted_vessel_id = null;
+                } else {
+                    echo '<p style="color: #46b450; font-weight: bold;">✅ Success! MLS ID <strong>' . esc_html( $test_id ) . '</strong> → Vessel ID <strong>' . esc_html( $vessel_id_result ) . '</strong></p>';
+                    $converted_vessel_id = $vessel_id_result;
+                }
+                
+                // Test 2: Try converting as Vessel ID to MLS ID
+                echo '<h4>Test 2: Convert Vessel ID → MLS ID</h4>';
+                echo '<p style="color: #666; font-size: 13px;">Endpoint: <code>https://api.yatcoboss.com/api/v1/ForSale/Vessel/MLSID/' . esc_html( $test_id ) . '</code></p>';
+                $mls_id_result = yatco_convert_vessel_id_to_mlsid( $token, $test_id );
+                
+                if ( is_wp_error( $mls_id_result ) ) {
+                    echo '<p style="color: #dc3232; font-weight: bold;">❌ Failed: ' . esc_html( $mls_id_result->get_error_message() ) . '</p>';
+                    $converted_mls_id = null;
+                } else {
+                    echo '<p style="color: #46b450; font-weight: bold;">✅ Success! Vessel ID <strong>' . esc_html( $test_id ) . '</strong> → MLS ID <strong>' . esc_html( $mls_id_result ) . '</strong></p>';
+                    $converted_mls_id = $mls_id_result;
+                }
+                
+                // Test 3: Verify bidirectional conversion (round-trip test)
+                echo '<h4>Test 3: Bidirectional Verification (Round-Trip Test)</h4>';
+                if ( $converted_vessel_id && $converted_mls_id ) {
+                    // The ID could be either type, so test both directions
+                    if ( $converted_vessel_id == $test_id ) {
+                        // Test ID is a Vessel ID - verify MLS ID → Vessel ID works
+                        $round_trip_vessel = yatco_convert_mlsid_to_vessel_id( $token, $converted_mls_id );
+                        if ( ! is_wp_error( $round_trip_vessel ) && $round_trip_vessel == $test_id ) {
+                            echo '<p style="color: #46b450; font-weight: bold;">✅ Round-trip successful! MLS ID ' . esc_html( $converted_mls_id ) . ' → Vessel ID ' . esc_html( $round_trip_vessel ) . ' (matches original)</p>';
+                        } else {
+                            echo '<p style="color: #ff9800; font-weight: bold;">⚠️ Round-trip warning: MLS ID ' . esc_html( $converted_mls_id ) . ' → Vessel ID ' . esc_html( is_wp_error( $round_trip_vessel ) ? 'ERROR' : $round_trip_vessel ) . ' (does not match original ' . esc_html( $test_id ) . ')</p>';
+                        }
+                    } elseif ( $converted_mls_id == $test_id ) {
+                        // Test ID is an MLS ID - verify Vessel ID → MLS ID works
+                        $round_trip_mls = yatco_convert_vessel_id_to_mlsid( $token, $converted_vessel_id );
+                        if ( ! is_wp_error( $round_trip_mls ) && $round_trip_mls == $test_id ) {
+                            echo '<p style="color: #46b450; font-weight: bold;">✅ Round-trip successful! Vessel ID ' . esc_html( $converted_vessel_id ) . ' → MLS ID ' . esc_html( $round_trip_mls ) . ' (matches original)</p>';
+                        } else {
+                            echo '<p style="color: #ff9800; font-weight: bold;">⚠️ Round-trip warning: Vessel ID ' . esc_html( $converted_vessel_id ) . ' → MLS ID ' . esc_html( is_wp_error( $round_trip_mls ) ? 'ERROR' : $round_trip_mls ) . ' (does not match original ' . esc_html( $test_id ) . ')</p>';
+                        }
+                    } else {
+                        echo '<p style="color: #666;">ℹ️ Original ID (' . esc_html( $test_id ) . ') appears to be neither the Vessel ID (' . esc_html( $converted_vessel_id ) . ') nor the MLS ID (' . esc_html( $converted_mls_id ) . '). Testing round-trip...</p>';
+                        // Try both directions
+                        $rt_vessel = yatco_convert_mlsid_to_vessel_id( $token, $converted_mls_id );
+                        $rt_mls = yatco_convert_vessel_id_to_mlsid( $token, $converted_vessel_id );
+                        if ( ! is_wp_error( $rt_vessel ) && ! is_wp_error( $rt_mls ) && $rt_vessel == $converted_vessel_id && $rt_mls == $converted_mls_id ) {
+                            echo '<p style="color: #46b450; font-weight: bold;">✅ Round-trip successful! Conversions are consistent.</p>';
+                        } else {
+                            echo '<p style="color: #ff9800; font-weight: bold;">⚠️ Round-trip inconsistent. Check conversion endpoints.</p>';
+                        }
+                    }
+                } else {
+                    echo '<p style="color: #666;">ℹ️ Skipping round-trip test (one or both conversions failed)</p>';
+                }
+                
+                // Summary
+                echo '<h4>Summary</h4>';
+                echo '<div style="background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 4px;">';
+                echo '<p><strong>Original ID:</strong> ' . esc_html( $test_id ) . '</p>';
+                if ( $converted_vessel_id ) {
+                    echo '<p><strong>✅ Vessel ID:</strong> ' . esc_html( $converted_vessel_id ) . '</p>';
+                } else {
+                    echo '<p><strong>❌ Vessel ID:</strong> Conversion failed</p>';
+                }
+                if ( $converted_mls_id ) {
+                    echo '<p><strong>✅ MLS ID:</strong> ' . esc_html( $converted_mls_id ) . '</p>';
+                } else {
+                    echo '<p><strong>❌ MLS ID:</strong> Conversion failed</p>';
+                }
+                echo '</div>';
+                
+                echo '</div>';
+            } else {
+                echo '<div class="notice notice-error"><p>Please enter a valid ID (must be a positive number).</p></div>';
             }
         }
     }

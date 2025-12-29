@@ -88,6 +88,11 @@ add_action( 'yatco_full_import_hook', function() {
     $token = yatco_get_token();
     if ( empty( $token ) ) {
         yatco_log( 'Full Import: Hook triggered but no token found', 'error' );
+        require_once YATCO_PLUGIN_DIR . 'includes/yatco-progress.php';
+        yatco_clear_import_status( 'full' );
+        yatco_update_import_status_message( 'Full Import Error: No API token configured.' );
+        delete_option( 'yatco_import_lock' );
+        delete_option( 'yatco_import_process_id' );
         return;
     }
     
