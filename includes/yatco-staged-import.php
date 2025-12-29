@@ -707,11 +707,13 @@ function yatco_full_import( $token ) {
         $is_same_process = ( $lock_process_id !== false && strval( $lock_process_id ) === strval( $process_id ) );
         yatco_log( "Full Import: Lock analysis - Age: {$lock_age}s, Same process: " . ( $is_same_process ? 'YES' : 'NO' ), 'debug' );
         
-        // If lock is older than 10 minutes, assume the import process died and release the lock
-        if ( $lock_age > 600 ) {
+        // If lock is older than 5 minutes, assume the import process died and release the lock
+        // Using 5 minutes (300s) for consistency across all code paths
+        if ( $lock_age > 300 ) {
             yatco_log( "Full Import: Import lock expired (age: {$lock_age}s), releasing lock and continuing", 'warning' );
             delete_option( 'yatco_import_lock' );
             delete_option( 'yatco_import_process_id' );
+            delete_option( 'yatco_import_using_fastcgi' );
         } elseif ( $is_same_process ) {
             // Lock belongs to this process - continue (lock was just set by calling code)
             yatco_log( "Full Import: Lock belongs to this process (PID: {$process_id}), continuing", 'debug' );

@@ -66,11 +66,13 @@ add_action( 'yatco_full_import_hook', function() {
         // Check if lock belongs to this process (same process ID)
         $is_same_process = ( $lock_process_id !== false && strval( $lock_process_id ) === strval( $process_id ) );
         
-        // If lock is older than 10 minutes, assume the import process died and release the lock
-        if ( $lock_age > 600 ) {
+        // If lock is older than 5 minutes, assume the import process died and release the lock
+        // Using 5 minutes (300s) for consistency with direct button handler
+        if ( $lock_age > 300 ) {
             yatco_log( "Full Import: Hook triggered but lock expired (age: {$lock_age}s), releasing lock and continuing", 'warning' );
             delete_option( 'yatco_import_lock' );
             delete_option( 'yatco_import_process_id' );
+            delete_option( 'yatco_import_using_fastcgi' );
         } elseif ( $is_same_process ) {
             // Lock belongs to this process - continue (might be a resume scenario)
             yatco_log( "Full Import: Hook triggered, lock belongs to this process (PID: {$process_id}), continuing", 'debug' );
@@ -644,8 +646,10 @@ function yatco_ajax_stop_import() {
     
     yatco_log( '🛑 IMPORT STOP REQUESTED: Stop requested via AJAX', 'warning' );
     
-    // Get current progress before clearing
-    $current_progress = get_transient( 'yatco_import_progress' );
+    require_once YATCO_PLUGIN_DIR . 'includes/yatco-progress.php';
+    
+    // Get current progress before clearing (use wp_options, not transients)
+    $current_progress = yatco_get_import_status( 'full' );
     $processed = 0;
     $total = 0;
     if ( $current_progress !== false && is_array( $current_progress ) ) {
@@ -661,54 +665,50 @@ function yatco_ajax_stop_import() {
     set_transient( 'yatco_cache_warming_stop', time(), 900 );
     yatco_log( '🛑 IMPORT STOP: Stop flag set in database', 'warning' );
     
-    // Cancel any scheduled cron jobs
-    $scheduled_full = wp_next_scheduled( 'yatco_full_import_hook' );
-    $scheduled_warm = wp_next_scheduled( 'yatco_warm_cache_hook' );
-    
-    if ( $scheduled_full ) {
-        wp_unschedule_event( $scheduled_full, 'yatco_full_import_hook' );
-        yatco_log( '🛑 IMPORT STOP: Cancelled scheduled Full Import event', 'warning' );
-    }
-    if ( $scheduled_warm ) {
-        wp_unschedule_event( $scheduled_warm, 'yatco_warm_cache_hook' );
-        yatco_log( '🛑 IMPORT STOP: Cancelled scheduled warm cache event', 'warning' );
-    }
-    
-    wp_clear_scheduled_hook( 'yatco_stage1_import_hook' );
-    wp_clear_scheduled_hook( 'yatco_stage2_import_hook' );
-    wp_clear_scheduled_hook( 'yatco_stage3_import_hook' );
-    wp_clear_scheduled_hook( 'yatco_warm_cache_hook' );
-    
-    // Disable auto-resume
+    // Disable auto-resume to prevent import from restarting
     update_option( 'yatco_import_auto_resume', false, false );
     delete_option( 'yatco_last_auto_resume_time' );
     yatco_log( '🛑 IMPORT STOP: Auto-resume disabled', 'warning' );
     
-    // Release import lock
+    // CRITICAL: Release the lock immediately so user can start a new import
     $had_lock = get_option( 'yatco_import_lock', false );
     delete_option( 'yatco_import_lock' );
     delete_option( 'yatco_import_process_id' );
+    delete_option( 'yatco_import_using_fastcgi' );
     if ( $had_lock !== false ) {
-        yatco_log( '🛑 IMPORT STOP: Import lock released', 'warning' );
+        yatco_log( '🛑 IMPORT STOP: Import lock released immediately to allow new import', 'warning' );
     }
     
-    // Clear progress and status immediately
-    wp_cache_delete( 'yatco_import_progress', 'transient' );
-    wp_cache_delete( 'yatco_cache_warming_status', 'transient' );
-    wp_cache_delete( 'yatco_daily_sync_progress', 'transient' );
+    // Cancel ALL scheduled cron jobs to prevent them from running after stop
+    $scheduled_full = wp_next_scheduled( 'yatco_full_import_hook' );
+    $scheduled_warm = wp_next_scheduled( 'yatco_warm_cache_hook' );
+    wp_clear_scheduled_hook( 'yatco_full_import_hook' );
+    wp_clear_scheduled_hook( 'yatco_warm_cache_hook' );
+    wp_clear_scheduled_hook( 'yatco_stage1_import_hook' );
+    wp_clear_scheduled_hook( 'yatco_stage2_import_hook' );
+    wp_clear_scheduled_hook( 'yatco_stage3_import_hook' );
+    if ( $scheduled_full !== false ) {
+        yatco_log( '🛑 IMPORT STOP: Cancelled scheduled Full Import event', 'warning' );
+    }
+    if ( $scheduled_warm !== false ) {
+        yatco_log( '🛑 IMPORT STOP: Cancelled scheduled warm cache event', 'warning' );
+    }
+    
+    // Clear progress from both transients and wp_options (for consistency)
     delete_transient( 'yatco_import_progress' );
     delete_transient( 'yatco_daily_sync_progress' );
-    delete_transient( 'yatco_stage1_progress' );
-    delete_transient( 'yatco_stage2_progress' );
-    delete_transient( 'yatco_stage3_progress' );
-    delete_transient( 'yatco_cache_warming_progress' );
     delete_transient( 'yatco_cache_warming_status' );
-    wp_cache_flush();
+    wp_cache_delete( 'yatco_import_progress', 'transient' );
+    wp_cache_delete( 'yatco_daily_sync_progress', 'transient' );
+    wp_cache_delete( 'yatco_cache_warming_status', 'transient' );
+    yatco_clear_import_status( 'full' );
+    yatco_clear_import_status( 'daily_sync' );
+    yatco_clear_import_status_message();
     yatco_log( '🛑 IMPORT STOP: Progress cleared from cache and database', 'warning' );
     
-    yatco_log( '🛑 IMPORT STOP COMPLETE: All stop actions completed. Import will stop at next checkpoint.', 'warning' );
+    yatco_log( '🛑 IMPORT STOP COMPLETE: Stop flag set and lock released. Ready for new import.', 'warning' );
     
-    wp_send_json_success( array( 'message' => 'Import stopped. Progress cleared.' ) );
+    wp_send_json_success( array( 'message' => 'Import stop requested. Lock released.' ) );
 }
 
 // Schedule periodic cache refresh if enabled
