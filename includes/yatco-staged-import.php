@@ -557,7 +557,14 @@ function yatco_full_import( $token ) {
     // Load progress helper functions
     require_once YATCO_PLUGIN_DIR . 'includes/yatco-progress.php';
     
-    yatco_log( 'Full Import: Starting', 'info' );
+    $process_id = getmypid() ?: 'unknown';
+    yatco_log( "Full Import: ========== STARTING FULL IMPORT (PID: {$process_id}) ==========", 'info' );
+    
+    // Log initial state
+    $stop_flag_at_start = get_option( 'yatco_import_stop_flag', false );
+    $lock_at_start = get_option( 'yatco_import_lock', false );
+    $lock_pid_at_start = get_option( 'yatco_import_process_id', false );
+    yatco_log( "Full Import: Initial state - Stop flag: " . ( $stop_flag_at_start !== false ? 'SET (' . $stop_flag_at_start . ')' : 'NOT SET' ) . ", Lock: " . ( $lock_at_start !== false ? 'EXISTS (' . $lock_at_start . ')' : 'NOT SET' ) . ", Lock PID: " . ( $lock_pid_at_start !== false ? $lock_pid_at_start : 'NONE' ), 'debug' );
     
     // Increase execution time and memory limits at start
     @set_time_limit( 0 ); // Try unlimited (may not work on all servers)
@@ -688,12 +695,15 @@ function yatco_full_import( $token ) {
     $import_lock = get_option( 'yatco_import_lock', false );
     $lock_process_id = get_option( 'yatco_import_process_id', false );
     
+    yatco_log( "Full Import: Lock check - Lock exists: " . ( $import_lock !== false ? 'YES (' . $import_lock . ', age: ' . ( time() - intval( $import_lock ) ) . 's)' : 'NO' ) . ", Lock PID: " . ( $lock_process_id !== false ? $lock_process_id : 'NONE' ) . ", This PID: {$process_id}", 'debug' );
+    
     if ( $import_lock !== false ) {
         $lock_time = intval( $import_lock );
         $lock_age = time() - $lock_time;
         
         // Check if lock belongs to this process (same process ID)
         $is_same_process = ( $lock_process_id !== false && strval( $lock_process_id ) === strval( $process_id ) );
+        yatco_log( "Full Import: Lock analysis - Age: {$lock_age}s, Same process: " . ( $is_same_process ? 'YES' : 'NO' ), 'debug' );
         
         // If lock is older than 10 minutes, assume the import process died and release the lock
         if ( $lock_age > 600 ) {
@@ -716,20 +726,34 @@ function yatco_full_import( $token ) {
     update_option( 'yatco_import_process_id', $process_id, false );
     yatco_log( "Full Import: Import lock acquired (Process ID: {$process_id})", 'info' );
     
+    // Verify stop flag is cleared
+    $stop_flag_after_lock = get_option( 'yatco_import_stop_flag', false );
+    if ( $stop_flag_after_lock !== false ) {
+        yatco_log( "Full Import: WARNING - Stop flag still set after lock acquisition (value: {$stop_flag_after_lock}), clearing it", 'warning' );
+        delete_option( 'yatco_import_stop_flag' );
+        delete_transient( 'yatco_cache_warming_stop' );
+    }
+    
     $stop_flag = get_option( 'yatco_import_stop_flag', false );
+    $stop_flag_source = 'option';
     if ( $stop_flag === false ) {
         $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+        $stop_flag_source = 'transient';
     }
     if ( $stop_flag !== false ) {
-        yatco_log( 'Full Import: Stop flag detected, cancelling', 'warning' );
+        yatco_log( "Full Import: Stop flag detected BEFORE fetching vessel IDs (source: {$stop_flag_source}, value: {$stop_flag}), cancelling immediately", 'warning' );
         delete_option( 'yatco_import_stop_flag' );
         delete_transient( 'yatco_cache_warming_stop' );
         require_once YATCO_PLUGIN_DIR . 'includes/yatco-progress.php';
         yatco_clear_import_status( 'full' );
         delete_option( 'yatco_import_lock' ); // Release lock
         delete_option( 'yatco_import_process_id' ); // Release process ID
+        delete_option( 'yatco_import_using_fastcgi' );
         yatco_update_import_status_message( 'Full Import cancelled.' );
+        yatco_log( "Full Import: ========== IMPORT CANCELLED (Stop flag detected before start) ==========", 'warning' );
         return;
+    } else {
+        yatco_log( "Full Import: Stop flag check passed - no stop flag detected", 'debug' );
     }
     
     require_once YATCO_PLUGIN_DIR . 'includes/yatco-progress.php';
@@ -900,16 +924,20 @@ function yatco_full_import( $token ) {
     yatco_log( "Full Import: Processing {$total_to_process} vessels. Batch size: {$batch_size}, Delay between batches: {$delay_seconds}s, Delay between items: {$delay_between_items}s", 'info' );
     
     $batch_number = 0;
+    yatco_log( "Full Import: Starting batch loop - {$total_to_process} vessels to process, batch size: {$batch_size}", 'info' );
+    
     foreach ( array_chunk( $vessel_ids, $batch_size ) as $batch ) {
         $batch_number++;
         
         // CRITICAL: Check stop flag FIRST before each batch (check both option and transient)
         $stop_flag = get_option( 'yatco_import_stop_flag', false );
+        $stop_flag_source = 'option';
         if ( $stop_flag === false ) {
             $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+            $stop_flag_source = 'transient';
         }
         if ( $stop_flag !== false ) {
-            yatco_log( "🛑 Full Import: Stop flag detected at batch {$batch_number}, stopping immediately", 'warning' );
+            yatco_log( "🛑 Full Import: Stop flag detected at batch {$batch_number} START (source: {$stop_flag_source}, value: {$stop_flag}), stopping immediately", 'warning' );
             // Save progress before stopping
             $current_position = $resume_from_index + $attempted;
             $percent = $total_to_process > 0 ? round( ( $attempted / $total_to_process ) * 100, 1 ) : 0;
@@ -932,56 +960,52 @@ function yatco_full_import( $token ) {
             delete_option( 'yatco_import_lock' );
             delete_option( 'yatco_import_process_id' );
             delete_option( 'yatco_import_using_fastcgi' );
+            yatco_log( "Full Import: ========== IMPORT STOPPED BY USER at batch {$batch_number} ==========", 'warning' );
             return;
         }
         
         // CRITICAL: Check if this process still owns the lock before each batch
         // This prevents multiple imports from running simultaneously
         $lock_process_id = get_option( 'yatco_import_process_id', false );
+        $current_lock = get_option( 'yatco_import_lock', false );
+        yatco_log( "Full Import: Batch {$batch_number} - Lock check - Lock PID: " . ( $lock_process_id !== false ? $lock_process_id : 'NONE' ) . ", This PID: {$process_id}, Lock exists: " . ( $current_lock !== false ? 'YES' : 'NO' ), 'debug' );
+        
         // Use loose comparison to handle string vs int PID differences
         if ( $lock_process_id !== false && strval( $lock_process_id ) !== strval( $process_id ) ) {
             yatco_log( "Full Import: Lock owned by different process ({$lock_process_id} vs {$process_id}) at batch {$batch_number}, stopping to prevent progress conflicts", 'warning' );
+            yatco_log( "Full Import: ========== IMPORT STOPPED (Lock ownership conflict) ==========", 'warning' );
             return; // Another process owns the lock, stop this one immediately
         }
         
-        // Also check if lock still exists (might have been released)
-        $current_lock = get_option( 'yatco_import_lock', false );
-        if ( $current_lock === false ) {
-            yatco_log( "Full Import: Import lock was released at batch {$batch_number}, stopping", 'warning' );
-            return; // Lock was released (probably by stop button), stop this import
-        }
+        // Note: We don't check if lock exists here because the stop button sets a stop flag
+        // instead of releasing the lock. The lock will be released when we detect the stop flag above.
         
         // Reset execution time limit periodically to prevent timeout
         @set_time_limit( 300 ); // Reset to 5 minutes for each batch
         
-        yatco_log( "Full Import: Starting batch {$batch_number} (" . count( $batch ) . " vessels)", 'info' );
-        
-            // Check stop flag (check both option and transient) - DON'T DELETE IT, keep it so it persists
-        $stop_flag = get_option( 'yatco_import_stop_flag', false );
-        if ( $stop_flag === false ) {
-            $stop_flag = get_transient( 'yatco_cache_warming_stop' );
-        }
-        if ( $stop_flag !== false ) {
-                yatco_log( '🛑 Full Import: Stop flag detected in batch, cancelling immediately', 'warning' );
-            yatco_clear_import_status( 'full' );
-            yatco_update_import_status_message( 'Full Import stopped by user.' );
-                // DON'T delete stop flag - keep it so it can be checked again if import continues
-            return;
-        }
+        yatco_log( "Full Import: Starting batch {$batch_number} (" . count( $batch ) . " vessels) - Vessel IDs: " . implode( ', ', $batch ), 'info' );
         
         foreach ( $batch as $vessel_id ) {
             // Check stop flag (check both option and transient) - DON'T DELETE IT
             $stop_flag = get_option( 'yatco_import_stop_flag', false );
+            $stop_flag_source = 'option';
             if ( $stop_flag === false ) {
                 $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+                $stop_flag_source = 'transient';
             }
             if ( $stop_flag !== false ) {
-                yatco_log( '🛑 Full Import: Stop flag detected before vessel import, cancelling immediately', 'warning' );
+                yatco_log( "🛑 Full Import: Stop flag detected before vessel {$vessel_id} import (source: {$stop_flag_source}, value: {$stop_flag}), cancelling immediately", 'warning' );
                 yatco_clear_import_status( 'full' );
                 yatco_update_import_status_message( 'Full Import stopped by user.', 60 );
+                delete_option( 'yatco_import_lock' );
+                delete_option( 'yatco_import_process_id' );
+                delete_option( 'yatco_import_using_fastcgi' );
+                yatco_log( "Full Import: ========== IMPORT STOPPED BY USER before vessel {$vessel_id} ==========", 'warning' );
                 // DON'T delete stop flag - keep it so it can be checked again
                 return;
             }
+            
+            yatco_log( "Full Import: Processing vessel {$vessel_id} (batch {$batch_number}, position {$attempted}/{$total_to_process})", 'debug' );
             
             // Flush output so stop button can be processed (when running directly)
             if ( ob_get_level() > 0 ) {
@@ -998,10 +1022,13 @@ function yatco_full_import( $token ) {
                     usleep( $chunk_size );
                     // Check stop flag every chunk (check both option and transient)
                     $stop_flag = get_option( 'yatco_import_stop_flag', false );
+                    $stop_flag_source = 'option';
                     if ( $stop_flag === false ) {
                         $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+                        $stop_flag_source = 'transient';
                     }
                     if ( $stop_flag !== false ) {
+                        yatco_log( "🛑 Full Import: Stop flag detected during delay for vessel {$vessel_id} (source: {$stop_flag_source}), cancelling", 'warning' );
                         yatco_log( '🛑 Full Import: Stop flag detected during delay, cancelling immediately', 'warning' );
                         yatco_clear_import_status( 'full' );
                         yatco_update_import_status_message( 'Full Import stopped by user.', 60 );
@@ -1014,20 +1041,25 @@ function yatco_full_import( $token ) {
             // Import full vessel data
             // CRITICAL: Check stop flag ONE MORE TIME right before starting import (most important check)
             $stop_flag = get_option( 'yatco_import_stop_flag', false );
+            $stop_flag_source = 'option';
             if ( $stop_flag === false ) {
                 $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+                $stop_flag_source = 'transient';
             }
             if ( $stop_flag !== false ) {
-                yatco_log( '🛑 Full Import: Stop flag detected right before vessel import, cancelling immediately', 'warning' );
+                yatco_log( "🛑 Full Import: Stop flag detected RIGHT BEFORE vessel {$vessel_id} import (source: {$stop_flag_source}, value: {$stop_flag}), cancelling immediately", 'warning' );
                 yatco_clear_import_status( 'full' );
                 yatco_update_import_status_message( 'Full Import stopped by user.', 60 );
                 delete_option( 'yatco_import_lock' );
                 delete_option( 'yatco_import_process_id' );
+                delete_option( 'yatco_import_using_fastcgi' );
+                yatco_log( "Full Import: ========== IMPORT STOPPED BY USER right before vessel {$vessel_id} ==========", 'warning' );
                 return;
             }
             
             // Increment attempted counter BEFORE processing (shows progress even if import fails)
             $attempted++;
+            yatco_log( "Full Import: About to import vessel {$vessel_id} (attempted: {$attempted}, processed: {$processed}, failed: {$failed})", 'debug' );
             $vessel_position = $resume_from_index + $attempted;
             // Try to get vessel name from existing post if available (for better log visibility)
             $vessel_name_display = '';
@@ -1168,11 +1200,13 @@ function yatco_full_import( $token ) {
             
             // Check stop flag after import (check both option and transient) - DON'T DELETE IT
             $stop_flag = get_option( 'yatco_import_stop_flag', false );
+            $stop_flag_source = 'option';
             if ( $stop_flag === false ) {
                 $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+                $stop_flag_source = 'transient';
             }
             if ( $stop_flag !== false ) {
-                yatco_log( '🛑 Full Import: Stop flag detected after vessel import, cancelling immediately', 'warning' );
+                yatco_log( "🛑 Full Import: Stop flag detected AFTER vessel {$vessel_id} import (source: {$stop_flag_source}, value: {$stop_flag}), cancelling immediately", 'warning' );
                 yatco_clear_import_status( 'full' );
                 yatco_update_import_status_message( 'Full Import stopped by user.' );
                 // DON'T delete stop flag - keep it so it can be checked again
@@ -1322,27 +1356,35 @@ function yatco_full_import( $token ) {
         
         // Delay between batches - check stop flag during delay
         if ( $attempted < $total_to_process ) {
+            yatco_log( "Full Import: Starting {$delay_seconds}s delay between batches (batch {$batch_number} complete)", 'debug' );
             // Break delay into 1-second chunks and check stop flag between chunks
             for ( $i = 0; $i < $delay_seconds; $i++ ) {
                 sleep( 1 );
                 // Check stop flag every second (check both option and transient)
                 $stop_flag = get_option( 'yatco_import_stop_flag', false );
+                $stop_flag_source = 'option';
                 if ( $stop_flag === false ) {
                     $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+                    $stop_flag_source = 'transient';
                 }
                 if ( $stop_flag !== false ) {
-                    yatco_log( '🛑 Full Import: Stop flag detected during batch delay, cancelling', 'warning' );
+                    yatco_log( "🛑 Full Import: Stop flag detected during batch delay (second {$i}/{$delay_seconds}, source: {$stop_flag_source}, value: {$stop_flag}), cancelling", 'warning' );
                     delete_transient( 'yatco_import_progress' );
                     wp_cache_delete( 'yatco_import_progress', 'transient' );
                     delete_option( 'yatco_import_lock' ); // Release lock
                     delete_option( 'yatco_import_process_id' ); // Release process ID
+                    delete_option( 'yatco_import_using_fastcgi' );
                     yatco_update_import_status_message( 'Full Import stopped by user.' );
+                    yatco_log( "Full Import: ========== IMPORT STOPPED BY USER during batch delay ==========", 'warning' );
                     // DON'T delete stop flag here - it's handled by the stop handler
                     return;
                 }
             }
+            yatco_log( "Full Import: Delay between batches complete, continuing to next batch", 'debug' );
         }
     }
+    
+    yatco_log( "Full Import: Batch loop completed - processed: {$processed}, attempted: {$attempted}, failed: {$failed}", 'info' );
     
     // Check if we've completed all vessels (use attempted, not processed, since we need to process all even if some fail)
     if ( $attempted >= $total_to_process ) {
@@ -1368,6 +1410,8 @@ function yatco_full_import( $token ) {
         delete_option( 'yatco_import_process_id' );
         delete_option( 'yatco_import_using_fastcgi' ); // Clean up fastcgi flag
         yatco_log( "Full Import: Import lock released (Process ID: {$process_id})", 'info' );
+        yatco_log( "Full Import: ========== FULL IMPORT COMPLETED SUCCESSFULLY (Process ID: {$process_id}) ==========", 'info' );
+        yatco_log( "Full Import: ========== FULL IMPORT COMPLETED SUCCESSFULLY (Process ID: {$process_id}) ==========", 'info' );
     } else {
         // Import incomplete - save progress and set auto-resume flag
         // NOTE: We do NOT release the lock here - keep it so auto-resume can continue this same import

@@ -90,8 +90,13 @@ add_action( 'yatco_full_import_hook', function() {
     }
     
     // Clear any existing stop flag before starting new import
+    // This is CRITICAL - if stop flag is still set from previous stop, import will stop immediately
+    $had_stop_flag = get_option( 'yatco_import_stop_flag', false );
+    $had_stop_transient = get_transient( 'yatco_cache_warming_stop' );
     delete_option( 'yatco_import_stop_flag' );
     delete_transient( 'yatco_cache_warming_stop' );
+    wp_cache_delete( 'yatco_import_stop_flag', 'options' );
+    yatco_log( "Full Import: Cleared stop flags before starting - Had stop flag: " . ( $had_stop_flag !== false ? 'YES (' . $had_stop_flag . ')' : 'NO' ) . ", Had transient: " . ( $had_stop_transient !== false ? 'YES' : 'NO' ), 'info' );
     
     // Set import lock
     update_option( 'yatco_import_lock', time(), false );

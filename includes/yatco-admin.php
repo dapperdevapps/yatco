@@ -217,13 +217,21 @@ function yatco_options_page() {
             wp_cache_delete( 'yatco_daily_sync_progress', 'transient' );
             yatco_log( '🛑 IMPORT STOP: Progress cleared from cache and database', 'warning' );
             
-            // Release import lock
-            delete_option( 'yatco_import_lock' );
-            delete_option( 'yatco_import_process_id' );
+            // DON'T release the lock here - let the import process release it when it detects the stop flag
+            // This prevents race conditions where the lock is released but import is still running
+            // delete_option( 'yatco_import_lock' );
+            // delete_option( 'yatco_import_process_id' );
+            // delete_option( 'yatco_import_using_fastcgi' );
+            
+            // Clear progress from wp_options (not just transients)
+            require_once YATCO_PLUGIN_DIR . 'includes/yatco-progress.php';
+            yatco_clear_import_status( 'full' );
+            yatco_clear_import_status( 'daily_sync' );
+            yatco_clear_import_status_message();
             
             // Update status
-            set_transient( 'yatco_cache_warming_status', 'Import stopped by user.', 300 );
-            yatco_log( '🛑 IMPORT STOP COMPLETE: All stop actions completed. Import will stop at next checkpoint.', 'warning' );
+            yatco_update_import_status_message( 'Import stopped by user. Import will stop at the next checkpoint.', 300 );
+            yatco_log( '🛑 IMPORT STOP COMPLETE: Stop flag set. Import will stop at next checkpoint and release lock.', 'warning' );
             
             // Redirect to prevent form resubmission
             wp_safe_redirect( admin_url( 'options-general.php?page=yatco_api&tab=import&stopped=1' ) );
@@ -376,8 +384,13 @@ function yatco_options_page() {
                     }
                     
                     // Clear any existing stop flag before starting new import
+                    // This is CRITICAL - if stop flag is still set from previous stop, import will stop immediately
+                    $had_stop_flag = get_option( 'yatco_import_stop_flag', false );
+                    $had_stop_transient = get_transient( 'yatco_cache_warming_stop' );
                     delete_option( 'yatco_import_stop_flag' );
                     delete_transient( 'yatco_cache_warming_stop' );
+                    wp_cache_delete( 'yatco_import_stop_flag', 'options' );
+                    yatco_log( "Full Import Direct: Cleared stop flags before starting - Had stop flag: " . ( $had_stop_flag !== false ? 'YES (' . $had_stop_flag . ')' : 'NO' ) . ", Had transient: " . ( $had_stop_transient !== false ? 'YES' : 'NO' ), 'info' );
                     
                     // Set import lock
                     update_option( 'yatco_import_lock', time(), false );
@@ -723,10 +736,11 @@ function yatco_options_page() {
             wp_cache_delete( 'yatco_daily_sync_progress', 'transient' );
             yatco_log( '🛑 IMPORT STOP: Progress cleared from cache and database', 'warning' );
             
-            // Release import lock
-            delete_option( 'yatco_import_lock' );
-            delete_option( 'yatco_import_process_id' );
-            delete_option( 'yatco_import_using_fastcgi' );
+            // DON'T release the lock here - let the import process release it when it detects the stop flag
+            // This prevents race conditions where the lock is released but import is still running
+            // delete_option( 'yatco_import_lock' );
+            // delete_option( 'yatco_import_process_id' );
+            // delete_option( 'yatco_import_using_fastcgi' );
             
             // Clear progress from wp_options (not just transients)
             require_once YATCO_PLUGIN_DIR . 'includes/yatco-progress.php';
@@ -735,8 +749,8 @@ function yatco_options_page() {
             yatco_clear_import_status_message();
             
             // Update status
-            yatco_update_import_status_message( 'Import stopped by user.', 300 );
-            yatco_log( '🛑 IMPORT STOP COMPLETE: All stop actions completed. Import will stop at next checkpoint.', 'warning' );
+            yatco_update_import_status_message( 'Import stopped by user. Import will stop at the next checkpoint.', 300 );
+            yatco_log( '🛑 IMPORT STOP COMPLETE: Stop flag set. Import will stop at next checkpoint and release lock.', 'warning' );
             
             // Redirect to prevent form resubmission
             wp_safe_redirect( admin_url( 'options-general.php?page=yatco_api&tab=status&stopped=1' ) );

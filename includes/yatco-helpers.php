@@ -205,15 +205,17 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
     
     // Check stop flag before starting import (check both option and transient) - DON'T DELETE IT
     $stop_flag = get_option( 'yatco_import_stop_flag', false );
+    $stop_flag_source = 'option';
     if ( $stop_flag === false ) {
         $stop_flag = get_transient( 'yatco_cache_warming_stop' );
+        $stop_flag_source = 'transient';
     }
     if ( $stop_flag !== false ) {
-        // Don't log here - just return immediately to prevent any log entries
+        yatco_log( "Import: Stop flag detected before starting import for vessel {$vessel_id} (source: {$stop_flag_source}, value: {$stop_flag}), returning immediately", 'warning' );
         return new WP_Error( 'import_stopped', 'Import stopped by user.' );
     }
     
-    yatco_log( "Import: Starting API fetch for vessel {$vessel_id}", 'debug' );
+    yatco_log( "Import: ========== Starting import for vessel {$vessel_id} ==========", 'debug' );
     $api_start_time = time();
     
     // Try Vessel ID first (activevesselmlsid might return Vessel IDs or MLS IDs)
