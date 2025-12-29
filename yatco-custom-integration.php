@@ -51,6 +51,10 @@ add_action( 'yatco_warm_cache_hook', 'yatco_warm_cache_function' );
 add_action( 'yatco_full_import_hook', function() {
     yatco_log( 'Full Import: Hook triggered via wp-cron', 'info' );
     
+    // CRITICAL FIX #1: Ignore user abort - we're running in background via wp-cron
+    // Connection state should not affect background execution
+    ignore_user_abort( true );
+    
     // Get process ID for lock tracking
     $process_id = getmypid();
     if ( ! $process_id ) {

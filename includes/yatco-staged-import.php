@@ -601,34 +601,10 @@ function yatco_full_import( $token ) {
             return;
         }
         
-        // Check if connection was aborted (browser closed, timeout, etc.)
-        // BUT: Ignore if we're using fastcgi_finish_request (expected connection close)
-        $using_fastcgi = get_option( 'yatco_import_using_fastcgi', false );
-        if ( connection_aborted() && $using_fastcgi === false ) {
-            if ( $progress !== false && is_array( $progress ) ) {
-                $processed = isset( $progress['processed'] ) ? intval( $progress['processed'] ) : ( isset( $progress['last_processed'] ) ? intval( $progress['last_processed'] ) : 0 );
-                $total = isset( $progress['total'] ) ? intval( $progress['total'] ) : 0;
-                $last_vessel = isset( $progress['last_vessel_id'] ) ? $progress['last_vessel_id'] : 'unknown';
-                yatco_log( "Full Import: CONNECTION ABORTED (shutdown handler) - Stopped unexpectedly at {$processed}/{$total} vessels (last vessel: {$last_vessel})", 'error' );
-                
-                // Ensure auto-resume is enabled
-                update_option( 'yatco_import_auto_resume', time(), false );
-                yatco_update_import_status_message( "Full Import: Connection aborted/lost. Stopped at {$processed}/{$total} vessels (last: {$last_vessel}). Auto-resume enabled." );
-                yatco_log( "Full Import: Auto-resume flag set due to connection abort", 'info' );
-            } else {
-                yatco_log( 'Full Import: CONNECTION ABORTED (shutdown handler) - Stopped unexpectedly (no progress data available)', 'error' );
-                update_option( 'yatco_import_auto_resume', time(), false );
-                yatco_update_import_status_message( 'Full Import: Connection aborted/lost. Auto-resume enabled.' );
-            }
-            delete_option( 'yatco_import_lock' ); // Release lock
-            delete_option( 'yatco_import_process_id' ); // Release process ID
-            return;
-        } elseif ( connection_aborted() && $using_fastcgi !== false ) {
-            // Connection was closed but it's expected (fastcgi_finish_request), just log it and continue
-            // Note: This code path shouldn't be hit anymore since we're using wp-cron instead of fastcgi
-            yatco_log( 'Full Import: Connection closed (expected - using fastcgi_finish_request), continuing in background', 'debug' );
-            // DO NOT return here - the import should continue running
-        }
+        // CRITICAL FIX #2: Removed connection_aborted() check from shutdown handler
+        // Connection state is irrelevant in wp-cron context (no HTTP connection)
+        // We only log REAL fatal PHP errors, not normal shutdowns or connection closures
+        // Normal shutdown = import completed successfully or was stopped normally
         
         // Check if we hit execution time limit
         $max_execution_time = ini_get( 'max_execution_time' );
@@ -1137,35 +1113,11 @@ function yatco_full_import( $token ) {
                     yatco_log( "Full Import: Vessel {$vessel_id} took {$vessel_elapsed} seconds (exceeded {$vessel_max_time}s limit), but completed", 'warning' );
                 }
                 
-                // Check if connection was aborted (browser closed, timeout, etc.)
-                // BUT: Ignore if we're using fastcgi_finish_request (expected connection close)
-                $using_fastcgi = get_option( 'yatco_import_using_fastcgi', false );
-                if ( connection_aborted() && $using_fastcgi === false ) {
-                    yatco_log( "Full Import: Connection aborted while processing vessel {$vessel_id}. Saving progress...", 'warning' );
-                    // Save progress before returning (using current attempted count for position)
-                    $current_position = $resume_from_index + $attempted;
-                    $percent = $total_to_process > 0 ? round( ( $attempted / $total_to_process ) * 100, 1 ) : 0;
-                    $pending = $total_to_process - $attempted;
-                    $progress_data = array(
-                        'last_processed'   => $current_position, // Position based on attempted
-                        'processed'        => $processed,        // Actual count of successfully processed vessels
-                        'failed'           => $failed,           // Count of failed vessel imports
-                        'attempted'        => $attempted,        // Count of vessels attempted
-                        'pending'          => $pending,          // Count of vessels remaining to process
-                        'total'            => $total_to_process, // Total vessels to process (new vessels only)
-                        'total_from_api'   => $total_from_api,   // Total vessels from API (before filtering)
-                        'already_imported' => $already_imported_count, // Vessels that were already imported
-                        'timestamp'        => time(),
-                        'percent'          => $percent,
-                        'last_vessel_id'   => $vessel_id,        // Save last vessel ID for debugging
-                    );
-                    // Use wp_options for more reliable progress storage
-                    yatco_update_import_status( $progress_data, 'full' );
-                    yatco_update_import_status_message( "Full Import: Connection lost. Attempted {$attempted} of {$total_to_process} vessels ({$percent}%), {$processed} successful. Progress saved - auto-resume enabled." );
-                    yatco_log( "Full Import: Progress saved before connection abort: position {$current_position}, attempted {$attempted}, processed {$processed}, last vessel {$vessel_id}", 'info' );
-                    update_option( 'yatco_import_auto_resume', time(), false ); // Enable auto-resume
-                    return;
-                }
+                // CRITICAL FIX #1: Removed connection_aborted() check
+                // We're running via wp-cron (background), so connection state is irrelevant
+                // Checking connection_aborted() after closing the connection (fastcgi_finish_request)
+                // was causing the import to abort itself incorrectly
+                // Since ignore_user_abort(true) is set at the start of the hook, we ignore connection state
             } catch ( Exception $e ) {
                 yatco_log( "Full Import: Exception while importing vessel {$vessel_id}: " . $e->getMessage() . ' | Trace: ' . $e->getTraceAsString(), 'error' );
                 $import_result = new WP_Error( 'import_exception', $e->getMessage() );

@@ -362,44 +362,38 @@ function yatco_options_page() {
                     'timestamp' => time(),
                     'updated' => time(),
                 ), 'full' );
-                yatco_update_import_status_message( 'Full Import: Starting import in background...' );
+                yatco_update_import_status_message( 'Full Import: Scheduled - will start when wp-cron executes (next: :19 or :49 past hour)' );
                 yatco_log( 'Full Import Direct: Initial progress saved for UI display', 'info' );
                 
-                // Trigger the import hook directly via AJAX
-                // Use a blocking request with short timeout to ensure it starts, then redirect
-                $ajax_url = admin_url( 'admin-ajax.php' );
-                $ajax_nonce = wp_create_nonce( 'yatco_run_full_import_ajax' );
+                // Since wp-cron.php returns 404 via HTTP, schedule the event and use spawn_cron() to trigger it
+                // spawn_cron() uses a local request that should work even if HTTP access doesn't
+                yatco_log( 'Full Import Direct: Scheduling import via wp-cron for immediate execution', 'info' );
                 
-                yatco_log( 'Full Import Direct: Triggering import via AJAX (immediate execution)', 'info' );
+                // Schedule the import to run immediately via wp-cron
+                $scheduled = wp_schedule_single_event( time(), 'yatco_full_import_hook' );
+                if ( is_wp_error( $scheduled ) ) {
+                    yatco_log( 'Full Import Direct: ERROR - Failed to schedule wp-cron event: ' . $scheduled->get_error_message(), 'error' );
+                    yatco_update_import_status_message( 'Full Import Error: Failed to schedule import. ' . $scheduled->get_error_message() );
+                    wp_safe_redirect( admin_url( 'options-general.php?page=yatco_api&tab=status&import_error=schedule_failed' ) );
+                    exit;
+                }
+                yatco_log( 'Full Import Direct: Import scheduled via wp-cron hook', 'info' );
                 
-                // Include cookies for authentication in AJAX request
-                $cookies = array();
-                foreach ( $_COOKIE as $name => $value ) {
-                    $cookies[] = new WP_Http_Cookie( array(
-                        'name' => $name,
-                        'value' => $value,
-                    ) );
+                // Try to trigger wp-cron immediately using spawn_cron()
+                // This makes a local HTTP request which should work even if external requests don't
+                if ( ! defined( 'DISABLE_WP_CRON' ) || ! DISABLE_WP_CRON ) {
+                    if ( function_exists( 'spawn_cron' ) ) {
+                        yatco_log( 'Full Import Direct: Triggering wp-cron via spawn_cron()', 'info' );
+                        $spawned = spawn_cron();
+                        yatco_log( 'Full Import Direct: spawn_cron() returned: ' . ( $spawned ? 'true' : 'false' ), 'info' );
+                    } else {
+                        yatco_log( 'Full Import Direct: spawn_cron() function not available', 'warning' );
+                    }
                 }
                 
-                // Make AJAX request (blocking with 1s timeout to ensure it starts processing)
-                $ajax_result = wp_remote_post( $ajax_url, array(
-                    'timeout' => 1,
-                    'blocking' => true,
-                    'cookies' => $cookies,
-                    'body' => array(
-                        'action' => 'yatco_run_full_import_ajax',
-                        'nonce' => $ajax_nonce,
-                    ),
-                ) );
-                
-                if ( is_wp_error( $ajax_result ) ) {
-                    yatco_log( 'Full Import Direct: AJAX request error: ' . $ajax_result->get_error_message(), 'warning' );
-                } else {
-                    $code = wp_remote_retrieve_response_code( $ajax_result );
-                    yatco_log( "Full Import Direct: AJAX request completed (HTTP {$code})", 'info' );
-                }
-                
-                yatco_log( 'Full Import Direct: AJAX request sent, redirecting to status page', 'info' );
+                // Even if spawn_cron() doesn't work, the event is scheduled and will run
+                // when the server cron executes wp-cron.php (next run at :19 or :49)
+                yatco_log( 'Full Import Direct: Import scheduled - will execute when wp-cron runs (next: :19 or :49 past hour)', 'info' );
                 
                 // Redirect immediately to status page
                 wp_safe_redirect( admin_url( 'options-general.php?page=yatco_api&tab=status&import_started=1' ) );
