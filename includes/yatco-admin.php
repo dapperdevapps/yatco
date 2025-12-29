@@ -379,21 +379,23 @@ function yatco_options_page() {
                 }
                 yatco_log( 'Full Import Direct: Import scheduled via wp-cron hook', 'info' );
                 
-                // Try to trigger wp-cron immediately using spawn_cron()
-                // This makes a local HTTP request which should work even if external requests don't
-                if ( ! defined( 'DISABLE_WP_CRON' ) || ! DISABLE_WP_CRON ) {
-                    if ( function_exists( 'spawn_cron' ) ) {
-                        yatco_log( 'Full Import Direct: Triggering wp-cron via spawn_cron()', 'info' );
-                        $spawned = spawn_cron();
-                        yatco_log( 'Full Import Direct: spawn_cron() returned: ' . ( $spawned ? 'true' : 'false' ), 'info' );
+                // CRITICAL: Immediately spawn wp-cron to run the scheduled event
+                // This forces WordPress to execute cron jobs right away instead of waiting
+                // spawn_cron() makes a non-blocking local HTTP request that works even if wp-cron.php is not publicly accessible
+                if ( function_exists( 'spawn_cron' ) ) {
+                    yatco_log( 'Full Import Direct: Triggering wp-cron immediately via spawn_cron()', 'info' );
+                    $spawned = spawn_cron();
+                    yatco_log( 'Full Import Direct: spawn_cron() executed (returned: ' . ( $spawned ? 'true' : 'false' ) . ')', 'info' );
+                    if ( $spawned ) {
+                        yatco_update_import_status_message( 'Full Import: Scheduled and cron spawned - import should start within seconds' );
                     } else {
-                        yatco_log( 'Full Import Direct: spawn_cron() function not available', 'warning' );
+                        yatco_log( 'Full Import Direct: spawn_cron() returned false - event scheduled but may wait for server cron', 'warning' );
+                        yatco_update_import_status_message( 'Full Import: Scheduled - will execute when wp-cron runs (next: :19 or :49 past hour)' );
                     }
+                } else {
+                    yatco_log( 'Full Import Direct: spawn_cron() function not available - event scheduled but may wait for server cron', 'warning' );
+                    yatco_update_import_status_message( 'Full Import: Scheduled - will execute when wp-cron runs (next: :19 or :49 past hour)' );
                 }
-                
-                // Even if spawn_cron() doesn't work, the event is scheduled and will run
-                // when the server cron executes wp-cron.php (next run at :19 or :49)
-                yatco_log( 'Full Import Direct: Import scheduled - will execute when wp-cron runs (next: :19 or :49 past hour)', 'info' );
                 
                 // Redirect immediately to status page
                 wp_safe_redirect( admin_url( 'options-general.php?page=yatco_api&tab=status&import_started=1' ) );

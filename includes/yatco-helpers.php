@@ -395,25 +395,49 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
         $loa = $basic['LOAFeet'];
     }
 
-    // Extract Vessel ID from API response (to ensure we have the correct one)
-    // Use the one from API response if available, otherwise use the one passed in
-    $extracted_vessel_id = $vessel_id; // Default to the one we passed in
-    if ( ! empty( $result['VesselID'] ) ) {
-        $extracted_vessel_id = intval( $result['VesselID'] );
-    } elseif ( ! empty( $basic['VesselID'] ) ) {
-        $extracted_vessel_id = intval( $basic['VesselID'] );
-    }
-    // Update vessel_id to use the extracted one (in case API returns a different/corrected ID)
-    $vessel_id = $extracted_vessel_id;
+    // DATA INTEGRITY FIX: Extract IDs ONLY from what the API actually provides
+    // Never assume defaults or use historical values - trust the API payload RIGHT NOW
+    $api_vessel_id = null;
+    $api_mlsid = null;
     
-    // MLSID: From Result or BasicInfo. Check multiple sources for partial data.
-    // IMPORTANT: Extract MLS ID separately - we want BOTH IDs for duplicate prevention
-    if ( ! empty( $result['MLSID'] ) ) {
-        $mlsid = $result['MLSID'];
-    } elseif ( ! empty( $basic['MLSID'] ) ) {
-        $mlsid = $basic['MLSID'];
+    // Extract Vessel ID from API response ONLY if provided
+    if ( ! empty( $result['VesselID'] ) ) {
+        $api_vessel_id = intval( $result['VesselID'] );
+    } elseif ( ! empty( $basic['VesselID'] ) ) {
+        $api_vessel_id = intval( $basic['VesselID'] );
     }
-    // Note: We do NOT fallback to VesselID for MLSID - they are different identifiers
+    
+    // Extract MLS ID from API response ONLY if provided
+    if ( ! empty( $result['MLSID'] ) ) {
+        $api_mlsid = $result['MLSID'];
+    } elseif ( ! empty( $basic['MLSID'] ) ) {
+        $api_mlsid = $basic['MLSID'];
+    }
+    
+    // CRITICAL: Choose exactly ONE identifier for this listing RIGHT NOW
+    // Rule: Use Vessel ID if available, otherwise use MLS ID, otherwise skip
+    $primary_identifier = null;
+    $primary_identifier_type = null;
+    
+    if ( ! empty( $api_vessel_id ) ) {
+        // API provided a Vessel ID - use it as the primary identifier
+        $primary_identifier = $api_vessel_id;
+        $primary_identifier_type = 'vessel_id';
+        $vessel_id = $api_vessel_id;
+    } elseif ( ! empty( $api_mlsid ) ) {
+        // API did NOT provide Vessel ID, but provided MLS ID - use MLS ID as primary
+        $primary_identifier = $api_mlsid;
+        $primary_identifier_type = 'mlsid';
+        $vessel_id = null; // Explicitly set to null since API didn't provide it
+    } else {
+        // API provided neither ID - skip this listing entirely
+        yatco_log( "Import: Skipping vessel listing - API provided neither Vessel ID nor MLS ID (original ID passed in: {$vessel_id})", 'warning' );
+        return new WP_Error( 'no_identifier', 'API response contains no Vessel ID or MLS ID - cannot identify listing' );
+    }
+    
+    // Store both IDs as provided by API (may be null, that's OK)
+    // We'll preserve existing values when saving if API sends null
+    $mlsid = $api_mlsid; // May be null if API didn't provide it
 
     // Builder/Make: From BasicInfo or Result. Check multiple possible field names for partial data support.
     if ( ! empty( $basic['Builder'] ) ) {
@@ -579,43 +603,55 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
         $desc = yatco_strip_inline_styles_and_classes( $desc );
     }
 
-    // Find existing post by MLSID (primary) or VesselID (fallback).
-    // This ensures we can match and update existing vessels even if MLSID changes or is missing.
+    // Find existing post using the PRIMARY IDENTIFIER we just determined
+    // We search by the identifier that the API provided (vessel_id OR mlsid, not both)
     $post_id = 0;
     
-    // Use lookup maps if provided (for performance optimization during full imports)
-    if ( is_array( $mlsid_lookup ) && ! empty( $mlsid ) && isset( $mlsid_lookup[ $mlsid ] ) ) {
-        $post_id = (int) $mlsid_lookup[ $mlsid ];
-    } elseif ( is_array( $vessel_id_lookup ) && ! empty( $vessel_id ) && isset( $vessel_id_lookup[ intval( $vessel_id ) ] ) ) {
-        $post_id = (int) $vessel_id_lookup[ intval( $vessel_id ) ];
-    }
-    
-    // Fallback to database queries if lookup maps not provided or didn't find a match
-    if ( ! $post_id ) {
-        // Try matching by MLSID first (most reliable identifier).
-        if ( ! empty( $mlsid ) ) {
+    if ( $primary_identifier_type === 'vessel_id' ) {
+        // API provided Vessel ID - search by Vessel ID first, then MLS ID as fallback
+        if ( is_array( $vessel_id_lookup ) && isset( $vessel_id_lookup[ intval( $primary_identifier ) ] ) ) {
+            $post_id = (int) $vessel_id_lookup[ intval( $primary_identifier ) ];
+        } elseif ( is_array( $mlsid_lookup ) && ! empty( $api_mlsid ) && isset( $mlsid_lookup[ $api_mlsid ] ) ) {
+            $post_id = (int) $mlsid_lookup[ $api_mlsid ];
+        } else {
+            // Database lookup by Vessel ID
             $existing = get_posts(
                 array(
                     'post_type'   => 'yacht',
-                    'meta_key'    => 'yacht_mlsid',
-                    'meta_value'  => $mlsid,
+                    'meta_key'    => 'yacht_vessel_id',
+                    'meta_value'  => $primary_identifier,
                     'numberposts' => 1,
                     'fields'      => 'ids',
                 )
             );
             if ( ! empty( $existing ) ) {
                 $post_id = (int) $existing[0];
+            } elseif ( ! empty( $api_mlsid ) ) {
+                // Fallback: try MLS ID if Vessel ID match failed
+                $existing = get_posts(
+                    array(
+                        'post_type'   => 'yacht',
+                        'meta_key'    => 'yacht_mlsid',
+                        'meta_value'  => $api_mlsid,
+                        'numberposts' => 1,
+                        'fields'      => 'ids',
+                    )
+                );
+                if ( ! empty( $existing ) ) {
+                    $post_id = (int) $existing[0];
+                }
             }
         }
-        
-        // Fallback: If MLSID matching failed, try matching by VesselID.
-        // This handles cases where MLSID might be missing or changed.
-        if ( ! $post_id && ! empty( $vessel_id ) ) {
+    } elseif ( $primary_identifier_type === 'mlsid' ) {
+        // API provided ONLY MLS ID (no Vessel ID) - search by MLS ID only
+        if ( is_array( $mlsid_lookup ) && isset( $mlsid_lookup[ $primary_identifier ] ) ) {
+            $post_id = (int) $mlsid_lookup[ $primary_identifier ];
+        } else {
             $existing = get_posts(
                 array(
                     'post_type'   => 'yacht',
-                    'meta_key'    => 'yacht_vessel_id',
-                    'meta_value'  => $vessel_id,
+                    'meta_key'    => 'yacht_mlsid',
+                    'meta_value'  => $primary_identifier,
                     'numberposts' => 1,
                     'fields'      => 'ids',
                 )
@@ -674,13 +710,20 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
             $title_parts[] = trim( $class );
         }
         
-        // Build the title, or fallback to boat name, or vessel ID
+        // Build the title, or fallback to boat name, or identifier
         if ( ! empty( $title_parts ) ) {
             $full_title = implode( ' ', $title_parts );
         } elseif ( ! empty( $name_trimmed ) ) {
             $full_title = $name_trimmed;
         } else {
-            $full_title = 'Yacht ' . $vessel_id;
+            // Fallback: use the primary identifier we determined earlier
+            if ( $primary_identifier_type === 'vessel_id' ) {
+                $full_title = 'Yacht ' . $primary_identifier;
+            } elseif ( $primary_identifier_type === 'mlsid' ) {
+                $full_title = 'Yacht ' . $primary_identifier;
+            } else {
+                $full_title = 'Yacht';
+            }
         }
     }
     
@@ -882,9 +925,32 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
     // Get builder description
     $builder_description = isset( $result['BuilderDescription'] ) ? $result['BuilderDescription'] : ( isset( $misc['BuilderDescription'] ) ? $misc['BuilderDescription'] : '' );
     
-    // Store core meta – these can be mapped to ACF fields.
-    update_post_meta( $post_id, 'yacht_mlsid', $mlsid );
-    update_post_meta( $post_id, 'yacht_vessel_id', $vessel_id ); // Store vessel ID for reference
+    // Store core meta – preserve existing values if API sends null (never overwrite with null)
+    // This prevents data corruption when API payload is incomplete
+    if ( ! empty( $api_vessel_id ) ) {
+        // API provided Vessel ID - always update it
+        update_post_meta( $post_id, 'yacht_vessel_id', $api_vessel_id );
+    } else {
+        // API did NOT provide Vessel ID - preserve existing value if it exists
+        $existing_vessel_id = get_post_meta( $post_id, 'yacht_vessel_id', true );
+        if ( empty( $existing_vessel_id ) ) {
+            // No existing value either - explicitly set to empty (but don't use update_post_meta with empty)
+            // Leave it unset if there's no value from API and no existing value
+        }
+        // If existing_vessel_id exists, we preserve it by not calling update_post_meta
+    }
+    
+    if ( ! empty( $api_mlsid ) ) {
+        // API provided MLS ID - always update it
+        update_post_meta( $post_id, 'yacht_mlsid', $api_mlsid );
+    } else {
+        // API did NOT provide MLS ID - preserve existing value if it exists
+        $existing_mlsid = get_post_meta( $post_id, 'yacht_mlsid', true );
+        if ( empty( $existing_mlsid ) ) {
+            // No existing value either - leave it unset
+        }
+        // If existing_mlsid exists, we preserve it by not calling update_post_meta
+    }
     
     // Store YATCO listing URL for easy access in admin
     // First, try to get URL from API (SEO section or other fields)

@@ -211,15 +211,26 @@ function yatco_stage1_import_ids_and_names( $token ) {
                 $name = 'Vessel ' . $vessel_id;
             }
             
-            $mlsid = isset( $result['MLSID'] ) ? $result['MLSID'] : $vessel_id;
+            // DATA INTEGRITY: Extract IDs ONLY from what API provides - never assume defaults
+            $api_vessel_id = isset( $result['VesselID'] ) ? intval( $result['VesselID'] ) : ( isset( $basic['VesselID'] ) ? intval( $basic['VesselID'] ) : null );
+            $api_mlsid = isset( $result['MLSID'] ) ? $result['MLSID'] : ( isset( $basic['MLSID'] ) ? $basic['MLSID'] : null );
+            
+            // Use what API provided - don't fallback to vessel_id for MLSID (they're different identifiers)
+            $mlsid = $api_mlsid; // May be null, that's OK
             
             // Find or create post - use vessel name exactly as provided by API
+            // Note: Stage 1 uses the original $vessel_id passed in for lookup, but we store what API provides
             $post_id = yatco_find_or_create_vessel_post( $vessel_id, $mlsid, $name );
             
             if ( $post_id ) {
-                // Store minimal data
-                update_post_meta( $post_id, 'yacht_vessel_id', $vessel_id );
-                update_post_meta( $post_id, 'yacht_mlsid', $mlsid );
+                // Store minimal data - preserve existing values if API sends null
+                if ( ! empty( $api_vessel_id ) ) {
+                    update_post_meta( $post_id, 'yacht_vessel_id', $api_vessel_id );
+                } // else: preserve existing value by not updating
+                
+                if ( ! empty( $api_mlsid ) ) {
+                    update_post_meta( $post_id, 'yacht_mlsid', $api_mlsid );
+                } // else: preserve existing value by not updating
                 update_post_meta( $post_id, 'yacht_import_stage', 1 );
                 update_post_meta( $post_id, 'yacht_last_updated', time() );
                 
