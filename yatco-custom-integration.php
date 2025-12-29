@@ -241,21 +241,33 @@ function yatco_ajax_run_full_import_direct() {
 // AJAX handler to trigger Full Import hook (new method - since wp-cron.php returns 404)
 add_action( 'wp_ajax_yatco_run_full_import_ajax', 'yatco_ajax_run_full_import_ajax' );
 function yatco_ajax_run_full_import_ajax() {
+    // Log immediately - even before any checks
+    error_log( '[YATCO AJAX] Handler function called at ' . date( 'Y-m-d H:i:s' ) );
     yatco_log( 'Full Import AJAX: Handler called (before nonce check)', 'info' );
     
     // Verify nonce
-    if ( ! isset( $_POST['nonce'] ) || ! wp_verify_nonce( $_POST['nonce'], 'yatco_run_full_import_ajax' ) ) {
+    if ( ! isset( $_POST['nonce'] ) ) {
+        error_log( '[YATCO AJAX] Nonce not set in POST' );
+        yatco_log( 'Full Import AJAX: Nonce not set in POST', 'error' );
+        wp_send_json_error( array( 'message' => 'Nonce not provided' ) );
+        return;
+    }
+    
+    if ( ! wp_verify_nonce( $_POST['nonce'], 'yatco_run_full_import_ajax' ) ) {
+        error_log( '[YATCO AJAX] Nonce verification failed' );
         yatco_log( 'Full Import AJAX: Nonce verification failed', 'error' );
         wp_send_json_error( array( 'message' => 'Security check failed' ) );
         return;
     }
     
     if ( ! current_user_can( 'manage_options' ) ) {
+        error_log( '[YATCO AJAX] Unauthorized - user cannot manage_options' );
         yatco_log( 'Full Import AJAX: Unauthorized access attempt', 'error' );
         wp_send_json_error( array( 'message' => 'Unauthorized' ) );
         return;
     }
     
+    error_log( '[YATCO AJAX] Authentication passed, triggering hook' );
     yatco_log( 'Full Import AJAX: Handler authenticated, triggering hook', 'info' );
     
     // Send minimal response and close connection to allow background processing
