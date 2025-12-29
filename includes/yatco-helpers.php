@@ -304,6 +304,36 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
         return $full;
     }
     
+    // Check if we got empty/incomplete data (no vessel name is a strong indicator)
+    // If so, try MLS ID conversion to get better data
+    if ( ! is_wp_error( $full ) && is_array( $full ) && empty( $vessel_name_for_log ) ) {
+        yatco_log( "Import: Vessel {$vessel_id} returned data but no vessel name detected, trying MLS ID conversion as fallback", 'info' );
+        
+        // Try converting to get MLS ID and fetch with it
+        $converted_mls_id = yatco_convert_vessel_id_to_mlsid( $token, $vessel_id );
+        if ( ! is_wp_error( $converted_mls_id ) && $converted_mls_id != $vessel_id ) {
+            yatco_log( "Import: Converted Vessel ID {$vessel_id} to MLS ID {$converted_mls_id}, trying fetch with MLS ID for better data", 'info' );
+            $mlsid_full = yatco_fetch_fullspecs_by_mlsid( $token, $converted_mls_id );
+            if ( ! is_wp_error( $mlsid_full ) && ! empty( $mlsid_full ) ) {
+                // Check if MLS ID fetch got better data (has a vessel name)
+                $mlsid_result = isset( $mlsid_full['Result'] ) ? $mlsid_full['Result'] : array();
+                $mlsid_basic  = isset( $mlsid_full['BasicInfo'] ) ? $mlsid_full['BasicInfo'] : array();
+                $mlsid_has_name = ! empty( $mlsid_basic['BoatName'] ) || ! empty( $mlsid_result['VesselName'] );
+                
+                if ( $mlsid_has_name ) {
+                    yatco_log( "Import: Successfully fetched better data using MLS ID {$converted_mls_id}", 'info' );
+                    $full = $mlsid_full;
+                    // Update vessel_name_for_log for logging
+                    if ( ! empty( $mlsid_basic['BoatName'] ) ) {
+                        $vessel_name_for_log = $mlsid_basic['BoatName'];
+                    } elseif ( ! empty( $mlsid_result['VesselName'] ) ) {
+                        $vessel_name_for_log = $mlsid_result['VesselName'];
+                    }
+                }
+            }
+        }
+    }
+    
     // Check stop flag after fetching data (check both option and transient) - DON'T DELETE IT
     $stop_flag = get_option( 'yatco_import_stop_flag', false );
     if ( $stop_flag === false ) {

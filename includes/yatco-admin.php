@@ -191,8 +191,10 @@ function yatco_options_page() {
         if ( isset( $_POST['yatco_stop_import'] ) && check_admin_referer( 'yatco_stop_import', 'yatco_stop_import_nonce' ) ) {
             yatco_log( '🛑 IMPORT STOP REQUESTED: Stop button clicked by user (Import Tab)', 'warning' );
             
-            // Get current progress before clearing
-            $current_progress = get_transient( 'yatco_import_progress' );
+            require_once YATCO_PLUGIN_DIR . 'includes/yatco-progress.php';
+            
+            // Get current progress before clearing (use wp_options, not transients)
+            $current_progress = yatco_get_import_status( 'full' );
             $processed = 0;
             $total = 0;
             if ( $current_progress !== false && is_array( $current_progress ) ) {
@@ -234,8 +236,15 @@ function yatco_options_page() {
             yatco_log( '🛑 IMPORT STOP COMPLETE: Stop flag set. Import will stop at next checkpoint and release lock.', 'warning' );
             
             // Redirect to prevent form resubmission
-            wp_safe_redirect( admin_url( 'options-general.php?page=yatco_api&tab=import&stopped=1' ) );
-            exit;
+            // Only redirect if headers haven't been sent yet
+            if ( ! headers_sent() ) {
+                wp_safe_redirect( admin_url( 'options-general.php?page=yatco_api&tab=import&stopped=1' ) );
+                exit;
+            } else {
+                // Headers already sent, output JavaScript redirect instead
+                echo '<script type="text/javascript">window.location.href="' . esc_js( admin_url( 'options-general.php?page=yatco_api&tab=import&stopped=1' ) ) . '";</script>';
+                exit;
+            }
         }
         
         echo '<div class="yatco-import-section">';
@@ -711,8 +720,10 @@ function yatco_options_page() {
         if ( isset( $_POST['yatco_stop_import'] ) && check_admin_referer( 'yatco_stop_import', 'yatco_stop_import_nonce' ) ) {
             yatco_log( '🛑 IMPORT STOP REQUESTED: Stop button clicked by user (Status Tab)', 'warning' );
             
-            // Get current progress before clearing
-            $current_progress = get_transient( 'yatco_import_progress' );
+            require_once YATCO_PLUGIN_DIR . 'includes/yatco-progress.php';
+            
+            // Get current progress before clearing (use wp_options, not transients)
+            $current_progress = yatco_get_import_status( 'full' );
             $processed = 0;
             $total = 0;
             if ( $current_progress !== false && is_array( $current_progress ) ) {
@@ -754,8 +765,15 @@ function yatco_options_page() {
             yatco_log( '🛑 IMPORT STOP COMPLETE: Stop flag set. Import will stop at next checkpoint and release lock.', 'warning' );
             
             // Redirect to prevent form resubmission
-            wp_safe_redirect( admin_url( 'options-general.php?page=yatco_api&tab=status&stopped=1' ) );
-            exit;
+            // Only redirect if headers haven't been sent yet
+            if ( ! headers_sent() ) {
+                wp_safe_redirect( admin_url( 'options-general.php?page=yatco_api&tab=status&stopped=1' ) );
+                exit;
+            } else {
+                // Headers already sent, output JavaScript redirect instead
+                echo '<script type="text/javascript">window.location.href="' . esc_js( admin_url( 'options-general.php?page=yatco_api&tab=status&stopped=1' ) ) . '";</script>';
+                exit;
+            }
         }
         
         echo '<div class="yatco-status-section">';
@@ -773,10 +791,12 @@ function yatco_options_page() {
         
         // Handle stop import form submission
         if ( isset( $_POST['yatco_stop_import'] ) && check_admin_referer( 'yatco_stop_import', 'yatco_stop_import_nonce' ) ) {
-            yatco_log( '🛑 IMPORT STOP REQUESTED: Stop button clicked by user', 'warning' );
+            yatco_log( '🛑 IMPORT STOP REQUESTED: Stop button clicked by user (Status Tab)', 'warning' );
             
-            // Get current progress before clearing
-            $current_progress = get_transient( 'yatco_import_progress' );
+            require_once YATCO_PLUGIN_DIR . 'includes/yatco-progress.php';
+            
+            // Get current progress before clearing (use wp_options, not transients)
+            $current_progress = yatco_get_import_status( 'full' );
             $processed = 0;
             $total = 0;
             if ( $current_progress !== false && is_array( $current_progress ) ) {
