@@ -49,13 +49,16 @@ add_action( 'yatco_warm_cache_hook', 'yatco_warm_cache_function' );
 
 // Register import hooks
 add_action( 'yatco_full_import_hook', function() {
-    // Check import lock BEFORE starting - prevent multiple imports
-    // Get process ID first to check if lock belongs to this process
+    yatco_log( 'Full Import: Hook triggered via wp-cron', 'info' );
+    
+    // Get process ID for lock tracking
     $process_id = getmypid();
     if ( ! $process_id ) {
         $process_id = time() . rand( 1000, 9999 );
     }
     
+    // Check for existing lock - if lock is recent (< 5 min) and from a different process, skip
+    // This prevents duplicate imports when wp-cron is triggered multiple times
     $import_lock = get_option( 'yatco_import_lock', false );
     $lock_process_id = get_option( 'yatco_import_process_id', false );
     
@@ -63,26 +66,21 @@ add_action( 'yatco_full_import_hook', function() {
         $lock_time = intval( $import_lock );
         $lock_age = time() - $lock_time;
         
-        // Check if lock belongs to this process (same process ID)
-        $is_same_process = ( $lock_process_id !== false && strval( $lock_process_id ) === strval( $process_id ) );
-        
-        // If lock is older than 5 minutes, assume the import process died and release the lock
-        // Using 5 minutes (300s) for consistency with direct button handler
+        // If lock is older than 5 minutes, assume the import process died - clear it and continue
         if ( $lock_age > 300 ) {
-            yatco_log( "Full Import: Hook triggered but lock expired (age: {$lock_age}s), releasing lock and continuing", 'warning' );
+            yatco_log( "Full Import: Hook triggered, clearing stale lock (age: {$lock_age}s) and continuing", 'warning' );
             delete_option( 'yatco_import_lock' );
             delete_option( 'yatco_import_process_id' );
             delete_option( 'yatco_import_using_fastcgi' );
-        } elseif ( $is_same_process ) {
-            // Lock belongs to this process - continue (might be a resume scenario)
-            yatco_log( "Full Import: Hook triggered, lock belongs to this process (PID: {$process_id}), continuing", 'debug' );
+        } elseif ( $lock_process_id !== false && strval( $lock_process_id ) !== strval( $process_id ) ) {
+            // Lock exists, is recent, and belongs to a different process - skip to prevent duplicates
+            yatco_log( "Full Import: Hook triggered but import already running in different process (lock age: {$lock_age}s, lock PID: {$lock_process_id}, this PID: {$process_id}), skipping", 'info' );
+            return;
         } else {
-            yatco_log( "Full Import: Hook triggered but import already running (lock age: {$lock_age}s, lock PID: {$lock_process_id}, this PID: {$process_id}), skipping to prevent duplicate imports", 'info' );
-            return; // Another import is already running, don't start a new one
+            // Lock exists and belongs to this process (or PID not available) - continue
+            yatco_log( "Full Import: Hook triggered, lock exists but belongs to this process (PID: {$process_id}), continuing", 'debug' );
         }
     }
-    
-    yatco_log( 'Full Import: Hook triggered via wp-cron', 'info' );
     
     // Get token
     $token = yatco_get_token();
@@ -105,7 +103,7 @@ add_action( 'yatco_full_import_hook', function() {
     wp_cache_delete( 'yatco_import_stop_flag', 'options' );
     yatco_log( "Full Import: Cleared stop flags before starting - Had stop flag: " . ( $had_stop_flag !== false ? 'YES (' . $had_stop_flag . ')' : 'NO' ) . ", Had transient: " . ( $had_stop_transient !== false ? 'YES' : 'NO' ), 'info' );
     
-    // Set import lock
+    // Set import lock (acquire lock for this process)
     update_option( 'yatco_import_lock', time(), false );
     update_option( 'yatco_import_process_id', $process_id, false );
     yatco_log( "Full Import: Import lock acquired (Process ID: {$process_id})", 'info' );

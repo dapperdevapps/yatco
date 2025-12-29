@@ -336,12 +336,14 @@ function yatco_options_page() {
                 update_option( 'yatco_import_auto_resume', time(), false );
                 
                 // Clear any stale locks older than 5 minutes (shorter timeout for more responsive imports)
+                // IMPORTANT: Don't set a new lock here - let the hook callback set it when it starts
+                // This prevents race conditions where the lock is set but the hook hasn't run yet
                 $import_lock = get_option( 'yatco_import_lock', false );
                 if ( $import_lock !== false ) {
                     $lock_time = intval( $import_lock );
                     $lock_age = time() - $lock_time;
                     if ( $lock_age > 300 ) {
-                        yatco_log( "Full Import Direct: Clearing stale lock (age: {$lock_age}s)", 'info' );
+                        yatco_log( "Full Import Direct: Clearing stale lock (age: {$lock_age}s) before scheduling", 'info' );
                         delete_option( 'yatco_import_lock' );
                         delete_option( 'yatco_import_process_id' );
                         delete_option( 'yatco_import_using_fastcgi' );
@@ -400,21 +402,33 @@ function yatco_options_page() {
                     yatco_log( 'Full Import Direct: spawn_cron() skipped (wp-cron disabled - server cron must run)', 'warning' );
                 }
                 
-                // Method 2: Direct HTTP request to wp-cron.php (async, doesn't block)
-                // Use longer timeout to ensure request is sent (0.1s instead of 0.01s)
+                // Method 2: Direct HTTP request to wp-cron.php
+                // First try a blocking request (2 second timeout) to ensure wp-cron starts executing
+                // If that fails or times out, try non-blocking as fallback
                 if ( ! $wp_cron_disabled ) {
                     $cron_url = site_url( 'wp-cron.php?doing_wp_cron=' . time() );
+                    
+                    // Try blocking request first (with short timeout) to trigger wp-cron
+                    yatco_log( 'Full Import Direct: Sending blocking wp-cron request (2s timeout) to trigger execution', 'info' );
                     $cron_result = wp_remote_get( $cron_url, array(
-                        'timeout' => 0.1,
-                        'blocking' => false,
+                        'timeout' => 2,
+                        'blocking' => true,
                         'sslverify' => false,
                         'httpversion' => '1.1',
                     ) );
                     
                     if ( is_wp_error( $cron_result ) ) {
-                        yatco_log( 'Full Import Direct: wp_remote_get error: ' . $cron_result->get_error_message(), 'warning' );
+                        yatco_log( 'Full Import Direct: Blocking wp-cron request error: ' . $cron_result->get_error_message() . ', trying non-blocking fallback', 'warning' );
+                        // Fallback to non-blocking request
+                        wp_remote_get( $cron_url, array(
+                            'timeout' => 0.1,
+                            'blocking' => false,
+                            'sslverify' => false,
+                            'httpversion' => '1.1',
+                        ) );
                     } else {
-                        yatco_log( 'Full Import Direct: wp-cron HTTP request sent (non-blocking)', 'info' );
+                        $code = wp_remote_retrieve_response_code( $cron_result );
+                        yatco_log( "Full Import Direct: Blocking wp-cron request completed (HTTP {$code})", 'info' );
                     }
                 } else {
                     yatco_log( 'Full Import Direct: wp-cron HTTP request skipped (wp-cron disabled - server cron must run)', 'warning' );
@@ -1244,10 +1258,16 @@ function yatco_options_page() {
                     $converted_vessel_id = $vessel_id_result;
                 }
                 
-                // Show raw response
+                // Show raw response (formatted as JSON if possible)
                 echo '<div style="background: #f5f5f5; border: 1px solid #ddd; padding: 10px; margin: 10px 0; border-radius: 4px;">';
                 echo '<p style="margin: 0 0 5px 0; font-weight: bold;">Raw API Response (HTTP ' . esc_html( $mls_to_vessel_code ) . '):</p>';
-                echo '<pre style="background: #fff; padding: 10px; border: 1px solid #ccc; border-radius: 3px; overflow-x: auto; max-height: 200px; overflow-y: auto; font-size: 11px; margin: 0;">' . esc_html( $mls_to_vessel_body ?: ( is_wp_error( $mls_to_vessel_response ) ? $mls_to_vessel_response->get_error_message() : 'No response body' ) ) . '</pre>';
+                $mls_to_vessel_display = $mls_to_vessel_body ?: ( is_wp_error( $mls_to_vessel_response ) ? $mls_to_vessel_response->get_error_message() : 'No response body' );
+                // Try to prettify JSON if it's valid JSON
+                $mls_to_vessel_json = json_decode( $mls_to_vessel_display, true );
+                if ( json_last_error() === JSON_ERROR_NONE && is_array( $mls_to_vessel_json ) ) {
+                    $mls_to_vessel_display = json_encode( $mls_to_vessel_json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+                }
+                echo '<pre style="background: #fff; padding: 10px; border: 1px solid #ccc; border-radius: 3px; overflow-x: auto; max-height: 300px; overflow-y: auto; font-size: 11px; margin: 0; white-space: pre-wrap; word-wrap: break-word;">' . esc_html( $mls_to_vessel_display ) . '</pre>';
                 echo '</div>';
                 
                 // Test 2: Try converting as Vessel ID to MLS ID
@@ -1286,10 +1306,16 @@ function yatco_options_page() {
                     $converted_mls_id = $mls_id_result;
                 }
                 
-                // Show raw response
+                // Show raw response (formatted as JSON if possible)
                 echo '<div style="background: #f5f5f5; border: 1px solid #ddd; padding: 10px; margin: 10px 0; border-radius: 4px;">';
                 echo '<p style="margin: 0 0 5px 0; font-weight: bold;">Raw API Response (HTTP ' . esc_html( $vessel_to_mls_code ) . '):</p>';
-                echo '<pre style="background: #fff; padding: 10px; border: 1px solid #ccc; border-radius: 3px; overflow-x: auto; max-height: 200px; overflow-y: auto; font-size: 11px; margin: 0;">' . esc_html( $vessel_to_mls_body ?: ( is_wp_error( $vessel_to_mls_response ) ? $vessel_to_mls_response->get_error_message() : 'No response body' ) ) . '</pre>';
+                $vessel_to_mls_display = $vessel_to_mls_body ?: ( is_wp_error( $vessel_to_mls_response ) ? $vessel_to_mls_response->get_error_message() : 'No response body' );
+                // Try to prettify JSON if it's valid JSON
+                $vessel_to_mls_json = json_decode( $vessel_to_mls_display, true );
+                if ( json_last_error() === JSON_ERROR_NONE && is_array( $vessel_to_mls_json ) ) {
+                    $vessel_to_mls_display = json_encode( $vessel_to_mls_json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+                }
+                echo '<pre style="background: #fff; padding: 10px; border: 1px solid #ccc; border-radius: 3px; overflow-x: auto; max-height: 300px; overflow-y: auto; font-size: 11px; margin: 0; white-space: pre-wrap; word-wrap: break-word;">' . esc_html( $vessel_to_mls_display ) . '</pre>';
                 echo '</div>';
                 
                 // Test 3: Verify bidirectional conversion (round-trip test)
@@ -1343,10 +1369,47 @@ function yatco_options_page() {
                 }
                 echo '</div>';
                 
+                // Individual JSON Results for Each Test
+                echo '<h4>Individual Test Results (JSON Format)</h4>';
+                
+                // Test 1 JSON
+                echo '<div style="background: #f5f5f5; border: 1px solid #ddd; padding: 15px; border-radius: 4px; margin: 15px 0;">';
+                echo '<p style="margin: 0 0 10px 0; font-weight: bold;">📋 Test 1: MLS ID → Vessel ID (JSON)</p>';
+                $test1_json = array(
+                    'test' => 'MLS ID → Vessel ID',
+                    'original_id' => $test_id,
+                    'endpoint' => $mls_to_vessel_endpoint,
+                    'http_code' => $mls_to_vessel_code,
+                    'success' => ! is_wp_error( $vessel_id_result ),
+                    'converted_value' => $converted_vessel_id,
+                    'error' => is_wp_error( $vessel_id_result ) ? $vessel_id_result->get_error_message() : null,
+                    'raw_response' => $mls_to_vessel_body ?: ( is_wp_error( $mls_to_vessel_response ) ? $mls_to_vessel_response->get_error_message() : 'No response body' ),
+                    'raw_response_json' => json_decode( $mls_to_vessel_body ?: '{}', true ),
+                );
+                echo '<pre style="background: #fff; padding: 15px; border: 1px solid #ccc; border-radius: 3px; overflow-x: auto; max-height: 400px; overflow-y: auto; font-size: 11px; margin: 0; white-space: pre-wrap; word-wrap: break-word;">' . esc_html( json_encode( $test1_json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) ) . '</pre>';
+                echo '</div>';
+                
+                // Test 2 JSON
+                echo '<div style="background: #f5f5f5; border: 1px solid #ddd; padding: 15px; border-radius: 4px; margin: 15px 0;">';
+                echo '<p style="margin: 0 0 10px 0; font-weight: bold;">📋 Test 2: Vessel ID → MLS ID (JSON)</p>';
+                $test2_json = array(
+                    'test' => 'Vessel ID → MLS ID',
+                    'original_id' => $test_id,
+                    'endpoint' => $vessel_to_mls_endpoint,
+                    'http_code' => $vessel_to_mls_code,
+                    'success' => ! is_wp_error( $mls_id_result ),
+                    'converted_value' => $converted_mls_id,
+                    'error' => is_wp_error( $mls_id_result ) ? $mls_id_result->get_error_message() : null,
+                    'raw_response' => $vessel_to_mls_body ?: ( is_wp_error( $vessel_to_mls_response ) ? $vessel_to_mls_response->get_error_message() : 'No response body' ),
+                    'raw_response_json' => json_decode( $vessel_to_mls_body ?: '{}', true ),
+                );
+                echo '<pre style="background: #fff; padding: 15px; border: 1px solid #ccc; border-radius: 3px; overflow-x: auto; max-height: 400px; overflow-y: auto; font-size: 11px; margin: 0; white-space: pre-wrap; word-wrap: break-word;">' . esc_html( json_encode( $test2_json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) ) . '</pre>';
+                echo '</div>';
+                
                 // Complete JSON Results for Sharing
-                echo '<h4>Complete Test Results (JSON Format - Copy to Share)</h4>';
+                echo '<h4>Complete Test Results (Combined JSON - Copy to Share)</h4>';
                 echo '<div style="background: #e3f2fd; border: 1px solid #2196f3; padding: 15px; border-radius: 4px; margin: 15px 0;">';
-                echo '<p style="margin: 0 0 10px 0; font-weight: bold; color: #1565c0;">📋 Copy the JSON below to share test results:</p>';
+                echo '<p style="margin: 0 0 10px 0; font-weight: bold; color: #1565c0;">📋 Copy the JSON below to share complete test results:</p>';
                 $test_results_json = array(
                     'test_id' => $test_id,
                     'test_timestamp' => current_time( 'mysql' ),
@@ -1357,6 +1420,7 @@ function yatco_options_page() {
                         'converted_value' => $converted_vessel_id,
                         'error' => is_wp_error( $vessel_id_result ) ? $vessel_id_result->get_error_message() : null,
                         'raw_response' => $mls_to_vessel_body ?: ( is_wp_error( $mls_to_vessel_response ) ? $mls_to_vessel_response->get_error_message() : 'No response body' ),
+                        'raw_response_json' => json_decode( $mls_to_vessel_body ?: '{}', true ), // Parsed JSON if available
                     ),
                     'test_2_vessel_to_mls' => array(
                         'endpoint' => $vessel_to_mls_endpoint,
@@ -1365,6 +1429,7 @@ function yatco_options_page() {
                         'converted_value' => $converted_mls_id,
                         'error' => is_wp_error( $mls_id_result ) ? $mls_id_result->get_error_message() : null,
                         'raw_response' => $vessel_to_mls_body ?: ( is_wp_error( $vessel_to_mls_response ) ? $vessel_to_mls_response->get_error_message() : 'No response body' ),
+                        'raw_response_json' => json_decode( $vessel_to_mls_body ?: '{}', true ), // Parsed JSON if available
                     ),
                     'summary' => array(
                         'original_id' => $test_id,
