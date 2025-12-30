@@ -353,6 +353,65 @@ function yatco_ajax_run_full_import_ajax() {
     yatco_log( 'Full Import AJAX: Hook execution completed', 'info' );
 }
 
+// AJAX handler to trigger Daily Sync hook (same approach as full import for reliability)
+add_action( 'wp_ajax_yatco_run_daily_sync_ajax', 'yatco_ajax_run_daily_sync_ajax' );
+function yatco_ajax_run_daily_sync_ajax() {
+    // Log immediately
+    yatco_log( 'Daily Sync AJAX: Handler called', 'info' );
+    
+    // Verify nonce
+    if ( ! isset( $_POST['nonce'] ) ) {
+        yatco_log( 'Daily Sync AJAX: Nonce not set in POST', 'error' );
+        wp_send_json_error( array( 'message' => 'Nonce not provided' ) );
+        return;
+    }
+    
+    if ( ! wp_verify_nonce( $_POST['nonce'], 'yatco_daily_sync_ajax' ) ) {
+        yatco_log( 'Daily Sync AJAX: Nonce verification failed', 'error' );
+        wp_send_json_error( array( 'message' => 'Security check failed' ) );
+        return;
+    }
+    
+    if ( ! current_user_can( 'manage_options' ) ) {
+        yatco_log( 'Daily Sync AJAX: Unauthorized access attempt', 'error' );
+        wp_send_json_error( array( 'message' => 'Unauthorized' ) );
+        return;
+    }
+    
+    yatco_log( 'Daily Sync AJAX: Handler authenticated, triggering hook', 'info' );
+    
+    // Send minimal response and close connection to allow background processing
+    ignore_user_abort( true );
+    
+    // Send quick response
+    if ( ! headers_sent() ) {
+        header( 'Content-Type: application/json; charset=utf-8' );
+        header( 'Connection: close' );
+        echo json_encode( array( 'success' => true, 'message' => 'Daily Sync started' ) );
+        
+        // Close connection immediately
+        if ( function_exists( 'fastcgi_finish_request' ) ) {
+            fastcgi_finish_request();
+        } else {
+            // Fallback: flush output and close connection
+            if ( ob_get_level() ) {
+                ob_end_flush();
+            }
+            flush();
+        }
+    }
+    
+    // Increase execution time and memory limits
+    @set_time_limit( 0 );
+    @ini_set( 'max_execution_time', 0 );
+    @ini_set( 'memory_limit', '512M' );
+    
+    // Trigger the sync hook directly (same as wp-cron would)
+    do_action( 'yatco_daily_sync_hook' );
+    
+    yatco_log( 'Daily Sync AJAX: Hook execution completed', 'info' );
+}
+
 // AJAX handler for import status
 add_action( 'wp_ajax_yatco_get_import_status', 'yatco_ajax_get_import_status' );
 function yatco_ajax_get_import_status() {

@@ -475,18 +475,34 @@ function yatco_options_page() {
                     }
                 }
                 
-                // Clear any stale stop flags (but keep progress transients for display)
+                // Clear any stale stop flags and status messages
                 delete_option( 'yatco_import_stop_flag' );
                 delete_transient( 'yatco_cache_warming_stop' );
+                require_once YATCO_PLUGIN_DIR . 'includes/yatco-progress.php';
+                yatco_clear_import_status_message(); // Clear stale "stopped" messages
                 
-                // Set initial status for daily sync (don't clear old progress yet - let the sync function handle it)
-                set_transient( 'yatco_cache_warming_status', 'Daily Sync: Starting...', 600 );
+                // Set initial status for daily sync
+                yatco_update_import_status_message( 'Daily Sync: Starting...' );
+                yatco_log( 'Daily Sync Direct: Cleared stop flags and set initial status', 'info' );
                 
-                // Schedule the daily sync to run immediately via wp-cron (non-blocking)
-                wp_schedule_single_event( time(), 'yatco_daily_sync_hook' );
-                spawn_cron(); // Trigger cron immediately if possible
+                // Trigger daily sync immediately via AJAX (same approach as full import for reliability)
+                // This ensures immediate execution without waiting for wp-cron
+                $ajax_url = admin_url( 'admin-ajax.php' );
+                $nonce = wp_create_nonce( 'yatco_daily_sync_ajax' );
                 
-                yatco_log( 'Daily Sync Direct: Sync scheduled via wp-cron, redirecting to status page', 'info' );
+                // Make a non-blocking AJAX request to trigger the sync
+                $response = wp_remote_post( $ajax_url, array(
+                    'timeout' => 1,
+                    'blocking' => false,
+                    'sslverify' => false,
+                    'body' => array(
+                        'action' => 'yatco_run_daily_sync_ajax',
+                        'nonce' => $nonce,
+                    ),
+                    'cookies' => $_COOKIE, // Include cookies for authentication
+                ) );
+                
+                yatco_log( 'Daily Sync Direct: Sync triggered via AJAX, redirecting to status page', 'info' );
                 
                 // Redirect immediately to status page to prevent timeout
                 wp_safe_redirect( admin_url( 'options-general.php?page=yatco_api&tab=status&sync_started=1' ) );
