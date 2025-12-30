@@ -345,8 +345,20 @@ function yatco_vessels_shortcode( $atts ) {
         $cache_progress = get_transient( 'yatco_cache_warming_progress' );
         $is_warming = ( $cache_status !== false ) || ( $cache_progress !== false );
         
+        // OPTIMIZATION: For initial page load, limit to first 12 vessels for instant display
+        // Remaining vessels will be loaded via AJAX in the background
+        $initial_load = ! isset( $_GET['yatco_ajax_load'] ) || $_GET['yatco_ajax_load'] !== 'all';
+        
+        if ( $initial_load ) {
+            // Initial load: only get first 12 for instant display
+            $query_args['posts_per_page'] = 12;
+            $query_args['no_found_rows'] = false; // Need total count for pagination
+        }
+        
         // Query CPT posts (only IDs to save memory)
-        $post_ids = get_posts( $query_args );
+        $vessel_query = new WP_Query( $query_args );
+        $post_ids = $vessel_query->posts;
+        $total_vessels = $initial_load ? $vessel_query->found_posts : count( $post_ids ); // Get total count
         
         if ( ! empty( $post_ids ) ) {
             // Convert CPT posts to vessel data array
@@ -509,18 +521,80 @@ function yatco_vessels_shortcode( $atts ) {
             if ( isset( $titles ) ) unset( $titles );
             if ( isset( $thumbnail_ids ) ) unset( $thumbnail_ids );
             if ( isset( $thumbnail_results ) ) unset( $thumbnail_results );
-            if ( isset( $post_ids ) ) unset( $post_ids );
-            unset( $post_ids, $all_meta );
+            
+            // Generate HTML output
+            $vessels_html = yatco_generate_vessels_html_from_data( $vessels, $builders, $categories, $types, $conditions, $atts );
             
             // If warming, show message with partial results
             if ( $is_warming && ! empty( $vessels ) ) {
                 $status_msg = esc_html( $cache_status ? $cache_status : 'Vessels are being imported to CPT...' );
-                $vessels_output = yatco_generate_vessels_html_from_data( $vessels, $builders, $categories, $types, $conditions, $atts );
-                return '<div class="yatco-cache-warming-notice" style="padding: 15px; background: #fff3cd; border-left: 4px solid #ffc107; margin-bottom: 20px;"><strong>Note:</strong> ' . $status_msg . ' Showing ' . count( $vessels ) . ' vessels from CPT. More will appear as import completes.</div>' . $vessels_output;
+                return '<div class="yatco-cache-warming-notice" style="padding: 15px; background: #fff3cd; border-left: 4px solid #ffc107; margin-bottom: 20px;"><strong>Note:</strong> ' . $status_msg . ' Showing ' . count( $vessels ) . ' vessels from CPT. More will appear as import completes.</div>' . $vessels_html;
+            }
+            
+            // For initial load, add data attributes and script to load remaining vessels in background
+            if ( $initial_load && $total_vessels > 12 ) {
+                // Add data attributes to container for JavaScript
+                $vessels_html = str_replace(
+                    '<div class="yatco-vessels-container',
+                    '<div class="yatco-vessels-container" data-yatco-total="' . esc_attr( $total_vessels ) . '" data-yatco-loaded="' . esc_attr( count( $vessels ) ) . '"',
+                    $vessels_html
+                );
+                
+                // Add inline script to load remaining vessels in background (after page load)
+                $vessels_html .= '<script type="text/javascript">
+                (function() {
+                    if (typeof jQuery === "undefined") return;
+                    jQuery(document).ready(function($) {
+                        var container = $(".yatco-vessels-container[data-yatco-total]");
+                        if (container.length === 0) return;
+                        
+                        var totalVessels = parseInt(container.attr("data-yatco-total")) || 0;
+                        var loadedVessels = parseInt(container.attr("data-yatco-loaded")) || 0;
+                        
+                        if (totalVessels <= loadedVessels) return; // All vessels already loaded
+                        
+                        // Load remaining vessels in background after page load (1 second delay)
+                        setTimeout(function() {
+                            $.ajax({
+                                url: ' . json_encode( admin_url( 'admin-ajax.php' ) ) . ',
+                                type: "POST",
+                                data: {
+                                    action: "yatco_load_all_vessels",
+                                    nonce: ' . json_encode( wp_create_nonce( 'yatco_load_vessels' ) ) . ',
+                                    price_min: ' . json_encode( $price_min ) . ',
+                                    price_max: ' . json_encode( $price_max ) . ',
+                                    year_min: ' . json_encode( $year_min ) . ',
+                                    year_max: ' . json_encode( $year_max ) . ',
+                                    loa_min: ' . json_encode( $loa_min ) . ',
+                                    loa_max: ' . json_encode( $loa_max ) . '
+                                },
+                                success: function(response) {
+                                    if (response && response.success && response.data && response.data.html) {
+                                        // Append new vessels to grid (they\'re hidden by default - pagination will show them)
+                                        var grid = container.find("#yatco-vessels-grid");
+                                        if (grid.length) {
+                                            grid.append(response.data.html);
+                                            
+                                            // Update total count in results header
+                                            var totalCount = $("#yatco-total-count");
+                                            if (totalCount.length && response.data.total_count) {
+                                                totalCount.text(response.data.total_count);
+                                            }
+                                        }
+                                    }
+                                },
+                                error: function() {
+                                    // Silently fail - not critical
+                                }
+                            });
+                        }, 1000);
+                    });
+                })();
+                </script>';
             }
             
             // Return results from CPT
-            return yatco_generate_vessels_html_from_data( $vessels, $builders, $categories, $types, $conditions, $atts );
+            return $vessels_html;
         } else {
             // No CPT posts yet - check if warming or show fallback message
             if ( $is_warming ) {

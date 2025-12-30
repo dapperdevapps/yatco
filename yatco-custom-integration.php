@@ -596,6 +596,280 @@ function yatco_ajax_get_import_status() {
     wp_send_json_success( $response_data );
 }
 
+// AJAX handler to load all vessels for shortcode (background loading after initial 12)
+add_action( 'wp_ajax_yatco_load_all_vessels', 'yatco_ajax_load_all_vessels' );
+add_action( 'wp_ajax_nopriv_yatco_load_all_vessels', 'yatco_ajax_load_all_vessels' );
+function yatco_ajax_load_all_vessels() {
+    // Verify nonce
+    if ( ! isset( $_POST['nonce'] ) || ! wp_verify_nonce( $_POST['nonce'], 'yatco_load_vessels' ) ) {
+        wp_send_json_error( array( 'message' => 'Security check failed' ) );
+        return;
+    }
+    
+    // Get filter parameters (sent as individual POST fields, not nested array)
+    $price_min = isset( $_POST['price_min'] ) && $_POST['price_min'] !== '' && $_POST['price_min'] !== '0' ? floatval( $_POST['price_min'] ) : '';
+    $price_max = isset( $_POST['price_max'] ) && $_POST['price_max'] !== '' && $_POST['price_max'] !== '0' ? floatval( $_POST['price_max'] ) : '';
+    $year_min = isset( $_POST['year_min'] ) && $_POST['year_min'] !== '' && $_POST['year_min'] !== '0' ? intval( $_POST['year_min'] ) : '';
+    $year_max = isset( $_POST['year_max'] ) && $_POST['year_max'] !== '' && $_POST['year_max'] !== '0' ? intval( $_POST['year_max'] ) : '';
+    $loa_min = isset( $_POST['loa_min'] ) && $_POST['loa_min'] !== '' && $_POST['loa_min'] !== '0' ? floatval( $_POST['loa_min'] ) : '';
+    $loa_max = isset( $_POST['loa_max'] ) && $_POST['loa_max'] !== '' && $_POST['loa_max'] !== '0' ? floatval( $_POST['loa_max'] ) : '';
+    
+    // Build query args (same as shortcode but load ALL vessels)
+    $query_args = array(
+        'post_type'      => 'yacht',
+        'post_status'    => 'publish',
+        'posts_per_page' => -1,
+        'fields'         => 'ids',
+        'meta_query'     => array(),
+        'no_found_rows'  => true,
+        'update_post_meta_cache' => false,
+        'update_post_term_cache' => false,
+    );
+    
+    // Add meta queries for filtering (same as shortcode)
+    if ( $price_min !== '' ) {
+        $query_args['meta_query'][] = array(
+            'key'     => 'yacht_price_usd',
+            'value'   => $price_min,
+            'compare' => '>=',
+            'type'    => 'NUMERIC',
+        );
+    }
+    if ( $price_max !== '' ) {
+        $query_args['meta_query'][] = array(
+            'key'     => 'yacht_price_usd',
+            'value'   => $price_max,
+            'compare' => '<=',
+            'type'    => 'NUMERIC',
+        );
+    }
+    if ( $year_min !== '' ) {
+        $query_args['meta_query'][] = array(
+            'key'     => 'yacht_year',
+            'value'   => $year_min,
+            'compare' => '>=',
+            'type'    => 'NUMERIC',
+        );
+    }
+    if ( $year_max !== '' ) {
+        $query_args['meta_query'][] = array(
+            'key'     => 'yacht_year',
+            'value'   => $year_max,
+            'compare' => '<=',
+            'type'    => 'NUMERIC',
+        );
+    }
+    if ( $loa_min !== '' ) {
+        $query_args['meta_query'][] = array(
+            'key'     => 'yacht_length_feet',
+            'value'   => $loa_min,
+            'compare' => '>=',
+            'type'    => 'DECIMAL',
+        );
+    }
+    if ( $loa_max !== '' ) {
+        $query_args['meta_query'][] = array(
+            'key'     => 'yacht_length_feet',
+            'value'   => $loa_max,
+            'compare' => '<=',
+            'type'    => 'DECIMAL',
+        );
+    }
+    
+    // Skip first 12 (already loaded)
+    $query_args['offset'] = 12;
+    
+    // Use the same efficient loading function from shortcode
+    require_once YATCO_PLUGIN_DIR . 'includes/yatco-shortcode.php';
+    
+    // Call internal function to get vessels (reuse shortcode logic)
+    $post_ids = get_posts( $query_args );
+    
+    if ( empty( $post_ids ) ) {
+        wp_send_json_success( array( 'html' => '', 'total_count' => 12 ) );
+        return;
+    }
+    
+    // Load vessels using the same efficient method as shortcode
+    // (We'll need to extract this into a reusable function, but for now we'll duplicate the logic)
+    global $wpdb;
+    $meta_keys = array(
+        'yacht_vessel_id', 'yacht_price_usd', 'yacht_price_eur', 'yacht_price',
+        'yacht_year', 'yacht_length', 'yacht_length_feet', 'yacht_length_meters',
+        'yacht_make', 'yacht_category', 'yacht_type', 'yacht_condition',
+        'yacht_location', 'yacht_state_rooms', 'yacht_image_url'
+    );
+    
+    // Bulk fetch meta
+    $post_ids_placeholder = implode( ',', array_fill( 0, count( $post_ids ), '%d' ) );
+    $meta_keys_placeholder = implode( ',', array_fill( 0, count( $meta_keys ), '%s' ) );
+    $prepare_values = array_merge( $post_ids, $meta_keys );
+    
+    $meta_query = $wpdb->prepare(
+        "SELECT post_id, meta_key, meta_value 
+         FROM {$wpdb->postmeta} 
+         WHERE post_id IN ($post_ids_placeholder) 
+         AND meta_key IN ($meta_keys_placeholder)",
+        $prepare_values
+    );
+    
+    $all_meta_results = $wpdb->get_results( $meta_query, ARRAY_A );
+    $meta_by_post = array();
+    foreach ( $all_meta_results as $meta_row ) {
+        $post_id = intval( $meta_row['post_id'] );
+        if ( ! isset( $meta_by_post[ $post_id ] ) ) {
+            $meta_by_post[ $post_id ] = array();
+        }
+        $meta_by_post[ $post_id ][ $meta_row['meta_key'] ] = $meta_row['meta_value'];
+    }
+    
+    // Get titles
+    $title_placeholder = implode( ',', array_fill( 0, count( $post_ids ), '%d' ) );
+    $title_query = $wpdb->prepare(
+        "SELECT ID, post_title FROM {$wpdb->posts} WHERE ID IN ($title_placeholder)",
+        $post_ids
+    );
+    $titles = $wpdb->get_results( $title_query, OBJECT_K );
+    
+    // Get thumbnail IDs
+    $thumbnail_query = $wpdb->prepare(
+        "SELECT post_id, meta_value as thumbnail_id 
+         FROM {$wpdb->postmeta} 
+         WHERE post_id IN ($title_placeholder) 
+         AND meta_key = '_thumbnail_id'",
+        $post_ids
+    );
+    $thumbnail_results = $wpdb->get_results( $thumbnail_query, ARRAY_A );
+    $thumbnail_ids = array();
+    foreach ( $thumbnail_results as $thumb_row ) {
+        $thumbnail_ids[ intval( $thumb_row['post_id'] ) ] = intval( $thumb_row['thumbnail_id'] );
+    }
+    
+    // Build vessel data
+    $vessels = array();
+    foreach ( $post_ids as $post_id ) {
+        $all_meta = isset( $meta_by_post[ $post_id ] ) ? $meta_by_post[ $post_id ] : array();
+        foreach ( $meta_keys as $key ) {
+            if ( ! isset( $all_meta[ $key ] ) ) {
+                $all_meta[ $key ] = '';
+            }
+        }
+        
+        $vessel_id = $all_meta['yacht_vessel_id'];
+        $price_usd = $all_meta['yacht_price_usd'];
+        $price_eur = $all_meta['yacht_price_eur'];
+        $price = $all_meta['yacht_price'];
+        $year = $all_meta['yacht_year'];
+        $loa_feet = $all_meta['yacht_length_feet'];
+        $loa_meters = $all_meta['yacht_length_meters'];
+        $builder = $all_meta['yacht_make'];
+        $category = $all_meta['yacht_category'];
+        $type = $all_meta['yacht_type'];
+        $condition = $all_meta['yacht_condition'];
+        $location = $all_meta['yacht_location'];
+        $state_rooms = $all_meta['yacht_state_rooms'];
+        $image_url = $all_meta['yacht_image_url'];
+        $post_title = isset( $titles[ $post_id ] ) ? $titles[ $post_id ]->post_title : '';
+        
+        if ( empty( $image_url ) && isset( $thumbnail_ids[ $post_id ] ) && $thumbnail_ids[ $post_id ] > 0 ) {
+            $image_url = wp_get_attachment_image_url( $thumbnail_ids[ $post_id ], 'medium' );
+        }
+        
+        $vessels[] = array(
+            'id'          => $vessel_id ? $vessel_id : $post_id,
+            'post_id'     => $post_id,
+            'name'        => $post_title,
+            'price'       => $price,
+            'price_usd'   => $price_usd,
+            'price_eur'   => $price_eur,
+            'year'        => $year,
+            'loa_feet'    => $loa_feet,
+            'loa_meters'  => $loa_meters,
+            'builder'     => $builder,
+            'category'    => $category,
+            'type'        => $type,
+            'condition'   => $condition,
+            'state_rooms' => $state_rooms,
+            'location'    => $location,
+            'image'       => $image_url,
+            'link'        => get_permalink( $post_id ),
+        );
+    }
+    
+    // Generate HTML for vessel cards only (no filters/containers)
+    ob_start();
+    $currency = 'USD';
+    $length_unit = 'FT';
+    foreach ( $vessels as $vessel ) {
+        $vessel_link = ! empty( $vessel['post_id'] ) ? get_permalink( $vessel['post_id'] ) : $vessel['link'];
+        ?>
+        <a href="<?php echo esc_url( $vessel_link ); ?>" class="yatco-vessel-card" style="display: none;"
+             data-name="<?php echo esc_attr( strtolower( $vessel['name'] ) ); ?>"
+             data-location="<?php echo esc_attr( strtolower( $vessel['location'] ) ); ?>"
+             data-builder="<?php echo esc_attr( $vessel['builder'] ); ?>"
+             data-category="<?php echo esc_attr( $vessel['category'] ); ?>"
+             data-type="<?php echo esc_attr( $vessel['type'] ); ?>"
+             data-condition="<?php echo esc_attr( $vessel['condition'] ); ?>"
+             data-year="<?php echo esc_attr( $vessel['year'] ); ?>"
+             data-loa-feet="<?php echo esc_attr( $vessel['loa_feet'] ); ?>"
+             data-loa-meters="<?php echo esc_attr( $vessel['loa_meters'] ); ?>"
+             data-price-usd="<?php echo esc_attr( $vessel['price_usd'] ); ?>"
+             data-price-eur="<?php echo esc_attr( $vessel['price_eur'] ); ?>"
+             data-state-rooms="<?php echo esc_attr( $vessel['state_rooms'] ); ?>">
+            <?php if ( ! empty( $vessel['image'] ) ) : ?>
+                <div class="yatco-vessel-image">
+                    <img src="<?php echo esc_url( $vessel['image'] ); ?>" alt="<?php echo esc_attr( $vessel['name'] ); ?>" />
+                </div>
+            <?php endif; ?>
+            <div class="yatco-vessel-info">
+                <h3 class="yatco-vessel-name"><?php echo esc_html( $vessel['name'] ); ?></h3>
+                <?php if ( ! empty( $vessel['location'] ) ) : ?>
+                    <div class="yatco-vessel-location"><?php echo esc_html( $vessel['location'] ); ?></div>
+                <?php endif; ?>
+                <div class="yatco-vessel-details">
+                    <?php 
+                    $display_price = null;
+                    $currency_symbol = '$';
+                    if ( $currency === 'EUR' && ! empty( $vessel['price_eur'] ) ) {
+                        $display_price = $vessel['price_eur'];
+                        $currency_symbol = '€';
+                    } elseif ( ! empty( $vessel['price_usd'] ) ) {
+                        $display_price = $vessel['price_usd'];
+                    }
+                    ?>
+                    <?php if ( $display_price ) : ?>
+                        <span class="yatco-vessel-price"><?php echo esc_html( $currency_symbol . number_format( floatval( $display_price ) ) ); ?></span>
+                    <?php endif; ?>
+                    <?php if ( ! empty( $vessel['year'] ) ) : ?>
+                        <span class="yatco-vessel-year"><?php echo esc_html( $vessel['year'] ); ?></span>
+                    <?php endif; ?>
+                    <?php 
+                    $display_loa = null;
+                    $loa_unit_text = ' ft';
+                    if ( $length_unit === 'M' && ! empty( $vessel['loa_meters'] ) ) {
+                        $display_loa = $vessel['loa_meters'];
+                        $loa_unit_text = ' m';
+                    } elseif ( ! empty( $vessel['loa_feet'] ) ) {
+                        $display_loa = $vessel['loa_feet'];
+                    }
+                    ?>
+                    <?php if ( $display_loa ) : ?>
+                        <span class="yatco-vessel-loa"><?php echo esc_html( number_format( $display_loa, 1 ) . $loa_unit_text ); ?></span>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </a>
+        <?php
+    }
+    $vessels_html = ob_get_clean();
+    
+    // Return HTML and total count
+    wp_send_json_success( array(
+        'html' => $vessels_html,
+        'total_count' => count( $vessels ) + 12, // Total including initial 12
+    ) );
+}
+
 // CRITICAL: Send progress data via heartbeat_send (fires on every heartbeat tick)
 // This ensures real-time progress updates without waiting for frontend to send data
 add_filter( 'heartbeat_send', 'yatco_heartbeat_send', 10, 2 );
