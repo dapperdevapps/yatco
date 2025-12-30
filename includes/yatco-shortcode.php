@@ -645,6 +645,11 @@ function yatco_vessels_shortcode( $atts ) {
                                         // Append new vessels to grid (they\'re hidden by default - pagination will show them)
                                         var grid = container.find("#yatco-vessels-grid");
                                         if (grid.length) {
+                                            // Create temporary container to parse HTML
+                                            var tempDiv = $("<div>").html(response.data.html);
+                                            var newVessels = tempDiv.find(".yatco-vessel-card");
+                                            
+                                            // Append vessels (hidden by default via style attribute)
                                             grid.append(response.data.html);
                                             
                                             // Update total count in results header
@@ -652,6 +657,10 @@ function yatco_vessels_shortcode( $atts ) {
                                             if (totalCount.length && response.data.total_count) {
                                                 totalCount.text(response.data.total_count);
                                             }
+                                            
+                                            // Trigger a custom event to let the main script know new vessels were added
+                                            // The main script will need to re-query allVessels if it wants to include these
+                                            $(document).trigger("yatco:vessels-loaded", [newVessels.length]);
                                         }
                                     }
                                 },

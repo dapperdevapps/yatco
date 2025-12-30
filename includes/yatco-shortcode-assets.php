@@ -543,17 +543,21 @@ if ( ! defined( 'ABSPATH' ) ) {
     };
     
     function filterAndDisplay() {
-        const filtered = filterVessels();
+        // Re-query all vessels in case new ones were added via AJAX
+        // This ensures we have the latest vessel list, but only do it once per call to avoid performance issues
+        const currentVessels = Array.from(document.querySelectorAll('.yatco-vessel-card'));
+        const vesselsToUse = currentVessels.length >= allVessels.length ? currentVessels : allVessels;
+        
+        const filtered = filterVessels(vesselsToUse);
         const sorted = sortVessels(filtered);
         const paginated = paginateVessels(sorted);
         
-        // Hide all vessels
-        allVessels.forEach(v => v.style.display = 'none');
+        // Hide all vessels (use current vessels list to ensure we hide newly added ones too)
+        vesselsToUse.forEach(v => v.style.display = 'none');
         
-        // Show paginated vessels
+        // Show paginated vessels (just change display, don't move DOM nodes - this prevents lockups)
         paginated.forEach(v => {
             v.style.display = '';
-            grid.appendChild(v);
         });
         
         // Update count
@@ -561,7 +565,7 @@ if ( ! defined( 'ABSPATH' ) ) {
             const totalFiltered = sorted.length;
             const shownStart = totalFiltered > 0 ? (currentPage - 1) * vesselsPerPage + 1 : 0;
             const shownEnd = Math.min(currentPage * vesselsPerPage, totalFiltered);
-            const total = totalCount ? totalCount.textContent : allVessels.length;
+            const total = totalCount ? totalCount.textContent : vesselsToUse.length;
             resultsCount.innerHTML = `${shownStart} - ${shownEnd} of <span id="yatco-total-count">${totalFiltered}</span> YACHTS FOUND`;
         }
         
