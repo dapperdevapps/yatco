@@ -265,12 +265,21 @@ function yatco_vessels_shortcode( $atts ) {
     // NEW CPT-BASED APPROACH: Query vessels from Custom Post Type
     // Check if cache is enabled (CPT-based, not transients)
     if ( $atts['cache'] === 'yes' ) {
+        // Increase memory limit for shortcode execution
+        @ini_set( 'memory_limit', '512M' );
+        
         // Build WP_Query args for yacht CPT
+        // CRITICAL: Use fields => 'ids' to only fetch IDs, not full post objects (saves memory)
+        // Load all posts for client-side pagination (memory optimized with fields => 'ids')
         $query_args = array(
             'post_type'      => 'yacht',
             'post_status'    => 'publish',
-            'posts_per_page' => -1, // Get all vessels for filtering
+            'posts_per_page' => -1, // Load all posts for client-side pagination (memory optimized)
+            'fields'         => 'ids', // Only get IDs to save memory - this is the key optimization
             'meta_query'     => array(),
+            'no_found_rows'  => true, // Skip counting total rows to save memory
+            'update_post_meta_cache' => false, // Don't cache all meta - we'll fetch only what we need
+            'update_post_term_cache' => false, // Don't cache terms
         );
         
         // Parse filter criteria
@@ -336,10 +345,10 @@ function yatco_vessels_shortcode( $atts ) {
         $cache_progress = get_transient( 'yatco_cache_warming_progress' );
         $is_warming = ( $cache_status !== false ) || ( $cache_progress !== false );
         
-        // Query CPT posts
-        $vessel_query = new WP_Query( $query_args );
+        // Query CPT posts (only IDs to save memory)
+        $post_ids = get_posts( $query_args );
         
-        if ( $vessel_query->have_posts() ) {
+        if ( ! empty( $post_ids ) ) {
             // Convert CPT posts to vessel data array
             $vessels = array();
             $builders = array();
@@ -347,36 +356,54 @@ function yatco_vessels_shortcode( $atts ) {
             $types = array();
             $conditions = array();
             
-            while ( $vessel_query->have_posts() ) {
-                $vessel_query->the_post();
-                $post_id = get_the_ID();
+            // Fetch all meta data in one query per post to reduce database calls
+            foreach ( $post_ids as $post_id ) {
+                // Fetch all meta fields for this post in a single call (more memory efficient)
+                $meta_keys = array(
+                    'yacht_vessel_id', 'yacht_price_usd', 'yacht_price_eur', 'yacht_price',
+                    'yacht_year', 'yacht_length', 'yacht_length_feet', 'yacht_length_meters',
+                    'yacht_make', 'yacht_category', 'yacht_type', 'yacht_condition',
+                    'yacht_location', 'yacht_state_rooms', 'yacht_image_url'
+                );
                 
-                // Get vessel data from post meta
-                $vessel_id = get_post_meta( $post_id, 'yacht_vessel_id', true );
-                $price_usd = get_post_meta( $post_id, 'yacht_price_usd', true );
-                $price_eur = get_post_meta( $post_id, 'yacht_price_eur', true );
-                $price = get_post_meta( $post_id, 'yacht_price', true );
-                $year = get_post_meta( $post_id, 'yacht_year', true );
-                $loa = get_post_meta( $post_id, 'yacht_length', true );
-                $loa_feet = get_post_meta( $post_id, 'yacht_length_feet', true );
-                $loa_meters = get_post_meta( $post_id, 'yacht_length_meters', true );
-                $builder = get_post_meta( $post_id, 'yacht_make', true );
-                $category = get_post_meta( $post_id, 'yacht_category', true );
-                $type = get_post_meta( $post_id, 'yacht_type', true );
-                $condition = get_post_meta( $post_id, 'yacht_condition', true );
-                $location = get_post_meta( $post_id, 'yacht_location', true );
-                $state_rooms = get_post_meta( $post_id, 'yacht_state_rooms', true );
-                $image_url = get_post_meta( $post_id, 'yacht_image_url', true );
+                // Use get_post_meta with single=true for efficiency, but fetch all at once
+                $all_meta = array();
+                foreach ( $meta_keys as $key ) {
+                    $all_meta[ $key ] = get_post_meta( $post_id, $key, true );
+                }
                 
-                // Get featured image if available
-                if ( empty( $image_url ) && has_post_thumbnail( $post_id ) ) {
-                    $image_url = get_the_post_thumbnail_url( $post_id, 'full' );
+                // Extract values
+                $vessel_id = $all_meta['yacht_vessel_id'];
+                $price_usd = $all_meta['yacht_price_usd'];
+                $price_eur = $all_meta['yacht_price_eur'];
+                $price = $all_meta['yacht_price'];
+                $year = $all_meta['yacht_year'];
+                $loa = $all_meta['yacht_length'];
+                $loa_feet = $all_meta['yacht_length_feet'];
+                $loa_meters = $all_meta['yacht_length_meters'];
+                $builder = $all_meta['yacht_make'];
+                $category = $all_meta['yacht_category'];
+                $type = $all_meta['yacht_type'];
+                $condition = $all_meta['yacht_condition'];
+                $location = $all_meta['yacht_location'];
+                $state_rooms = $all_meta['yacht_state_rooms'];
+                $image_url = $all_meta['yacht_image_url'];
+                
+                // Get post title
+                $post_title = get_the_title( $post_id );
+                
+                // Get featured image if available (lazy load - only when needed)
+                if ( empty( $image_url ) ) {
+                    $thumbnail_id = get_post_thumbnail_id( $post_id );
+                    if ( $thumbnail_id ) {
+                        $image_url = wp_get_attachment_image_url( $thumbnail_id, 'medium' );
+                    }
                 }
                 
                 $vessel_data = array(
                     'id'          => $vessel_id ? $vessel_id : $post_id,
                     'post_id'     => $post_id,
-                    'name'        => get_the_title(),
+                    'name'        => $post_title,
                     'price'       => $price,
                     'price_usd'   => $price_usd,
                     'price_eur'   => $price_eur,
@@ -410,12 +437,18 @@ function yatco_vessels_shortcode( $atts ) {
                     $conditions[] = $condition;
                 }
             }
-            wp_reset_postdata();
+            // No need for wp_reset_postdata() since we used get_posts() with fields => 'ids'
             
             sort( $builders );
             sort( $categories );
             sort( $types );
             sort( $conditions );
+            
+            // Note: Don't limit vessels here - client-side pagination will handle display
+            // All vessels are needed for filtering and pagination to work correctly
+            
+            // Clear memory
+            unset( $post_ids, $all_meta );
             
             // If warming, show message with partial results
             if ( $is_warming && ! empty( $vessels ) ) {

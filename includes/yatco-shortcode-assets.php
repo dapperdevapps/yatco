@@ -441,9 +441,9 @@ if ( ! defined( 'ABSPATH' ) ) {
         });
     }
     
-    // Pagination - shows 24 vessels per page
+    // Pagination - shows 12 vessels per page
     let currentPage = 1;
-    const vesselsPerPage = 24;
+    const vesselsPerPage = 12;
     
     // Get pagination range with ellipsis for large page counts (e.g., 1 ... 5 6 7 ... 140)
     function getPaginationRange(current, total) {
