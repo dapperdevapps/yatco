@@ -129,9 +129,51 @@ add_action( 'yatco_full_import_hook', function() {
 
 // Register daily sync hook
 add_action( 'yatco_daily_sync_hook', function() {
+    // CRITICAL: Ignore user abort - we're running in background via wp-cron
+    ignore_user_abort( true );
+    
+    // Get process ID for lock tracking
+    $process_id = getmypid();
+    if ( ! $process_id ) {
+        $process_id = time() . rand( 1000, 9999 );
+    }
+    
+    // Check for existing daily sync lock - prevent duplicate syncs
+    $sync_lock = get_option( 'yatco_daily_sync_lock', false );
+    $lock_process_id = get_option( 'yatco_daily_sync_process_id', false );
+    
+    if ( $sync_lock !== false ) {
+        $lock_time = intval( $sync_lock );
+        $lock_age = time() - $lock_time;
+        
+        // If lock is older than 10 minutes, assume the sync process died - clear it and continue
+        if ( $lock_age > 600 ) {
+            yatco_log( "Daily Sync: Hook triggered, clearing stale lock (age: {$lock_age}s) and continuing", 'warning' );
+            delete_option( 'yatco_daily_sync_lock' );
+            delete_option( 'yatco_daily_sync_process_id' );
+        } elseif ( $lock_process_id !== false && strval( $lock_process_id ) !== strval( $process_id ) ) {
+            // Lock exists, is recent, and belongs to a different process - skip to prevent duplicates
+            yatco_log( "Daily Sync: Hook triggered but sync already running in different process (lock age: {$lock_age}s, lock PID: {$lock_process_id}, this PID: {$process_id}), skipping", 'info' );
+            return;
+        } else {
+            // Lock exists and belongs to this process (or PID not available) - continue
+            yatco_log( "Daily Sync: Hook triggered, lock exists but belongs to this process (PID: {$process_id}), continuing", 'debug' );
+        }
+    }
+    
     // Clear any stale stop flags when sync starts (important for manual triggers)
     delete_option( 'yatco_import_stop_flag' );
     delete_transient( 'yatco_cache_warming_stop' );
+    
+    // Set daily sync lock (acquire lock for this process)
+    update_option( 'yatco_daily_sync_lock', time(), false );
+    update_option( 'yatco_daily_sync_process_id', $process_id, false );
+    yatco_log( "Daily Sync: Sync lock acquired (Process ID: {$process_id})", 'info' );
+    
+    // Increase execution time and memory limits
+    @set_time_limit( 0 );
+    @ini_set( 'max_execution_time', 0 );
+    @ini_set( 'memory_limit', '512M' );
     
     yatco_log( 'Daily Sync: Hook triggered', 'info' );
     $token = yatco_get_token();
@@ -148,6 +190,11 @@ add_action( 'yatco_daily_sync_hook', function() {
     } else {
         yatco_log( 'Daily Sync: Hook triggered but no token found', 'error' );
     }
+    
+    // Release lock when done
+    delete_option( 'yatco_daily_sync_lock' );
+    delete_option( 'yatco_daily_sync_process_id' );
+    yatco_log( 'Daily Sync: Sync lock released', 'info' );
 } );
 
 /**
@@ -323,8 +370,10 @@ function yatco_ajax_get_import_status() {
     // Load progress functions
     require_once YATCO_PLUGIN_DIR . 'includes/yatco-progress.php';
     
+    // CRITICAL: Force cache bypass to get fresh data every time
+    wp_cache_flush();
+    
     // Get all progress data using wp_options (more reliable than transients)
-    require_once YATCO_PLUGIN_DIR . 'includes/yatco-progress.php';
     $import_progress = yatco_get_import_status( 'full' );
     $daily_sync_progress = yatco_get_import_status( 'daily_sync' );
     $cache_status_raw = yatco_get_import_status_message();
@@ -488,63 +537,18 @@ function yatco_ajax_get_import_status() {
     wp_send_json_success( $response_data );
 }
 
-// Add auto-resume functionality - check on heartbeat if import needs to continue
-add_filter( 'heartbeat_received', 'yatco_heartbeat_received', 10, 2 );
-function yatco_heartbeat_received( $response, $data ) {
-    // Check if auto-resume is enabled and import is incomplete
-    $auto_resume = get_option( 'yatco_import_auto_resume', false );
-    if ( $auto_resume !== false ) {
-        $import_progress = get_transient( 'yatco_import_progress' );
-        if ( $import_progress !== false && is_array( $import_progress ) ) {
-            $processed = isset( $import_progress['processed'] ) ? intval( $import_progress['processed'] ) : 0;
-            $total = isset( $import_progress['total'] ) ? intval( $import_progress['total'] ) : 0;
-            
-            // If import is incomplete, trigger resume
-            if ( $total > 0 && $processed < $total ) {
-                $stop_flag = get_option( 'yatco_import_stop_flag', false );
-                $import_lock = get_option( 'yatco_import_lock', false );
-                
-                // Don't trigger resume if import is already running (lock exists and is recent)
-                if ( $import_lock !== false ) {
-                    $lock_age = time() - intval( $import_lock );
-                    if ( $lock_age < 600 ) { // Lock is less than 10 minutes old
-                        // Import is already running, don't trigger another one
-                        return $response;
-                    }
-                }
-                
-                if ( $stop_flag === false ) {
-                    // Check when auto-resume was last triggered to avoid spam
-                    $last_resume = get_option( 'yatco_last_auto_resume_time', 0 );
-                    $time_since_last_resume = time() - $last_resume;
-                    
-                    // Only trigger resume if it's been at least 5 seconds since last attempt
-                    if ( $time_since_last_resume >= 5 ) {
-                        $last_vessel = isset( $import_progress['last_vessel_id'] ) ? $import_progress['last_vessel_id'] : 'unknown';
-                        yatco_log( "Full Import: AUTO-RESUME TRIGGERED - Import incomplete ({$processed}/{$total} vessels, last: {$last_vessel}). Scheduling resume...", 'info' );
-                        
-                        // Schedule resume via wp-cron (non-blocking)
-                        wp_schedule_single_event( time() + 2, 'yatco_full_import_hook' );
-                        spawn_cron();
-                        $response['yatco_auto_resume'] = true;
-                        
-                        // Update last resume time
-                        update_option( 'yatco_last_auto_resume_time', time(), false );
-                    }
-                }
-            } else {
-                // Import complete, clear auto-resume
-                delete_option( 'yatco_import_auto_resume' );
-                delete_option( 'yatco_last_auto_resume_time' );
-            }
-        }
+// CRITICAL: Send progress data via heartbeat_send (fires on every heartbeat tick)
+// This ensures real-time progress updates without waiting for frontend to send data
+add_filter( 'heartbeat_send', 'yatco_heartbeat_send', 10, 2 );
+function yatco_heartbeat_send( $response, $screen_id ) {
+    // Only send progress data on admin pages (not on frontend)
+    if ( ! is_admin() ) {
+        return $response;
     }
     
     // Check stop flag first
     $stop_flag = get_option( 'yatco_import_stop_flag', false );
-    yatco_log( "Heartbeat: Stop flag = " . ( $stop_flag !== false ? 'SET (value: ' . $stop_flag . ')' : 'NOT SET' ), 'debug' );
     if ( $stop_flag !== false ) {
-        yatco_log( 'Heartbeat: Stop flag detected, returning inactive status', 'warning' );
         // Import was stopped - return inactive status
         $response['yatco_import_progress'] = array(
             'active' => false,
@@ -556,6 +560,14 @@ function yatco_heartbeat_received( $response, $data ) {
     // Add progress data to heartbeat response for real-time updates
     // Use wp_options helper functions (bypasses cache automatically)
     require_once YATCO_PLUGIN_DIR . 'includes/yatco-progress.php';
+    
+    // CRITICAL: Force cache bypass to get fresh data every time
+    // Don't use wp_cache_flush() as it's too aggressive - just clear the specific options
+    wp_cache_delete( 'yatco_import_status', 'options' );
+    wp_cache_delete( 'yatco_daily_sync_status', 'options' );
+    wp_cache_delete( 'yatco_import_status_message', 'options' );
+    wp_cache_delete( 'alloptions', 'options' );
+    
     $import_progress = yatco_get_import_status( 'full' );
     $daily_sync_progress = yatco_get_import_status( 'daily_sync' );
     $cache_status = yatco_get_import_status_message();
@@ -647,12 +659,70 @@ function yatco_heartbeat_received( $response, $data ) {
     return $response;
 }
 
+// Add auto-resume functionality - check on heartbeat if import needs to continue
+add_filter( 'heartbeat_received', 'yatco_heartbeat_received', 10, 2 );
+function yatco_heartbeat_received( $response, $data ) {
+    // Check if auto-resume is enabled and import is incomplete
+    $auto_resume = get_option( 'yatco_import_auto_resume', false );
+    if ( $auto_resume !== false ) {
+        require_once YATCO_PLUGIN_DIR . 'includes/yatco-progress.php';
+        $import_progress = yatco_get_import_status( 'full' );
+        if ( $import_progress !== false && is_array( $import_progress ) ) {
+            $processed = isset( $import_progress['processed'] ) ? intval( $import_progress['processed'] ) : 0;
+            $total = isset( $import_progress['total'] ) ? intval( $import_progress['total'] ) : 0;
+            
+            // If import is incomplete, trigger resume
+            if ( $total > 0 && $processed < $total ) {
+                $stop_flag = get_option( 'yatco_import_stop_flag', false );
+                $import_lock = get_option( 'yatco_import_lock', false );
+                
+                // Don't trigger resume if import is already running (lock exists and is recent)
+                if ( $import_lock !== false ) {
+                    $lock_age = time() - intval( $import_lock );
+                    if ( $lock_age < 600 ) { // Lock is less than 10 minutes old
+                        // Import is already running, don't trigger another one
+                        return $response;
+                    }
+                }
+                
+                if ( $stop_flag === false ) {
+                    // Check when auto-resume was last triggered to avoid spam
+                    $last_resume = get_option( 'yatco_last_auto_resume_time', 0 );
+                    $time_since_last_resume = time() - $last_resume;
+                    
+                    // Only trigger resume if it's been at least 5 seconds since last attempt
+                    if ( $time_since_last_resume >= 5 ) {
+                        $last_vessel = isset( $import_progress['last_vessel_id'] ) ? $import_progress['last_vessel_id'] : 'unknown';
+                        yatco_log( "Full Import: AUTO-RESUME TRIGGERED - Import incomplete ({$processed}/{$total} vessels, last: {$last_vessel}). Scheduling resume...", 'info' );
+                        
+                        // Schedule resume via wp-cron (non-blocking)
+                        wp_schedule_single_event( time() + 2, 'yatco_full_import_hook' );
+                        spawn_cron();
+                        $response['yatco_auto_resume'] = true;
+                        
+                        // Update last resume time
+                        update_option( 'yatco_last_auto_resume_time', time(), false );
+                    }
+                }
+            } else {
+                // Import complete, clear auto-resume
+                delete_option( 'yatco_import_auto_resume' );
+                delete_option( 'yatco_last_auto_resume_time' );
+            }
+        }
+    }
+    
+    return $response;
+}
+
 // Increase heartbeat frequency for real-time updates
 add_filter( 'heartbeat_settings', 'yatco_heartbeat_settings' );
 function yatco_heartbeat_settings( $settings ) {
-    // Increase heartbeat frequency to 1 second for real-time updates (when on admin pages)
+    // Increase heartbeat frequency to 2 seconds for real-time updates (when on admin pages)
+    // 1 second is too aggressive and can cause performance issues
+    // 2 seconds provides near real-time updates without overwhelming the server
     if ( is_admin() ) {
-        $settings['interval'] = 1; // Update every 1 second for real-time progress
+        $settings['interval'] = 2; // Update every 2 seconds for real-time progress
     }
     return $settings;
 }

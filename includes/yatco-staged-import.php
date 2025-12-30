@@ -1451,6 +1451,23 @@ function yatco_daily_sync_check( $token ) {
     // Load progress helper functions
     require_once YATCO_PLUGIN_DIR . 'includes/yatco-progress.php';
     
+    // Get process ID for lock verification
+    $process_id = getmypid();
+    if ( ! $process_id ) {
+        $process_id = time() . rand( 1000, 9999 );
+    }
+    
+    // CRITICAL: Verify this process still owns the lock (prevents conflicts if multiple syncs try to run)
+    $sync_lock = get_option( 'yatco_daily_sync_lock', false );
+    $lock_process_id = get_option( 'yatco_daily_sync_process_id', false );
+    
+    if ( $sync_lock !== false && $lock_process_id !== false && strval( $lock_process_id ) !== strval( $process_id ) ) {
+        yatco_log( "Daily Sync: Lock owned by different process ({$lock_process_id} vs {$process_id}), aborting to prevent conflicts", 'warning' );
+        yatco_clear_import_status( 'daily_sync' );
+        yatco_update_import_status_message( 'Daily Sync: Another sync is already running. Please wait for it to complete.' );
+        return;
+    }
+    
     yatco_log( 'Daily Sync: Starting', 'info' );
     
     // Increase execution time and memory limits

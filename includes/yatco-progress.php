@@ -41,11 +41,37 @@ function yatco_update_import_status( $status_data, $type = 'full' ) {
  * @return array|false Status data or false if not found
  */
 function yatco_get_import_status( $type = 'full' ) {
-    // Bypass object cache to get fresh data
+    // Bypass object cache to get fresh data - use multiple methods for reliability
     $option_name = $type === 'daily_sync' ? 'yatco_daily_sync_status' : 'yatco_import_status';
-    wp_cache_delete( $option_name, 'options' );
     
-    $status = get_option( $option_name, false );
+    // Clear cache multiple ways to ensure fresh data
+    wp_cache_delete( $option_name, 'options' );
+    wp_cache_delete( 'alloptions', 'options' ); // Clear alloptions cache which can hold option values
+    
+    // Get option directly from database, bypassing all caches
+    global $wpdb;
+    $status_raw = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", $option_name ) );
+    
+    // If direct DB query returned null (option doesn't exist), return false
+    if ( $status_raw === null ) {
+        return false;
+    }
+    
+    // Unserialize the value
+    $status = maybe_unserialize( $status_raw );
+    
+    // Handle edge case: if unserialize returns false but value wasn't empty, it might be a boolean false
+    // Check if the raw value was actually 'b:0;' (serialized false) or empty
+    if ( $status === false && $status_raw !== 'b:0;' && ! empty( $status_raw ) ) {
+        // Try to decode as JSON if unserialize failed
+        $json_status = json_decode( $status_raw, true );
+        if ( json_last_error() === JSON_ERROR_NONE && is_array( $json_status ) ) {
+            $status = $json_status;
+        } else {
+            // If all else fails, return false
+            return false;
+        }
+    }
     
     // If status exists but hasn't been updated in 5 minutes, consider it stalled
     // Check both 'updated_at' and 'updated' for backward compatibility

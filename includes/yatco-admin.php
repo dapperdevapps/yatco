@@ -219,27 +219,38 @@ function yatco_options_page() {
             wp_cache_delete( 'yatco_daily_sync_progress', 'transient' );
             yatco_log( '🛑 IMPORT STOP: Progress cleared from cache and database', 'warning' );
             
-            // CRITICAL: Release the lock immediately so user can start a new import
-            // The import process will detect the stop flag and stop, but we need to clear the lock
-            // so a new import can start immediately without waiting
-            $had_lock = get_option( 'yatco_import_lock', false );
+            // CRITICAL: Release the locks immediately so user can start a new import/sync
+            // The import/sync process will detect the stop flag and stop, but we need to clear the locks
+            // so a new import/sync can start immediately without waiting
+            $had_import_lock = get_option( 'yatco_import_lock', false );
+            $had_sync_lock = get_option( 'yatco_daily_sync_lock', false );
             delete_option( 'yatco_import_lock' );
             delete_option( 'yatco_import_process_id' );
             delete_option( 'yatco_import_using_fastcgi' );
-            if ( $had_lock !== false ) {
+            delete_option( 'yatco_daily_sync_lock' );
+            delete_option( 'yatco_daily_sync_process_id' );
+            if ( $had_import_lock !== false ) {
                 yatco_log( '🛑 IMPORT STOP: Import lock released immediately to allow new import', 'warning' );
+            }
+            if ( $had_sync_lock !== false ) {
+                yatco_log( '🛑 IMPORT STOP: Daily sync lock released immediately to allow new sync', 'warning' );
             }
             
             // Cancel ALL scheduled cron jobs to prevent them from running after stop
             $scheduled_full = wp_next_scheduled( 'yatco_full_import_hook' );
             $scheduled_warm = wp_next_scheduled( 'yatco_warm_cache_hook' );
+            $scheduled_sync = wp_next_scheduled( 'yatco_daily_sync_hook' );
             wp_clear_scheduled_hook( 'yatco_full_import_hook' );
             wp_clear_scheduled_hook( 'yatco_warm_cache_hook' );
+            wp_clear_scheduled_hook( 'yatco_daily_sync_hook' );
             if ( $scheduled_full !== false ) {
                 yatco_log( '🛑 IMPORT STOP: Cancelled scheduled Full Import event', 'warning' );
             }
             if ( $scheduled_warm !== false ) {
                 yatco_log( '🛑 IMPORT STOP: Cancelled scheduled update all vessels event', 'warning' );
+            }
+            if ( $scheduled_sync !== false ) {
+                yatco_log( '🛑 IMPORT STOP: Cancelled scheduled Daily Sync event', 'warning' );
             }
             
             // Clear progress from wp_options (not just transients)
@@ -447,6 +458,22 @@ function yatco_options_page() {
                 echo '<div class="notice notice-error" style="margin-top: 15px;"><p>Missing token. Please configure your API token first.</p></div>';
             } else {
                 yatco_log( 'Daily Sync Direct: Sync triggered via button', 'info' );
+                
+                // Check if daily sync is already running
+                $sync_lock = get_option( 'yatco_daily_sync_lock', false );
+                if ( $sync_lock !== false ) {
+                    $lock_age = time() - intval( $sync_lock );
+                    // If lock is older than 10 minutes, it's stale - clear it
+                    if ( $lock_age > 600 ) {
+                        yatco_log( "Daily Sync Direct: Clearing stale lock (age: {$lock_age}s) before starting", 'info' );
+                        delete_option( 'yatco_daily_sync_lock' );
+                        delete_option( 'yatco_daily_sync_process_id' );
+                    } else {
+                        yatco_log( "Daily Sync Direct: Daily sync already running (lock age: {$lock_age}s), skipping", 'warning' );
+                        echo '<div class="notice notice-warning" style="margin-top: 15px;"><p>Daily sync is already running. Please wait for it to complete before starting a new one.</p></div>';
+                        return; // Don't schedule another sync
+                    }
+                }
                 
                 // Clear any stale stop flags (but keep progress transients for display)
                 delete_option( 'yatco_import_stop_flag' );
@@ -712,24 +739,35 @@ function yatco_options_page() {
             // CRITICAL: Release the lock immediately so user can start a new import
             // The import process will detect the stop flag and stop, but we need to clear the lock
             // so a new import can start immediately without waiting
-            $had_lock = get_option( 'yatco_import_lock', false );
+            $had_import_lock = get_option( 'yatco_import_lock', false );
+            $had_sync_lock = get_option( 'yatco_daily_sync_lock', false );
             delete_option( 'yatco_import_lock' );
             delete_option( 'yatco_import_process_id' );
             delete_option( 'yatco_import_using_fastcgi' );
-            if ( $had_lock !== false ) {
+            delete_option( 'yatco_daily_sync_lock' );
+            delete_option( 'yatco_daily_sync_process_id' );
+            if ( $had_import_lock !== false ) {
                 yatco_log( '🛑 IMPORT STOP: Import lock released immediately to allow new import', 'warning' );
+            }
+            if ( $had_sync_lock !== false ) {
+                yatco_log( '🛑 IMPORT STOP: Daily sync lock released immediately to allow new sync', 'warning' );
             }
             
             // Cancel ALL scheduled cron jobs to prevent them from running after stop
             $scheduled_full = wp_next_scheduled( 'yatco_full_import_hook' );
             $scheduled_warm = wp_next_scheduled( 'yatco_warm_cache_hook' );
+            $scheduled_sync = wp_next_scheduled( 'yatco_daily_sync_hook' );
             wp_clear_scheduled_hook( 'yatco_full_import_hook' );
             wp_clear_scheduled_hook( 'yatco_warm_cache_hook' );
+            wp_clear_scheduled_hook( 'yatco_daily_sync_hook' );
             if ( $scheduled_full !== false ) {
                 yatco_log( '🛑 IMPORT STOP: Cancelled scheduled Full Import event', 'warning' );
             }
             if ( $scheduled_warm !== false ) {
                 yatco_log( '🛑 IMPORT STOP: Cancelled scheduled update all vessels event', 'warning' );
+            }
+            if ( $scheduled_sync !== false ) {
+                yatco_log( '🛑 IMPORT STOP: Cancelled scheduled Daily Sync event', 'warning' );
             }
             
             // Clear progress from wp_options (not just transients)
