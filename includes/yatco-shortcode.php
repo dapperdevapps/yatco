@@ -349,13 +349,22 @@ function yatco_vessels_shortcode( $atts ) {
         // Remaining vessels will be loaded via AJAX in the background
         $initial_load = ! isset( $_GET['yatco_ajax_load'] ) || $_GET['yatco_ajax_load'] !== 'all';
         
+        // Query ALL posts first to get filter options (builders, categories, types, conditions)
+        // This ensures filters show all available options, not just from the first 12 vessels
+        $filter_query_args = $query_args;
+        $filter_query_args['posts_per_page'] = -1; // Get all for filter options
+        $filter_query_args['fields'] = 'ids';
+        $filter_query_args['no_found_rows'] = true;
+        $all_post_ids_for_filters = get_posts( $filter_query_args );
+        
+        // Now get the limited set for display
         if ( $initial_load ) {
             // Initial load: only get first 12 for instant display
             $query_args['posts_per_page'] = 12;
             $query_args['no_found_rows'] = false; // Need total count for pagination
         }
         
-        // Query CPT posts (only IDs to save memory)
+        // Query CPT posts for display (only IDs to save memory)
         $vessel_query = new WP_Query( $query_args );
         $post_ids = $vessel_query->posts;
         $total_vessels = $initial_load ? $vessel_query->found_posts : count( $post_ids ); // Get total count
@@ -376,6 +385,66 @@ function yatco_vessels_shortcode( $atts ) {
                 'yacht_make', 'yacht_category', 'yacht_type', 'yacht_condition',
                 'yacht_location', 'yacht_state_rooms', 'yacht_image_url'
             );
+            
+            // OPTIMIZATION: Get filter options directly from meta table using DISTINCT queries
+            // This is MUCH faster than loading all vessel IDs first - we query distinct values directly
+            // Only join with posts table to ensure we only get published yacht posts
+            
+            // Get distinct builders (yacht_make)
+            $builders_query = $wpdb->prepare(
+                "SELECT DISTINCT pm.meta_value 
+                 FROM {$wpdb->postmeta} pm
+                 INNER JOIN {$wpdb->posts} p ON pm.post_id = p.ID
+                 WHERE pm.meta_key = 'yacht_make'
+                 AND p.post_type = 'yacht'
+                 AND p.post_status = 'publish'
+                 AND pm.meta_value != ''
+                 ORDER BY pm.meta_value ASC"
+            );
+            $builders_results = $wpdb->get_col( $builders_query );
+            $builders = array_filter( array_map( 'trim', $builders_results ) );
+            
+            // Get distinct categories
+            $categories_query = $wpdb->prepare(
+                "SELECT DISTINCT pm.meta_value 
+                 FROM {$wpdb->postmeta} pm
+                 INNER JOIN {$wpdb->posts} p ON pm.post_id = p.ID
+                 WHERE pm.meta_key = 'yacht_category'
+                 AND p.post_type = 'yacht'
+                 AND p.post_status = 'publish'
+                 AND pm.meta_value != ''
+                 ORDER BY pm.meta_value ASC"
+            );
+            $categories_results = $wpdb->get_col( $categories_query );
+            $categories = array_filter( array_map( 'trim', $categories_results ) );
+            
+            // Get distinct types
+            $types_query = $wpdb->prepare(
+                "SELECT DISTINCT pm.meta_value 
+                 FROM {$wpdb->postmeta} pm
+                 INNER JOIN {$wpdb->posts} p ON pm.post_id = p.ID
+                 WHERE pm.meta_key = 'yacht_type'
+                 AND p.post_type = 'yacht'
+                 AND p.post_status = 'publish'
+                 AND pm.meta_value != ''
+                 ORDER BY pm.meta_value ASC"
+            );
+            $types_results = $wpdb->get_col( $types_query );
+            $types = array_filter( array_map( 'trim', $types_results ) );
+            
+            // Get distinct conditions
+            $conditions_query = $wpdb->prepare(
+                "SELECT DISTINCT pm.meta_value 
+                 FROM {$wpdb->postmeta} pm
+                 INNER JOIN {$wpdb->posts} p ON pm.post_id = p.ID
+                 WHERE pm.meta_key = 'yacht_condition'
+                 AND p.post_type = 'yacht'
+                 AND p.post_status = 'publish'
+                 AND pm.meta_value != ''
+                 ORDER BY pm.meta_value ASC"
+            );
+            $conditions_results = $wpdb->get_col( $conditions_query );
+            $conditions = array_filter( array_map( 'trim', $conditions_results ) );
             
             // Build placeholders for SQL IN clause (prepare handles arrays properly)
             $post_ids_placeholder = implode( ',', array_fill( 0, count( $post_ids ), '%d' ) );
@@ -491,18 +560,21 @@ function yatco_vessels_shortcode( $atts ) {
                 
                 $vessels[] = $vessel_data;
                 
-                // Collect unique values for filters
-                if ( ! empty( $builder ) && ! in_array( $builder, $builders ) ) {
-                    $builders[] = $builder;
-                }
-                if ( ! empty( $category ) && ! in_array( $category, $categories ) ) {
-                    $categories[] = $category;
-                }
-                if ( ! empty( $type ) && ! in_array( $type, $types ) ) {
-                    $types[] = $type;
-                }
-                if ( ! empty( $condition ) && ! in_array( $condition, $conditions ) ) {
-                    $conditions[] = $condition;
+                // Only collect filter options from displayed vessels if we didn't already collect from ALL vessels
+                // (This happens when initial_load is false, meaning all vessels are being loaded)
+                if ( ! $initial_load || empty( $all_post_ids_for_filters ) ) {
+                    if ( ! empty( $builder ) && ! in_array( $builder, $builders ) ) {
+                        $builders[] = $builder;
+                    }
+                    if ( ! empty( $category ) && ! in_array( $category, $categories ) ) {
+                        $categories[] = $category;
+                    }
+                    if ( ! empty( $type ) && ! in_array( $type, $types ) ) {
+                        $types[] = $type;
+                    }
+                    if ( ! empty( $condition ) && ! in_array( $condition, $conditions ) ) {
+                        $conditions[] = $condition;
+                    }
                 }
             }
             // No need for wp_reset_postdata() since we used get_posts() with fields => 'ids'
