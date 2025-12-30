@@ -29,9 +29,9 @@ function yatco_update_import_status( $status_data, $type = 'full' ) {
     $option_name = $type === 'daily_sync' ? 'yatco_daily_sync_status' : 'yatco_import_status';
     update_option( $option_name, $status_data, false );
     
-    // Force cache flush to ensure immediate availability
+    // Force cache delete to ensure immediate availability (don't use wp_cache_flush - too aggressive)
     wp_cache_delete( $option_name, 'options' );
-    wp_cache_flush();
+    wp_cache_delete( 'alloptions', 'options' );
 }
 
 /**

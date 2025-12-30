@@ -430,7 +430,12 @@ function yatco_ajax_get_import_status() {
     require_once YATCO_PLUGIN_DIR . 'includes/yatco-progress.php';
     
     // CRITICAL: Force cache bypass to get fresh data every time
-    wp_cache_flush();
+    // Use direct database query (same as yatco_get_import_status does) for maximum reliability
+    global $wpdb;
+    wp_cache_delete( 'yatco_import_status', 'options' );
+    wp_cache_delete( 'yatco_daily_sync_status', 'options' );
+    wp_cache_delete( 'yatco_import_status_message', 'options' );
+    wp_cache_delete( 'alloptions', 'options' );
     
     // Get all progress data using wp_options (more reliable than transients)
     $import_progress = yatco_get_import_status( 'full' );
@@ -438,9 +443,7 @@ function yatco_ajax_get_import_status() {
     $cache_status_raw = yatco_get_import_status_message();
     $stop_flag = get_option( 'yatco_import_stop_flag', false );
     
-    yatco_log( 'AJAX Status Check: Import progress = ' . ( $import_progress !== false ? 'EXISTS' : 'NOT FOUND' ), 'debug' );
-    yatco_log( 'AJAX Status Check: Daily sync progress = ' . ( $daily_sync_progress !== false ? 'EXISTS' : 'NOT FOUND' ), 'debug' );
-    yatco_log( "AJAX Status Check: Stop flag = " . ( $stop_flag !== false ? 'SET (value: ' . $stop_flag . ')' : 'NOT SET' ), 'debug' );
+    // Removed excessive debug logging for better performance
     
     // Determine if import or sync is active - check ACTIVE processes FIRST (same logic as helper function)
     $active_stage = 0;
@@ -456,14 +459,12 @@ function yatco_ajax_get_import_status() {
             delete_transient( 'yatco_cache_warming_stop' );
             $stop_flag = false;
         }
-        yatco_log( 'AJAX Status Check: Active stage = daily_sync', 'debug' );
     } elseif ( $import_progress !== false && is_array( $import_progress ) ) {
         // Check if import is actually active (not stopped)
         if ( $stop_flag === false ) {
             // No stop flag, import is active
             $active_stage = 'full';
             $active_progress = $import_progress;
-            yatco_log( 'AJAX Status Check: Active stage = full, progress data: ' . json_encode( $active_progress ), 'debug' );
         } else {
             // Stop flag is set but we have progress - check if status says stopped
             // If status doesn't say stopped, clear the flag (it's stale)
@@ -473,13 +474,8 @@ function yatco_ajax_get_import_status() {
                 $stop_flag = false;
                 $active_stage = 'full';
                 $active_progress = $import_progress;
-                yatco_log( 'AJAX Status Check: Stop flag was stale, cleared. Active stage = full', 'debug' );
-            } else {
-                yatco_log( 'AJAX Status Check: Stop flag detected and status confirms stopped', 'warning' );
             }
         }
-    } else {
-        yatco_log( 'AJAX Status Check: No active stage found', 'debug' );
     }
     
     // Determine cache status based on active processes
@@ -592,7 +588,11 @@ function yatco_ajax_get_import_status() {
         );
     }
     
-    yatco_log( 'AJAX Status Check: Sending response - active=' . ( $response_data['active'] ? 'true' : 'false' ) . ', stage=' . ( $response_data['stage'] ?: 'null' ), 'debug' );
+    // Always include status in progress for daily_sync too
+    if ( $active_stage === 'daily_sync' && isset( $response_data['progress'] ) && $cache_status !== false ) {
+        $response_data['progress']['status'] = $cache_status;
+    }
+    
     wp_send_json_success( $response_data );
 }
 
