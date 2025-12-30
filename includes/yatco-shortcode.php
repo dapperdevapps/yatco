@@ -356,20 +356,78 @@ function yatco_vessels_shortcode( $atts ) {
             $types = array();
             $conditions = array();
             
-            // Fetch all meta data in one query per post to reduce database calls
+            // OPTIMIZATION: Fetch all meta data in bulk using a single SQL query
+            global $wpdb;
+            $meta_keys = array(
+                'yacht_vessel_id', 'yacht_price_usd', 'yacht_price_eur', 'yacht_price',
+                'yacht_year', 'yacht_length', 'yacht_length_feet', 'yacht_length_meters',
+                'yacht_make', 'yacht_category', 'yacht_type', 'yacht_condition',
+                'yacht_location', 'yacht_state_rooms', 'yacht_image_url'
+            );
+            
+            // Build placeholders for SQL IN clause (prepare handles arrays properly)
+            $post_ids_placeholder = implode( ',', array_fill( 0, count( $post_ids ), '%d' ) );
+            $meta_keys_placeholder = implode( ',', array_fill( 0, count( $meta_keys ), '%s' ) );
+            
+            // Prepare statement with all values
+            $prepare_values = array_merge( $post_ids, $meta_keys );
+            
+            // Fetch all meta in one query (much faster than individual get_post_meta calls)
+            $meta_query = $wpdb->prepare(
+                "SELECT post_id, meta_key, meta_value 
+                 FROM {$wpdb->postmeta} 
+                 WHERE post_id IN ($post_ids_placeholder) 
+                 AND meta_key IN ($meta_keys_placeholder)",
+                $prepare_values
+            );
+            
+            $all_meta_results = $wpdb->get_results( $meta_query, ARRAY_A );
+            
+            // Organize meta by post_id for easy lookup
+            $meta_by_post = array();
+            foreach ( $all_meta_results as $meta_row ) {
+                $post_id = intval( $meta_row['post_id'] );
+                if ( ! isset( $meta_by_post[ $post_id ] ) ) {
+                    $meta_by_post[ $post_id ] = array();
+                }
+                $meta_by_post[ $post_id ][ $meta_row['meta_key'] ] = $meta_row['meta_value'];
+            }
+            
+            // Get all post titles in one query
+            $title_placeholder = implode( ',', array_fill( 0, count( $post_ids ), '%d' ) );
+            $title_query = $wpdb->prepare(
+                "SELECT ID, post_title FROM {$wpdb->posts} WHERE ID IN ($title_placeholder)",
+                $post_ids
+            );
+            $titles = $wpdb->get_results( $title_query, OBJECT_K );
+            
+            // Bulk fetch featured image IDs for posts that might need them (if yacht_image_url is missing)
+            // This is much faster than calling get_post_thumbnail_id() individually
+            $thumbnail_query = $wpdb->prepare(
+                "SELECT post_id, meta_value as thumbnail_id 
+                 FROM {$wpdb->postmeta} 
+                 WHERE post_id IN ($title_placeholder) 
+                 AND meta_key = '_thumbnail_id'",
+                $post_ids
+            );
+            $thumbnail_results = $wpdb->get_results( $thumbnail_query, ARRAY_A );
+            
+            // Build array: post_id => thumbnail_id
+            $thumbnail_ids = array();
+            foreach ( $thumbnail_results as $thumb_row ) {
+                $thumbnail_ids[ intval( $thumb_row['post_id'] ) ] = intval( $thumb_row['thumbnail_id'] );
+            }
+            
+            // Fetch all meta data efficiently
             foreach ( $post_ids as $post_id ) {
-                // Fetch all meta fields for this post in a single call (more memory efficient)
-                $meta_keys = array(
-                    'yacht_vessel_id', 'yacht_price_usd', 'yacht_price_eur', 'yacht_price',
-                    'yacht_year', 'yacht_length', 'yacht_length_feet', 'yacht_length_meters',
-                    'yacht_make', 'yacht_category', 'yacht_type', 'yacht_condition',
-                    'yacht_location', 'yacht_state_rooms', 'yacht_image_url'
-                );
+                // Get meta from our pre-fetched array
+                $all_meta = isset( $meta_by_post[ $post_id ] ) ? $meta_by_post[ $post_id ] : array();
                 
-                // Use get_post_meta with single=true for efficiency, but fetch all at once
-                $all_meta = array();
+                // Ensure all keys exist (set to empty string if missing)
                 foreach ( $meta_keys as $key ) {
-                    $all_meta[ $key ] = get_post_meta( $post_id, $key, true );
+                    if ( ! isset( $all_meta[ $key ] ) ) {
+                        $all_meta[ $key ] = '';
+                    }
                 }
                 
                 // Extract values
@@ -389,15 +447,13 @@ function yatco_vessels_shortcode( $atts ) {
                 $state_rooms = $all_meta['yacht_state_rooms'];
                 $image_url = $all_meta['yacht_image_url'];
                 
-                // Get post title
-                $post_title = get_the_title( $post_id );
+                // Get post title from pre-fetched array
+                $post_title = isset( $titles[ $post_id ] ) ? $titles[ $post_id ]->post_title : '';
                 
-                // Get featured image if available (lazy load - only when needed)
-                if ( empty( $image_url ) ) {
-                    $thumbnail_id = get_post_thumbnail_id( $post_id );
-                    if ( $thumbnail_id ) {
-                        $image_url = wp_get_attachment_image_url( $thumbnail_id, 'medium' );
-                    }
+                // If no image URL from meta, try featured image (thumbnail ID was bulk-fetched)
+                // Only call wp_get_attachment_image_url() if needed (most vessels have yacht_image_url)
+                if ( empty( $image_url ) && isset( $thumbnail_ids[ $post_id ] ) && $thumbnail_ids[ $post_id ] > 0 ) {
+                    $image_url = wp_get_attachment_image_url( $thumbnail_ids[ $post_id ], 'medium' );
                 }
                 
                 $vessel_data = array(
@@ -447,7 +503,13 @@ function yatco_vessels_shortcode( $atts ) {
             // Note: Don't limit vessels here - client-side pagination will handle display
             // All vessels are needed for filtering and pagination to work correctly
             
-            // Clear memory
+            // Clear memory (free up large arrays)
+            if ( isset( $meta_by_post ) ) unset( $meta_by_post );
+            if ( isset( $all_meta_results ) ) unset( $all_meta_results );
+            if ( isset( $titles ) ) unset( $titles );
+            if ( isset( $thumbnail_ids ) ) unset( $thumbnail_ids );
+            if ( isset( $thumbnail_results ) ) unset( $thumbnail_results );
+            if ( isset( $post_ids ) ) unset( $post_ids );
             unset( $post_ids, $all_meta );
             
             // If warming, show message with partial results
