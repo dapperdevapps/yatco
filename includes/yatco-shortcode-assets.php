@@ -271,15 +271,18 @@ if ( ! defined( 'ABSPATH' ) ) {
     // Flag to track if we're waiting for vessels to load (for URL parameter filtering)
     window.yatcoWaitingForVessels = false;
     
-    // Listen for event when new vessels are loaded via AJAX
+    // Listen for event when new vessels are loaded via AJAX (set up early)
     document.addEventListener('yatco:vessels-loaded', function() {
         // Update allVessels array when new vessels are added to DOM
         allVessels = Array.from(document.querySelectorAll('.yatco-vessel-card'));
         
         // If we were waiting for vessels to load (due to URL parameters), filter now
         if (window.yatcoWaitingForVessels) {
-            filterAndDisplay();
-            window.yatcoWaitingForVessels = false;
+            // Small delay to ensure DOM is fully updated
+            setTimeout(function() {
+                filterAndDisplay();
+                window.yatcoWaitingForVessels = false;
+            }, 100);
         }
     });
     const resultsCount = document.querySelector('.yatco-results-count');
@@ -489,7 +492,7 @@ if ( ! defined( 'ABSPATH' ) ) {
                 return false;
             }
             
-            // Category
+            // Category - exact match (case-sensitive)
             if (categoryVal && vesselCategory !== categoryVal) {
                 return false;
             }
@@ -639,17 +642,19 @@ if ( ! defined( 'ABSPATH' ) ) {
     };
     
     function filterAndDisplay() {
-        // Re-query all vessels in case new ones were added via AJAX
-        // This ensures we have the latest vessel list, but only do it once per call to avoid performance issues
+        // Always re-query all vessels from DOM to ensure we have the latest list (AJAX may have added more)
         const currentVessels = Array.from(document.querySelectorAll('.yatco-vessel-card'));
-        const vesselsToUse = currentVessels.length >= allVessels.length ? currentVessels : allVessels;
         
-        const filtered = filterVessels(vesselsToUse);
+        // Update allVessels array to keep it in sync
+        allVessels = currentVessels;
+        
+        // Use the fresh DOM query for filtering
+        const filtered = filterVessels(currentVessels);
         const sorted = sortVessels(filtered);
         const paginated = paginateVessels(sorted);
         
-        // Hide all vessels (use current vessels list to ensure we hide newly added ones too)
-        vesselsToUse.forEach(v => v.style.display = 'none');
+        // Hide all vessels first
+        currentVessels.forEach(v => v.style.display = 'none');
         
         // Show paginated vessels (just change display, don't move DOM nodes - this prevents lockups)
         paginated.forEach(v => {
@@ -661,11 +666,10 @@ if ( ! defined( 'ABSPATH' ) ) {
             const totalFiltered = sorted.length;
             const shownStart = totalFiltered > 0 ? (currentPage - 1) * vesselsPerPage + 1 : 0;
             const shownEnd = Math.min(currentPage * vesselsPerPage, totalFiltered);
-            const total = totalCount ? totalCount.textContent : vesselsToUse.length;
             resultsCount.innerHTML = `${shownStart} - ${shownEnd} of <span id="yatco-total-count">${totalFiltered}</span> YACHTS FOUND`;
         }
         
-        // Update pagination
+        // Update pagination (always show if more than 1 page of filtered results)
         updatePaginationControls(sorted.length);
         
         // Update URL parameters (but don't reload the page)
@@ -729,7 +733,27 @@ if ( ! defined( 'ABSPATH' ) ) {
         if (totalVessels > loadedVessels) {
             // Not all vessels loaded yet - set flag and wait for AJAX load
             window.yatcoWaitingForVessels = true;
-            // Don't filter yet - will filter after AJAX loads all vessels (via event listener)
+            
+            // Also set up a polling check as backup (in case event doesn't fire)
+            const checkInterval = setInterval(function() {
+                const currentCount = document.querySelectorAll('.yatco-vessel-card').length;
+                if (currentCount >= totalVessels) {
+                    clearInterval(checkInterval);
+                    window.yatcoWaitingForVessels = false;
+                    filterAndDisplay();
+                }
+            }, 300);
+            
+            // Clear interval after 10 seconds (safety timeout)
+            setTimeout(function() {
+                clearInterval(checkInterval);
+                if (window.yatcoWaitingForVessels) {
+                    window.yatcoWaitingForVessels = false;
+                    filterAndDisplay(); // Filter with whatever we have
+                }
+            }, 10000);
+            
+            // Don't filter yet - will filter after AJAX loads all vessels (via event listener or polling)
         } else {
             // All vessels already loaded - filter immediately
             filterAndDisplay();
