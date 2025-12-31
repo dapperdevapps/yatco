@@ -662,15 +662,18 @@ function yatco_vessels_shortcode( $atts ) {
                                             // Append vessels (hidden by default via style attribute)
                                             grid.append(response.data.html);
                                             
-                                            // Update total count in results header
+                                            // Trigger event to notify main script that new vessels were loaded
+                                            // This will invalidate the cache and update the vessel list
+                                            var event = new CustomEvent("yatco:vessels-loaded", {
+                                                detail: { count: response.data.total_count || 0 }
+                                            });
+                                            document.dispatchEvent(event);
+                                            
+                                            // Update total count in results header (if element exists)
                                             var totalCount = $("#yatco-total-count");
                                             if (totalCount.length && response.data.total_count) {
                                                 totalCount.text(response.data.total_count);
                                             }
-                                            
-                                            // Trigger a custom event to let the main script know new vessels were added
-                                            // The main script will need to re-query allVessels if it wants to include these
-                                            $(document).trigger("yatco:vessels-loaded", [newVessels.length]);
                                         }
                                     }
                                 },

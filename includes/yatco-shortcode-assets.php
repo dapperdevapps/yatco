@@ -273,6 +273,9 @@ if ( ! defined( 'ABSPATH' ) ) {
     
     // Listen for event when new vessels are loaded via AJAX (set up early)
     document.addEventListener('yatco:vessels-loaded', function() {
+        // Invalidate cache when new vessels are added
+        invalidateVesselsCache();
+        
         // Update allVessels array when new vessels are added to DOM
         allVessels = Array.from(document.querySelectorAll('.yatco-vessel-card'));
         
@@ -641,39 +644,57 @@ if ( ! defined( 'ABSPATH' ) ) {
         filterAndDisplay();
     };
     
+    // Cache for vessels array to avoid expensive DOM queries on every filter call
+    let vesselsCache = null;
+    let vesselsCacheTime = 0;
+    const VESSELS_CACHE_DURATION = 500; // Cache for 500ms (reduces DOM queries while staying fresh)
+    
+    function getVesselsFromDOM() {
+        // Use cached vessels if available and recent, otherwise query DOM
+        const now = Date.now();
+        if (vesselsCache && (now - vesselsCacheTime) < VESSELS_CACHE_DURATION) {
+            return vesselsCache;
+        }
+        vesselsCache = Array.from(document.querySelectorAll('.yatco-vessel-card'));
+        vesselsCacheTime = now;
+        allVessels = vesselsCache; // Keep allVessels in sync
+        return vesselsCache;
+    }
+    
+    function invalidateVesselsCache() {
+        vesselsCache = null;
+        vesselsCacheTime = 0;
+    }
+    
     function filterAndDisplay() {
-        // Always re-query all vessels from DOM to ensure we have the latest list (AJAX may have added more)
-        const currentVessels = Array.from(document.querySelectorAll('.yatco-vessel-card'));
+        // Get vessels (use cache if available, otherwise query DOM)
+        const currentVessels = getVesselsFromDOM();
         
-        // Update allVessels array to keep it in sync
-        allVessels = currentVessels;
-        
-        // Use the fresh DOM query for filtering
+        // Use the vessels for filtering
         const filtered = filterVessels(currentVessels);
         const sorted = sortVessels(filtered);
         const paginated = paginateVessels(sorted);
         
-        // Hide all vessels first
+        // Hide all vessels first, then show paginated ones
+        // Do this synchronously for consistency (counts and pagination need to be accurate)
         currentVessels.forEach(v => v.style.display = 'none');
+        paginated.forEach(v => v.style.display = '');
         
-        // Show paginated vessels (just change display, don't move DOM nodes - this prevents lockups)
-        paginated.forEach(v => {
-            v.style.display = '';
-        });
-        
-        // Update count
+        // Update count and pagination (use sorted.length which is the filtered count)
+        const totalFiltered = sorted.length;
         if (resultsCount) {
-            const totalFiltered = sorted.length;
             const shownStart = totalFiltered > 0 ? (currentPage - 1) * vesselsPerPage + 1 : 0;
             const shownEnd = Math.min(currentPage * vesselsPerPage, totalFiltered);
             resultsCount.innerHTML = `${shownStart} - ${shownEnd} of <span id="yatco-total-count">${totalFiltered}</span> YACHTS FOUND`;
         }
         
-        // Update pagination (always show if more than 1 page of filtered results)
-        updatePaginationControls(sorted.length);
+        // Update pagination controls
+        updatePaginationControls(totalFiltered);
         
-        // Update URL parameters (but don't reload the page)
-        updateUrlParameters();
+        // Update URL parameters (defer to avoid blocking)
+        setTimeout(() => {
+            updateUrlParameters();
+        }, 0);
     }
     
     if (resetBtn) {
