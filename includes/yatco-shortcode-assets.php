@@ -667,52 +667,60 @@ if ( ! defined( 'ABSPATH' ) ) {
     }
     
     function filterAndDisplay() {
-        // Get vessels (use cache if available, otherwise query DOM)
-        const currentVessels = getVesselsFromDOM();
-        
-        // Early return if no vessels (prevents errors)
-        if (!currentVessels || currentVessels.length === 0) {
-            if (resultsCount) {
-                resultsCount.innerHTML = '0 of <span id="yatco-total-count">0</span> YACHTS FOUND';
+        try {
+            // Get vessels (use cache if available, otherwise query DOM)
+            const currentVessels = getVesselsFromDOM();
+            
+            // Early return if no vessels (prevents errors)
+            if (!currentVessels || currentVessels.length === 0) {
+                if (resultsCount) {
+                    resultsCount.innerHTML = '0 of <span id="yatco-total-count">0</span> YACHTS FOUND';
+                }
+                const paginationContainer = document.querySelector('.yatco-pagination');
+                if (paginationContainer) {
+                    paginationContainer.style.display = 'none';
+                }
+                return;
             }
-            const paginationContainer = document.querySelector('.yatco-pagination');
-            if (paginationContainer) {
-                paginationContainer.style.display = 'none';
-            }
-            return;
+            
+            // Use the vessels for filtering
+            const filtered = filterVessels(currentVessels);
+            const sorted = sortVessels(filtered);
+            const paginated = paginateVessels(sorted);
+            
+            // Get total filtered count for display
+            const totalFiltered = sorted.length;
+            
+            // Hide all vessels first - use requestAnimationFrame to avoid blocking UI
+            requestAnimationFrame(function() {
+                // Batch hide operations for better performance
+                for (let i = 0; i < currentVessels.length; i++) {
+                    currentVessels[i].style.display = 'none';
+                }
+                
+                // Show paginated vessels
+                for (let i = 0; i < paginated.length; i++) {
+                    paginated[i].style.display = '';
+                }
+                
+                // Update count
+                if (resultsCount) {
+                    const shownStart = totalFiltered > 0 ? (currentPage - 1) * vesselsPerPage + 1 : 0;
+                    const shownEnd = Math.min(currentPage * vesselsPerPage, totalFiltered);
+                    resultsCount.innerHTML = shownStart + ' - ' + shownEnd + ' of <span id="yatco-total-count">' + totalFiltered + '</span> YACHTS FOUND';
+                }
+                
+                // Update pagination controls (MUST show pagination if more than 1 page)
+                updatePaginationControls(totalFiltered);
+                
+                // Update URL parameters (defer to avoid blocking)
+                setTimeout(function() {
+                    updateUrlParameters();
+                }, 0);
+            });
+        } catch (error) {
+            console.error('Error in filterAndDisplay:', error);
         }
-        
-        // Use the vessels for filtering
-        const filtered = filterVessels(currentVessels);
-        const sorted = sortVessels(filtered);
-        const paginated = paginateVessels(sorted);
-        
-        // Hide all vessels first, then show paginated ones
-        // Use CSS class toggling for better performance than style.display
-        currentVessels.forEach(v => {
-            v.style.display = 'none';
-            v.classList.add('yatco-hidden');
-        });
-        paginated.forEach(v => {
-            v.style.display = '';
-            v.classList.remove('yatco-hidden');
-        });
-        
-        // Update count and pagination (use sorted.length which is the filtered count)
-        const totalFiltered = sorted.length;
-        if (resultsCount) {
-            const shownStart = totalFiltered > 0 ? (currentPage - 1) * vesselsPerPage + 1 : 0;
-            const shownEnd = Math.min(currentPage * vesselsPerPage, totalFiltered);
-            resultsCount.innerHTML = `${shownStart} - ${shownEnd} of <span id="yatco-total-count">${totalFiltered}</span> YACHTS FOUND`;
-        }
-        
-        // Update pagination controls
-        updatePaginationControls(totalFiltered);
-        
-        // Update URL parameters (defer to avoid blocking)
-        setTimeout(() => {
-            updateUrlParameters();
-        }, 0);
     }
     
     if (resetBtn) {
@@ -754,22 +762,28 @@ if ( ! defined( 'ABSPATH' ) ) {
         });
     }
     
-    // Initialize
-    // Apply URL parameters first (if present in URL)
-    applyUrlParameters();
-    updateToggleButtons();
-    
-    // Defer initial filterAndDisplay to prevent lockup on page load
-    // Use requestIdleCallback if available, otherwise setTimeout
-    if (window.requestIdleCallback) {
-        requestIdleCallback(function() {
-            filterAndDisplay();
-        }, { timeout: 500 });
-    } else {
-        setTimeout(function() {
-            filterAndDisplay();
-        }, 200);
-    }
+    // Initialize - defer everything to prevent lockup
+    // Apply URL parameters first (if present in URL) - but do it asynchronously
+    setTimeout(function() {
+        applyUrlParameters();
+        updateToggleButtons();
+        
+        // Wait for DOM to be fully interactive before filtering
+        // This ensures the page doesn't lock up during initial render
+        if (document.readyState === 'complete') {
+            // Page already loaded, wait a bit more for any AJAX-loaded content
+            setTimeout(function() {
+                filterAndDisplay();
+            }, 300);
+        } else {
+            // Wait for page to fully load
+            window.addEventListener('load', function() {
+                setTimeout(function() {
+                    filterAndDisplay();
+                }, 300);
+            });
+        }
+    }, 0);
 })();
 </script>
 <?php
