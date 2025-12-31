@@ -582,35 +582,56 @@ if ( ! defined( 'ABSPATH' ) ) {
     
     function sortVessels(vessels) {
         const sortVal = sort ? sort.value : '';
-        if (!sortVal) return vessels;
+        if (!sortVal) {
+            // No sort selected - return vessels in DOM order (already sorted by creation/import order)
+            // Return a copy to avoid mutating the original array
+            return [...vessels];
+        }
         
+        // Sort with a stable tie-breaker to ensure consistent ordering
         return [...vessels].sort((a, b) => {
+            let result = 0;
             switch(sortVal) {
                 case 'price_asc':
                     const priceA = currentCurrency === 'EUR' ? parseFloat(a.dataset.priceEur || 0) : parseFloat(a.dataset.priceUsd || 0);
                     const priceB = currentCurrency === 'EUR' ? parseFloat(b.dataset.priceEur || 0) : parseFloat(b.dataset.priceUsd || 0);
-                    return priceA - priceB;
+                    result = priceA - priceB;
+                    break;
                 case 'price_desc':
                     const priceA2 = currentCurrency === 'EUR' ? parseFloat(a.dataset.priceEur || 0) : parseFloat(a.dataset.priceUsd || 0);
                     const priceB2 = currentCurrency === 'EUR' ? parseFloat(b.dataset.priceEur || 0) : parseFloat(b.dataset.priceUsd || 0);
-                    return priceB2 - priceA2;
+                    result = priceB2 - priceA2;
+                    break;
                 case 'year_desc':
-                    return (parseInt(b.dataset.year) || 0) - (parseInt(a.dataset.year) || 0);
+                    result = (parseInt(b.dataset.year) || 0) - (parseInt(a.dataset.year) || 0);
+                    break;
                 case 'year_asc':
-                    return (parseInt(a.dataset.year) || 0) - (parseInt(b.dataset.year) || 0);
+                    result = (parseInt(a.dataset.year) || 0) - (parseInt(b.dataset.year) || 0);
+                    break;
                 case 'length_desc':
                     const loaA = currentLengthUnit === 'M' ? parseFloat(a.dataset.loaMeters || 0) : parseFloat(a.dataset.loaFeet || 0);
                     const loaB = currentLengthUnit === 'M' ? parseFloat(b.dataset.loaMeters || 0) : parseFloat(b.dataset.loaFeet || 0);
-                    return loaB - loaA;
+                    result = loaB - loaA;
+                    break;
                 case 'length_asc':
                     const loaA2 = currentLengthUnit === 'M' ? parseFloat(a.dataset.loaMeters || 0) : parseFloat(a.dataset.loaFeet || 0);
                     const loaB2 = currentLengthUnit === 'M' ? parseFloat(b.dataset.loaMeters || 0) : parseFloat(b.dataset.loaFeet || 0);
-                    return loaA2 - loaB2;
+                    result = loaA2 - loaB2;
+                    break;
                 case 'name_asc':
-                    return (a.dataset.name || '').localeCompare(b.dataset.name || '');
+                    result = (a.dataset.name || '').localeCompare(b.dataset.name || '');
+                    break;
                 default:
-                    return 0;
+                    result = 0;
             }
+            // Stable sort tie-breaker: if values are equal, maintain original order using index
+            if (result === 0) {
+                // Use dataset name or post ID as tie-breaker for stability
+                const nameA = a.dataset.name || a.getAttribute('data-post-id') || '';
+                const nameB = b.dataset.name || b.getAttribute('data-post-id') || '';
+                result = nameA.localeCompare(nameB);
+            }
+            return result;
         });
     }
     
@@ -806,7 +827,12 @@ if ( ! defined( 'ABSPATH' ) ) {
             
             const paginateStartTime = Date.now();
             const paginated = paginateVessels(sorted);
-            console.log('[YATCO] filterAndDisplay: Paginated to', paginated.length, 'vessels (page', currentPage, ') in', Date.now() - paginateStartTime, 'ms');
+            const startIndex = (currentPage - 1) * vesselsPerPage;
+            const endIndex = startIndex + vesselsPerPage;
+            console.log('[YATCO] filterAndDisplay: Paginated to', paginated.length, 'vessels (page', currentPage, ', slice', startIndex, '-', endIndex, 'from', sorted.length, 'total) in', Date.now() - paginateStartTime, 'ms');
+            if (paginated.length > 0) {
+                console.log('[YATCO] filterAndDisplay: First vessel on this page:', paginated[0].dataset.name || 'no name', ', Last vessel:', paginated[paginated.length - 1].dataset.name || 'no name');
+            }
             
             // Get total filtered count for display
             const totalFiltered = sorted.length;
