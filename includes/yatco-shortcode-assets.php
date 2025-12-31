@@ -899,22 +899,52 @@ if ( ! defined( 'ABSPATH' ) ) {
                 }
                 console.log('[YATCO] filterAndDisplay: DOM visibility updated in', Date.now() - domUpdateStartTime, 'ms');
                 
-                // Update count - if filters are active, use filtered count; otherwise use totalVesselCount (unfiltered total)
+                // Update count - determine which count to use
                 if (resultsCount) {
-                    // If filters are active, use filtered count; otherwise use totalVesselCount (unfiltered total)
-                    const countToShow = hasActiveFilters ? totalFiltered : (totalVesselCount && totalVesselCount > 0 ? totalVesselCount : totalFiltered);
+                    // If we have a server-provided total (from data-yatco-total), use it when filters are active
+                    // This handles the case where URL params are present and server already filtered
+                    // Otherwise, if filters are active but no server total, use client-side filtered count
+                    // If no filters, use totalVesselCount (unfiltered total)
+                    let countToShow;
+                    // Check if we have a server-provided total that's greater than the current DOM count
+                    // This indicates server already filtered and we have the correct server-filtered total
+                    const initialDomCount = currentVessels.length; // Use currentVessels from this function call
+                    if (hasActiveFilters && totalVesselCount > initialDomCount) {
+                        // Filters are active AND we have a server-provided total (greater than DOM count)
+                        // This means server already filtered - use server total
+                        countToShow = totalVesselCount;
+                    } else if (hasActiveFilters) {
+                        // Filters are active but no server total (or server total equals DOM count)
+                        // Use client-side filtered count
+                        countToShow = totalFiltered;
+                    } else {
+                        // No filters active - use totalVesselCount (unfiltered total)
+                        countToShow = totalVesselCount && totalVesselCount > 0 ? totalVesselCount : totalFiltered;
+                    }
+                    
                     const shownStart = countToShow > 0 && totalFiltered > 0 ? (currentPage - 1) * vesselsPerPage + 1 : 0;
                     const shownEnd = totalFiltered > 0 ? Math.min(currentPage * vesselsPerPage, totalFiltered) : 0;
                     const countHtml = shownStart + ' - ' + shownEnd + ' of <span id="yatco-total-count">' + countToShow + '</span> YACHTS FOUND';
-                    console.log('[YATCO] filterAndDisplay: Updating count HTML:', countHtml, '(hasActiveFilters:', hasActiveFilters, ', totalVesselCount:', totalVesselCount, ', filtered:', totalFiltered, ', using:', countToShow, ')');
+                    console.log('[YATCO] filterAndDisplay: Updating count HTML:', countHtml, '(hasActiveFilters:', hasActiveFilters, ', totalVesselCount:', totalVesselCount, ', filtered:', totalFiltered, ', DOM count:', initialDomCount, ', using:', countToShow, ')');
                     resultsCount.innerHTML = countHtml;
                 } else {
                     console.warn('[YATCO] filterAndDisplay: resultsCount element not found!');
                 }
                 
-                // Update pagination controls - use filtered count if filters are active, otherwise use totalVesselCount
-                const countForPagination = hasActiveFilters ? totalFiltered : (totalVesselCount && totalVesselCount > 0 ? totalVesselCount : totalFiltered);
-                console.log('[YATCO] filterAndDisplay: Calling updatePaginationControls with', countForPagination, 'vessels (hasActiveFilters:', hasActiveFilters, ', totalVesselCount:', totalVesselCount, ', filtered:', totalFiltered, ')');
+                // Update pagination controls - use same logic as count
+                let countForPagination;
+                const initialDomCount = currentVessels.length; // Use currentVessels from this function call
+                if (hasActiveFilters && totalVesselCount > initialDomCount) {
+                    // Filters are active AND we have a server-provided total (greater than DOM count)
+                    countForPagination = totalVesselCount;
+                } else if (hasActiveFilters) {
+                    // Filters are active but no server total
+                    countForPagination = totalFiltered;
+                } else {
+                    // No filters active
+                    countForPagination = totalVesselCount && totalVesselCount > 0 ? totalVesselCount : totalFiltered;
+                }
+                console.log('[YATCO] filterAndDisplay: Calling updatePaginationControls with', countForPagination, 'vessels (hasActiveFilters:', hasActiveFilters, ', totalVesselCount:', totalVesselCount, ', filtered:', totalFiltered, ', DOM count:', initialDomCount, ')');
                 updatePaginationControls(countForPagination);
                 
                 // Update URL parameters (defer to avoid blocking)
