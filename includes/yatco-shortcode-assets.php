@@ -300,6 +300,84 @@ if ( ! defined( 'ABSPATH' ) ) {
     let currentCurrency = currency;
     let currentLengthUnit = lengthUnit;
     
+    // URL parameter support - parse and apply filters from URL
+    function getUrlParameter(name) {
+        const urlParams = new URLSearchParams(window.location.search);
+        return urlParams.get(name);
+    }
+    
+    function updateUrlParameters() {
+        const params = new URLSearchParams();
+        
+        if (keywords && keywords.value) params.set('keywords', keywords.value);
+        if (builder && builder.value) params.set('builder', encodeURIComponent(builder.value));
+        if (category && category.value) params.set('category', encodeURIComponent(category.value));
+        if (type && type.value) params.set('type', encodeURIComponent(type.value));
+        if (condition && condition.value) params.set('condition', encodeURIComponent(condition.value));
+        if (yearMin && yearMin.value) params.set('year_min', yearMin.value);
+        if (yearMax && yearMax.value) params.set('year_max', yearMax.value);
+        if (loaMin && loaMin.value) params.set('loa_min', loaMin.value);
+        if (loaMax && loaMax.value) params.set('loa_max', loaMax.value);
+        if (priceMin && priceMin.value) params.set('price_min', priceMin.value);
+        if (priceMax && priceMax.value) params.set('price_max', priceMax.value);
+        if (cabins && cabins.value) params.set('cabins', cabins.value);
+        if (sort && sort.value) params.set('sort', sort.value);
+        if (currentCurrency !== currency) params.set('currency', currentCurrency);
+        if (currentLengthUnit !== lengthUnit) params.set('length_unit', currentLengthUnit);
+        if (currentPage > 1) params.set('page', currentPage);
+        
+        const newUrl = params.toString() ? window.location.pathname + '?' + params.toString() : window.location.pathname;
+        window.history.pushState({}, '', newUrl);
+    }
+    
+    function applyUrlParameters() {
+        // Read URL parameters and apply to filters
+        const urlKeywords = getUrlParameter('keywords');
+        const urlBuilder = getUrlParameter('builder');
+        const urlCategory = getUrlParameter('category');
+        const urlType = getUrlParameter('type');
+        const urlCondition = getUrlParameter('condition');
+        const urlYearMin = getUrlParameter('year_min');
+        const urlYearMax = getUrlParameter('year_max');
+        const urlLoaMin = getUrlParameter('loa_min');
+        const urlLoaMax = getUrlParameter('loa_max');
+        const urlPriceMin = getUrlParameter('price_min');
+        const urlPriceMax = getUrlParameter('price_max');
+        const urlCabins = getUrlParameter('cabins');
+        const urlSort = getUrlParameter('sort');
+        const urlCurrency = getUrlParameter('currency');
+        const urlLengthUnit = getUrlParameter('length_unit');
+        const urlPage = getUrlParameter('page');
+        
+        // Apply filter values
+        if (urlKeywords && keywords) keywords.value = urlKeywords;
+        if (urlBuilder && builder) builder.value = decodeURIComponent(urlBuilder);
+        if (urlCategory && category) category.value = decodeURIComponent(urlCategory);
+        if (urlType && type) type.value = decodeURIComponent(urlType);
+        if (urlCondition && condition) condition.value = decodeURIComponent(urlCondition);
+        if (urlYearMin && yearMin) yearMin.value = urlYearMin;
+        if (urlYearMax && yearMax) yearMax.value = urlYearMax;
+        if (urlLoaMin && loaMin) loaMin.value = urlLoaMin;
+        if (urlLoaMax && loaMax) loaMax.value = urlLoaMax;
+        if (urlPriceMin && priceMin) priceMin.value = urlPriceMin;
+        if (urlPriceMax && priceMax) priceMax.value = urlPriceMax;
+        if (urlCabins && cabins) cabins.value = urlCabins;
+        if (urlSort && sort) sort.value = urlSort;
+        if (urlCurrency && (urlCurrency === 'USD' || urlCurrency === 'EUR')) {
+            currentCurrency = urlCurrency;
+        }
+        if (urlLengthUnit && (urlLengthUnit === 'FT' || urlLengthUnit === 'M')) {
+            currentLengthUnit = urlLengthUnit;
+        }
+        if (urlPage) {
+            const pageNum = parseInt(urlPage);
+            if (pageNum > 0) currentPage = pageNum;
+        }
+        
+        // Update toggle buttons if currency or length unit changed
+        updateToggleButtons();
+    }
+    
     function updateToggleButtons() {
         lengthBtns.forEach(btn => {
             btn.classList.toggle('active', btn.dataset.unit === currentLengthUnit);
@@ -580,7 +658,13 @@ if ( ! defined( 'ABSPATH' ) ) {
         
         // Update pagination
         updatePaginationControls(sorted.length);
+        
+        // Update URL parameters (but don't reload the page)
+        updateUrlParameters();
     }
+    
+    // Apply URL parameters on page load (must be before filterAndDisplay)
+    applyUrlParameters();
     
     if (resetBtn) {
         resetBtn.addEventListener('click', function() {
@@ -601,6 +685,8 @@ if ( ! defined( 'ABSPATH' ) ) {
             currentLengthUnit = lengthUnit;
             currentPage = 1;
             updateToggleButtons();
+            // Clear URL parameters on reset
+            window.history.pushState({}, '', window.location.pathname);
             filterAndDisplay();
         });
     }
@@ -620,7 +706,10 @@ if ( ! defined( 'ABSPATH' ) ) {
     }
     
     // Initialize
+    // Apply URL parameters first (if present in URL)
+    applyUrlParameters();
     updateToggleButtons();
+    // Apply filters and display (will use URL parameters if they were set)
     filterAndDisplay();
 })();
 </script>
