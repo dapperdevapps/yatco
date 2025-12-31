@@ -670,15 +670,33 @@ if ( ! defined( 'ABSPATH' ) ) {
         // Get vessels (use cache if available, otherwise query DOM)
         const currentVessels = getVesselsFromDOM();
         
+        // Early return if no vessels (prevents errors)
+        if (!currentVessels || currentVessels.length === 0) {
+            if (resultsCount) {
+                resultsCount.innerHTML = '0 of <span id="yatco-total-count">0</span> YACHTS FOUND';
+            }
+            const paginationContainer = document.querySelector('.yatco-pagination');
+            if (paginationContainer) {
+                paginationContainer.style.display = 'none';
+            }
+            return;
+        }
+        
         // Use the vessels for filtering
         const filtered = filterVessels(currentVessels);
         const sorted = sortVessels(filtered);
         const paginated = paginateVessels(sorted);
         
         // Hide all vessels first, then show paginated ones
-        // Do this synchronously for consistency (counts and pagination need to be accurate)
-        currentVessels.forEach(v => v.style.display = 'none');
-        paginated.forEach(v => v.style.display = '');
+        // Use CSS class toggling for better performance than style.display
+        currentVessels.forEach(v => {
+            v.style.display = 'none';
+            v.classList.add('yatco-hidden');
+        });
+        paginated.forEach(v => {
+            v.style.display = '';
+            v.classList.remove('yatco-hidden');
+        });
         
         // Update count and pagination (use sorted.length which is the filtered count)
         const totalFiltered = sorted.length;
@@ -741,9 +759,17 @@ if ( ! defined( 'ABSPATH' ) ) {
     applyUrlParameters();
     updateToggleButtons();
     
-    // When URL parameters are present, PHP loads all vessels immediately (no AJAX needed)
-    // So we can filter immediately without waiting
-    filterAndDisplay();
+    // Defer initial filterAndDisplay to prevent lockup on page load
+    // Use requestIdleCallback if available, otherwise setTimeout
+    if (window.requestIdleCallback) {
+        requestIdleCallback(function() {
+            filterAndDisplay();
+        }, { timeout: 500 });
+    } else {
+        setTimeout(function() {
+            filterAndDisplay();
+        }, 200);
+    }
 })();
 </script>
 <?php

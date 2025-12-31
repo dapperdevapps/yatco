@@ -613,8 +613,8 @@ function yatco_vessels_shortcode( $atts ) {
                 return '<div class="yatco-cache-warming-notice" style="padding: 15px; background: #fff3cd; border-left: 4px solid #ffc107; margin-bottom: 20px;"><strong>Note:</strong> ' . $status_msg . ' Showing ' . count( $vessels ) . ' vessels from CPT. More will appear as import completes.</div>' . $vessels_html;
             }
             
-            // For initial load, add data attributes and script to load remaining vessels in background
-            if ( $initial_load && $total_vessels > 12 ) {
+            // For initial load WITHOUT URL params, add data attributes and script to load remaining vessels in background
+            if ( $initial_load && ! $has_url_params && $total_vessels > 12 ) {
                 // Add data attributes to container for JavaScript
                 $vessels_html = str_replace(
                     '<div class="yatco-vessels-container',
