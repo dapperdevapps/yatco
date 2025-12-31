@@ -676,11 +676,7 @@ if ( ! defined( 'ABSPATH' ) ) {
         return rangeWithDots;
     }
     
-    function paginateVessels(vessels) {
-        const start = (currentPage - 1) * vesselsPerPage;
-        const end = start + vesselsPerPage;
-        return vessels.slice(start, end);
-    }
+    // Pagination function - removed, now using inline slice() for clarity
     
     function updatePaginationControls(totalVessels) {
         console.log('[YATCO] updatePaginationControls: Called with', totalVessels, 'vessels, currentPage:', currentPage);
@@ -826,12 +822,30 @@ if ( ! defined( 'ABSPATH' ) ) {
             console.log('[YATCO] filterAndDisplay: Sorted', sorted.length, 'vessels in', Date.now() - sortStartTime, 'ms');
             
             const paginateStartTime = Date.now();
-            const paginated = paginateVessels(sorted);
             const startIndex = (currentPage - 1) * vesselsPerPage;
-            const endIndex = startIndex + vesselsPerPage;
-            console.log('[YATCO] filterAndDisplay: Paginated to', paginated.length, 'vessels (page', currentPage, ', slice', startIndex, '-', endIndex, 'from', sorted.length, 'total) in', Date.now() - paginateStartTime, 'ms');
+            const endIndex = Math.min(startIndex + vesselsPerPage, sorted.length);
+            console.log('[YATCO] filterAndDisplay: Page', currentPage, '- slicing from index', startIndex, 'to', endIndex, '(total vessels:', sorted.length, ')');
+            
+            // Create paginated array using explicit loop to ensure correct slice
+            const paginated = [];
+            for (let i = startIndex; i < endIndex && i < sorted.length; i++) {
+                paginated.push(sorted[i]);
+            }
+            
+            console.log('[YATCO] filterAndDisplay: Paginated to', paginated.length, 'vessels in', Date.now() - paginateStartTime, 'ms');
             if (paginated.length > 0) {
-                console.log('[YATCO] filterAndDisplay: First vessel on this page:', paginated[0].dataset.name || 'no name', ', Last vessel:', paginated[paginated.length - 1].dataset.name || 'no name');
+                console.log('[YATCO] filterAndDisplay: First vessel on this page (paginated[0]):', paginated[0].dataset.name || 'no name');
+                console.log('[YATCO] filterAndDisplay: Last vessel on this page (paginated[' + (paginated.length - 1) + ']):', paginated[paginated.length - 1].dataset.name || 'no name');
+                // Verify by checking what's actually in sorted array at these positions
+                if (startIndex < sorted.length) {
+                    console.log('[YATCO] filterAndDisplay: VERIFY - sorted[' + startIndex + '] name:', sorted[startIndex].dataset.name || 'no name', ', element matches paginated[0]:', sorted[startIndex] === paginated[0] ? 'YES' : 'NO');
+                    if (startIndex > 0) {
+                        console.log('[YATCO] filterAndDisplay: VERIFY - sorted[' + (startIndex - 1) + '] name (should be different):', sorted[startIndex - 1].dataset.name || 'no name');
+                    }
+                }
+                if (endIndex - 1 < sorted.length && endIndex - 1 >= startIndex) {
+                    console.log('[YATCO] filterAndDisplay: VERIFY - sorted[' + (endIndex - 1) + '] name:', sorted[endIndex - 1].dataset.name || 'no name', ', element matches paginated[last]:', sorted[endIndex - 1] === paginated[paginated.length - 1] ? 'YES' : 'NO');
+                }
             }
             
             // Get total filtered count for display
