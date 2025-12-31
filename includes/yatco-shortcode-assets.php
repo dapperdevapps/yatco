@@ -265,8 +265,14 @@ if ( ! defined( 'ABSPATH' ) ) {
     
     const currency = container.dataset.currency || 'USD';
     const lengthUnit = container.dataset.lengthUnit || 'FT';
-    const allVessels = Array.from(document.querySelectorAll('.yatco-vessel-card'));
+    let allVessels = Array.from(document.querySelectorAll('.yatco-vessel-card')); // Changed to let so it can be updated
     const grid = document.getElementById('yatco-vessels-grid');
+    
+    // Listen for event when new vessels are loaded via AJAX
+    document.addEventListener('yatco:vessels-loaded', function() {
+        // Update allVessels array when new vessels are added to DOM
+        allVessels = Array.from(document.querySelectorAll('.yatco-vessel-card'));
+    });
     const resultsCount = document.querySelector('.yatco-results-count');
     const totalCount = document.getElementById('yatco-total-count');
     
@@ -319,7 +325,10 @@ if ( ! defined( 'ABSPATH' ) ) {
         });
     });
     
-    function filterVessels() {
+    function filterVessels(vesselsToFilter) {
+        // Use provided vessels array, or fall back to allVessels if not provided (for backward compatibility)
+        const vesselsArray = vesselsToFilter || allVessels;
+        
         const keywordVal = keywords ? keywords.value.toLowerCase() : '';
         const builderVal = builder ? builder.value : '';
         const yearMinVal = yearMin ? parseInt(yearMin.value) : null;
@@ -333,7 +342,7 @@ if ( ! defined( 'ABSPATH' ) ) {
         const categoryVal = category ? category.value : '';
         const cabinsVal = cabins ? parseInt(cabins.value) : null;
         
-        return allVessels.filter(vessel => {
+        return vesselsArray.filter(vessel => {
             const name = vessel.dataset.name || '';
             const location = vessel.dataset.location || '';
             const vesselBuilder = vessel.dataset.builder || '';
