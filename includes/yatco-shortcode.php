@@ -685,6 +685,11 @@ function yatco_vessels_shortcode( $atts ) {
                                                         requestAnimationFrame(appendBatch);
                                                     } else {
                                                         console.log("[YATCO AJAX] Finished appending all vessels");
+                                                        // All vessels appended - trigger a final refresh event
+                                                        var completeEvent = new CustomEvent("yatco:vessels-append-complete", {
+                                                            detail: { count: response.data.total_count || 0 }
+                                                        });
+                                                        document.dispatchEvent(completeEvent);
                                                     }
                                                 }
                                             }

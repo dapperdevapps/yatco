@@ -309,24 +309,33 @@ if ( ! defined( 'ABSPATH' ) ) {
             console.log('[YATCO] yatco:vessels-loaded: Updating count and pagination immediately (no DOM query)');
             updateCountAndPaginationFromTotal(totalVesselCount);
             
-            // Schedule a deferred refresh for filtering (but don't block on it)
-            console.log('[YATCO] yatco:vessels-loaded: Scheduling deferred filter refresh');
-            setTimeout(function() {
-                try {
-                    console.log('[YATCO] yatco:vessels-loaded: Running deferred filterAndDisplay');
-                    filterAndDisplay();
-                    console.log('[YATCO] yatco:vessels-loaded: Deferred refresh completed');
-                    if (window.yatcoWaitingForVessels) {
-                        window.yatcoWaitingForVessels = false;
-                    }
-                } catch (filterError) {
-                    console.error('[YATCO] yatco:vessels-loaded: Error in deferred refresh:', filterError);
-                }
-            }, 1000); // Longer delay - this can run in background, user already sees correct count/pagination
+            // Don't run filterAndDisplay here - wait for append-complete event instead
+            // This prevents querying DOM before all vessels are appended
+            console.log('[YATCO] yatco:vessels-loaded: Count/pagination updated, waiting for vessels to finish appending');
+            if (window.yatcoWaitingForVessels) {
+                window.yatcoWaitingForVessels = false;
+            }
         } catch (error) {
             console.error('[YATCO] yatco:vessels-loaded: Error in event handler:', error);
             console.error('[YATCO] yatco:vessels-loaded: Error stack:', error.stack);
         }
+    });
+    
+    // Listen for when all vessels are done appending (then refresh filter/display)
+    document.addEventListener('yatco:vessels-append-complete', function(event) {
+        console.log('[YATCO] yatco:vessels-append-complete: All vessels appended, refreshing filter/display');
+        // Reset to page 1 when vessels finish loading (prevents showing wrong page)
+        currentPage = 1;
+        // Now that all vessels are in DOM, refresh the display
+        setTimeout(function() {
+            try {
+                invalidateVesselsCache(); // Clear cache to force fresh DOM query
+                filterAndDisplay();
+                console.log('[YATCO] yatco:vessels-append-complete: Display refresh completed');
+            } catch (error) {
+                console.error('[YATCO] yatco:vessels-append-complete: Error refreshing display:', error);
+            }
+        }, 100);
     });
     
     // Helper function to update count and pagination using total count (avoids DOM query)
@@ -823,12 +832,13 @@ if ( ! defined( 'ABSPATH' ) ) {
                 }
                 console.log('[YATCO] filterAndDisplay: DOM visibility updated in', Date.now() - domUpdateStartTime, 'ms');
                 
-                // Update count
+                // Update count - use totalVesselCount if available and larger, otherwise use filtered count
                 if (resultsCount) {
-                    const shownStart = totalFiltered > 0 ? (currentPage - 1) * vesselsPerPage + 1 : 0;
+                    const countToShow = (totalVesselCount && totalVesselCount > totalFiltered) ? totalVesselCount : totalFiltered;
+                    const shownStart = countToShow > 0 ? (currentPage - 1) * vesselsPerPage + 1 : 0;
                     const shownEnd = Math.min(currentPage * vesselsPerPage, totalFiltered);
-                    const countHtml = shownStart + ' - ' + shownEnd + ' of <span id="yatco-total-count">' + totalFiltered + '</span> YACHTS FOUND';
-                    console.log('[YATCO] filterAndDisplay: Updating count HTML:', countHtml);
+                    const countHtml = shownStart + ' - ' + shownEnd + ' of <span id="yatco-total-count">' + countToShow + '</span> YACHTS FOUND';
+                    console.log('[YATCO] filterAndDisplay: Updating count HTML:', countHtml, '(using count:', countToShow, ', filtered:', totalFiltered, ')');
                     resultsCount.innerHTML = countHtml;
                 } else {
                     console.warn('[YATCO] filterAndDisplay: resultsCount element not found!');
