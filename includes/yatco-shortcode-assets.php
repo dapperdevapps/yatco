@@ -268,10 +268,19 @@ if ( ! defined( 'ABSPATH' ) ) {
     let allVessels = Array.from(document.querySelectorAll('.yatco-vessel-card')); // Changed to let so it can be updated
     const grid = document.getElementById('yatco-vessels-grid');
     
+    // Flag to track if we're waiting for vessels to load (for URL parameter filtering)
+    window.yatcoWaitingForVessels = false;
+    
     // Listen for event when new vessels are loaded via AJAX
     document.addEventListener('yatco:vessels-loaded', function() {
         // Update allVessels array when new vessels are added to DOM
         allVessels = Array.from(document.querySelectorAll('.yatco-vessel-card'));
+        
+        // If we were waiting for vessels to load (due to URL parameters), filter now
+        if (window.yatcoWaitingForVessels) {
+            filterAndDisplay();
+            window.yatcoWaitingForVessels = false;
+        }
     });
     const resultsCount = document.querySelector('.yatco-results-count');
     const totalCount = document.getElementById('yatco-total-count');
@@ -706,8 +715,29 @@ if ( ! defined( 'ABSPATH' ) ) {
     // Apply URL parameters first (if present in URL)
     applyUrlParameters();
     updateToggleButtons();
-    // Apply filters and display (will use URL parameters if they were set)
-    filterAndDisplay();
+    
+    // Check if we have URL parameters - if so, wait for all vessels to load before filtering
+    const hasUrlParams = window.location.search.length > 0;
+    const totalVesselsAttr = container.getAttribute('data-yatco-total');
+    const loadedVesselsAttr = container.getAttribute('data-yatco-loaded');
+    
+    if (hasUrlParams && totalVesselsAttr && loadedVesselsAttr) {
+        // URL parameters present and we have vessel count attributes - wait for all vessels to load
+        const totalVessels = parseInt(totalVesselsAttr) || 0;
+        const loadedVessels = parseInt(loadedVesselsAttr) || 0;
+        
+        if (totalVessels > loadedVessels) {
+            // Not all vessels loaded yet - set flag and wait for AJAX load
+            window.yatcoWaitingForVessels = true;
+            // Don't filter yet - will filter after AJAX loads all vessels (via event listener)
+        } else {
+            // All vessels already loaded - filter immediately
+            filterAndDisplay();
+        }
+    } else {
+        // No URL parameters or all vessels already loaded - proceed with normal initialization
+        filterAndDisplay();
+    }
 })();
 </script>
 <?php
