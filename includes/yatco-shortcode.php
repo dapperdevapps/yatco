@@ -701,6 +701,7 @@ function yatco_vessels_shortcode( $atts ) {
                                     cabins: urlParams.get("cabins") || ""
                                 },
                                 success: function(response) {
+                                    console.log("[YATCO AJAX] Success response received");
                                     if (response && response.success && response.data && response.data.html) {
                                         // Trigger event immediately with total count (before appending, so count/pagination update first)
                                         var event = new CustomEvent("yatco:vessels-loaded", {
@@ -747,18 +748,22 @@ function yatco_vessels_shortcode( $atts ) {
                                                     }
                                                     
                                                     currentIndex = endIndex;
-                                                    
-                                                    // Continue with next batch if more remain
-                                                    if (currentIndex < totalVessels) {
-                                                        requestAnimationFrame(appendBatch);
-                                                    } else {
-                                                        console.log("[YATCO AJAX] Finished appending all vessels");
-                                                        // All vessels appended - trigger a final refresh event
-                                                        var completeEvent = new CustomEvent("yatco:vessels-append-complete", {
-                                                            detail: { count: response.data.total_count || 0 }
-                                                        });
-                                                        document.dispatchEvent(completeEvent);
-                                                    }
+                                                } else {
+                                                    // Batch is empty, move to next
+                                                    currentIndex = endIndex;
+                                                }
+                                                
+                                                // Check if we're done (regardless of whether batch was empty)
+                                                if (currentIndex >= totalVessels) {
+                                                    console.log("[YATCO AJAX] Finished appending all vessels");
+                                                    // All vessels appended - trigger a final refresh event
+                                                    var completeEvent = new CustomEvent("yatco:vessels-append-complete", {
+                                                        detail: { count: response.data.total_count || 0 }
+                                                    });
+                                                    document.dispatchEvent(completeEvent);
+                                                } else {
+                                                    // Continue with next batch
+                                                    requestAnimationFrame(appendBatch);
                                                 }
                                             }
                                             
@@ -766,11 +771,30 @@ function yatco_vessels_shortcode( $atts ) {
                                             setTimeout(function() {
                                                 requestAnimationFrame(appendBatch);
                                             }, 100);
+                                        } else {
+                                            console.log("[YATCO AJAX] Grid not found, dispatching complete event anyway");
+                                            // Grid not found, but still dispatch event to clear loading flag
+                                            var completeEvent = new CustomEvent("yatco:vessels-append-complete", {
+                                                detail: { count: response.data.total_count || 0 }
+                                            });
+                                            document.dispatchEvent(completeEvent);
                                         }
+                                    } else {
+                                        console.log("[YATCO AJAX] No HTML in response, dispatching complete event anyway");
+                                        // No HTML to append, but still dispatch event to clear loading flag
+                                        var completeEvent = new CustomEvent("yatco:vessels-append-complete", {
+                                            detail: { count: 0 }
+                                        });
+                                        document.dispatchEvent(completeEvent);
                                     }
                                 },
-                                error: function() {
-                                    // Silently fail - not critical
+                                error: function(xhr, status, error) {
+                                    console.log("[YATCO AJAX] Error loading vessels:", status, error);
+                                    // Dispatch complete event even on error to clear loading flag
+                                    var completeEvent = new CustomEvent("yatco:vessels-append-complete", {
+                                        detail: { count: 0 }
+                                    });
+                                    document.dispatchEvent(completeEvent);
                                 }
                             });
                         }, 1000);
