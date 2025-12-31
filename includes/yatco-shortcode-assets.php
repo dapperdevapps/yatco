@@ -297,17 +297,16 @@ if ( ! defined( 'ABSPATH' ) ) {
         console.log('[YATCO] yatco:vessels-loaded: Found', newVesselCount, 'total vessels in DOM');
         allVessels = Array.from(document.querySelectorAll('.yatco-vessel-card'));
         
-        // If we were waiting for vessels to load (due to URL parameters), filter now
-        if (window.yatcoWaitingForVessels) {
-            console.log('[YATCO] yatco:vessels-loaded: Was waiting for vessels, filtering now');
-            // Small delay to ensure DOM is fully updated
-            setTimeout(function() {
-                filterAndDisplay();
+        // Always refresh the display when new vessels are loaded via AJAX
+        // This ensures counts, pagination, and displayed vessels are updated
+        console.log('[YATCO] yatco:vessels-loaded: Refreshing display with new vessel count');
+        setTimeout(function() {
+            console.log('[YATCO] yatco:vessels-loaded: Calling filterAndDisplay after delay');
+            filterAndDisplay();
+            if (window.yatcoWaitingForVessels) {
                 window.yatcoWaitingForVessels = false;
-            }, 100);
-        } else {
-            console.log('[YATCO] yatco:vessels-loaded: Not waiting for vessels, cache invalidated');
-        }
+            }
+        }, 100);
     });
     const resultsCount = document.querySelector('.yatco-results-count');
     const totalCount = document.getElementById('yatco-total-count');
