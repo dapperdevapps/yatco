@@ -340,6 +340,37 @@ function yatco_vessels_shortcode( $atts ) {
             );
         }
         
+        // Extract filter criteria from URL parameters (if not in shortcode atts)
+        // This allows filtering via URL like ?category=Motor%20Yacht
+        if ( ! empty( $_GET['builder'] ) ) {
+            $query_args['meta_query'][] = array(
+                'key'     => 'yacht_make',
+                'value'   => sanitize_text_field( urldecode( $_GET['builder'] ) ),
+                'compare' => '=',
+            );
+        }
+        if ( ! empty( $_GET['category'] ) ) {
+            $query_args['meta_query'][] = array(
+                'key'     => 'yacht_category',
+                'value'   => sanitize_text_field( urldecode( $_GET['category'] ) ),
+                'compare' => '=',
+            );
+        }
+        if ( ! empty( $_GET['type'] ) ) {
+            $query_args['meta_query'][] = array(
+                'key'     => 'yacht_type',
+                'value'   => sanitize_text_field( urldecode( $_GET['type'] ) ),
+                'compare' => '=',
+            );
+        }
+        if ( ! empty( $_GET['condition'] ) ) {
+            $query_args['meta_query'][] = array(
+                'key'     => 'yacht_condition',
+                'value'   => sanitize_text_field( urldecode( $_GET['condition'] ) ),
+                'compare' => '=',
+            );
+        }
+        
         // Check if cache is currently warming
         $cache_status = get_transient( 'yatco_cache_warming_status' );
         $cache_progress = get_transient( 'yatco_cache_warming_progress' );

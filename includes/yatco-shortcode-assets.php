@@ -872,21 +872,24 @@ if ( ! defined( 'ABSPATH' ) ) {
                 }
                 console.log('[YATCO] filterAndDisplay: DOM visibility updated in', Date.now() - domUpdateStartTime, 'ms');
                 
-                // Update count - use totalVesselCount if available and larger, otherwise use filtered count
+                // Update count - use totalVesselCount if set (from AJAX), otherwise use filtered count
                 if (resultsCount) {
-                    const countToShow = (totalVesselCount && totalVesselCount > totalFiltered) ? totalVesselCount : totalFiltered;
-                    const shownStart = countToShow > 0 ? (currentPage - 1) * vesselsPerPage + 1 : 0;
-                    const shownEnd = Math.min(currentPage * vesselsPerPage, totalFiltered);
+                    // Prefer totalVesselCount if it's been set from AJAX response (server total)
+                    // Otherwise use the client-side filtered count
+                    const countToShow = (totalVesselCount && totalVesselCount > 0) ? totalVesselCount : totalFiltered;
+                    const shownStart = countToShow > 0 && totalFiltered > 0 ? (currentPage - 1) * vesselsPerPage + 1 : 0;
+                    const shownEnd = totalFiltered > 0 ? Math.min(currentPage * vesselsPerPage, totalFiltered) : 0;
                     const countHtml = shownStart + ' - ' + shownEnd + ' of <span id="yatco-total-count">' + countToShow + '</span> YACHTS FOUND';
-                    console.log('[YATCO] filterAndDisplay: Updating count HTML:', countHtml, '(using count:', countToShow, ', filtered:', totalFiltered, ')');
+                    console.log('[YATCO] filterAndDisplay: Updating count HTML:', countHtml, '(totalVesselCount:', totalVesselCount, ', filtered:', totalFiltered, ', using:', countToShow, ')');
                     resultsCount.innerHTML = countHtml;
                 } else {
                     console.warn('[YATCO] filterAndDisplay: resultsCount element not found!');
                 }
                 
-                // Update pagination controls (MUST show pagination if more than 1 page)
-                console.log('[YATCO] filterAndDisplay: Calling updatePaginationControls with', totalFiltered, 'vessels');
-                updatePaginationControls(totalFiltered);
+                // Update pagination controls - use countToShow (server total if available, otherwise filtered count)
+                const countForPagination = (totalVesselCount && totalVesselCount > 0) ? totalVesselCount : totalFiltered;
+                console.log('[YATCO] filterAndDisplay: Calling updatePaginationControls with', countForPagination, 'vessels (totalVesselCount:', totalVesselCount, ', filtered:', totalFiltered, ')');
+                updatePaginationControls(countForPagination);
                 
                 // Update URL parameters (defer to avoid blocking)
                 setTimeout(function() {

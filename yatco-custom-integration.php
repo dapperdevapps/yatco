@@ -710,17 +710,21 @@ function yatco_ajax_load_all_vessels() {
         );
     }
     
-    // Skip first 12 (already loaded) - now safe because we've added matching orderby/order
+    // First, get the total count (before applying offset)
+    $count_query_args = $query_args;
+    $count_query_args['posts_per_page'] = -1;
+    $count_query_args['fields'] = 'ids';
+    $count_query_args['no_found_rows'] = false; // We need the count
+    $count_query = new WP_Query( $count_query_args );
+    $total_filtered = $count_query->found_posts;
+    
+    // Now get vessels with offset (skip first 12 already loaded)
     $query_args['offset'] = 12;
-    
-    // Use the same efficient loading function from shortcode
-    require_once YATCO_PLUGIN_DIR . 'includes/yatco-shortcode.php';
-    
-    // Call internal function to get vessels (reuse shortcode logic)
+    $query_args['no_found_rows'] = true; // Don't need count again
     $post_ids = get_posts( $query_args );
     
     if ( empty( $post_ids ) ) {
-        wp_send_json_success( array( 'html' => '', 'total_count' => 12 ) );
+        wp_send_json_success( array( 'html' => '', 'total_count' => min( $total_filtered, 12 ) ) );
         return;
     }
     
@@ -897,10 +901,10 @@ function yatco_ajax_load_all_vessels() {
     }
     $vessels_html = ob_get_clean();
     
-    // Return HTML and total count
+    // Return HTML and total count (use the total we calculated earlier)
     wp_send_json_success( array(
         'html' => $vessels_html,
-        'total_count' => count( $vessels ) + 12, // Total including initial 12
+        'total_count' => $total_filtered, // Total filtered count from server query
     ) );
 }
 
