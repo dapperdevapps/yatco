@@ -653,18 +653,32 @@ function yatco_vessels_shortcode( $atts ) {
                 // Add inline script to load remaining vessels in background (after page load)
                 $vessels_html .= '<script type="text/javascript">
                 (function() {
-                    if (typeof jQuery === "undefined") return;
+                    if (typeof jQuery === "undefined") {
+                        console.log("[YATCO AJAX] jQuery not available, skipping AJAX load");
+                        return;
+                    }
                     jQuery(document).ready(function($) {
+                        console.log("[YATCO AJAX] Script loaded, looking for container...");
                         var container = $(".yatco-vessels-container[data-yatco-total]");
-                        if (container.length === 0) return;
+                        if (container.length === 0) {
+                            console.log("[YATCO AJAX] Container with data-yatco-total not found, skipping AJAX load");
+                            return;
+                        }
+                        console.log("[YATCO AJAX] Container found with data-yatco-total");
                         
                         var totalVessels = parseInt(container.attr("data-yatco-total")) || 0;
                         var loadedVessels = parseInt(container.attr("data-yatco-loaded")) || 0;
+                        console.log("[YATCO AJAX] Total vessels:", totalVessels, ", Loaded vessels:", loadedVessels);
                         
-                        if (totalVessels <= loadedVessels) return; // All vessels already loaded
+                        if (totalVessels <= loadedVessels) {
+                            console.log("[YATCO AJAX] All vessels already loaded, skipping");
+                            return; // All vessels already loaded
+                        }
                         
                         // Load remaining vessels in background after page load (1 second delay)
+                        console.log("[YATCO AJAX] Scheduling AJAX call in 1 second...");
                         setTimeout(function() {
+                            console.log("[YATCO AJAX] Making AJAX call to load remaining vessels...");
                             // Get current filter values from URL params (if any)
                             var urlParams = new URLSearchParams(window.location.search);
                             $.ajax({
