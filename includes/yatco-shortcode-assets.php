@@ -304,29 +304,52 @@ if ( ! defined( 'ABSPATH' ) ) {
             // Invalidate cache so next query gets fresh data
             invalidateVesselsCache();
             
-            // Always refresh the display when new vessels are loaded via AJAX
-            // Use setTimeout to defer the work (don't query DOM immediately - let browser settle)
-            console.log('[YATCO] yatco:vessels-loaded: Scheduling display refresh');
+            // Immediately update count and pagination using the total count from AJAX response
+            // This avoids expensive DOM queries that block the page
+            console.log('[YATCO] yatco:vessels-loaded: Updating count and pagination immediately (no DOM query)');
+            updateCountAndPaginationFromTotal(totalVesselCount);
             
+            // Schedule a deferred refresh for filtering (but don't block on it)
+            console.log('[YATCO] yatco:vessels-loaded: Scheduling deferred filter refresh');
             setTimeout(function() {
                 try {
-                    console.log('[YATCO] yatco:vessels-loaded: Refreshing display with totalVesselCount:', totalVesselCount);
-                    // Now call filterAndDisplay which will query DOM and update counts/pagination
+                    console.log('[YATCO] yatco:vessels-loaded: Running deferred filterAndDisplay');
                     filterAndDisplay();
-                    console.log('[YATCO] yatco:vessels-loaded: Display refresh completed');
+                    console.log('[YATCO] yatco:vessels-loaded: Deferred refresh completed');
                     if (window.yatcoWaitingForVessels) {
                         window.yatcoWaitingForVessels = false;
                     }
                 } catch (filterError) {
-                    console.error('[YATCO] yatco:vessels-loaded: Error refreshing display:', filterError);
-                    console.error('[YATCO] yatco:vessels-loaded: Error stack:', filterError.stack);
+                    console.error('[YATCO] yatco:vessels-loaded: Error in deferred refresh:', filterError);
                 }
-            }, 500); // Longer delay to let browser finish appending all vessels
+            }, 1000); // Longer delay - this can run in background, user already sees correct count/pagination
         } catch (error) {
             console.error('[YATCO] yatco:vessels-loaded: Error in event handler:', error);
             console.error('[YATCO] yatco:vessels-loaded: Error stack:', error.stack);
         }
     });
+    
+    // Helper function to update count and pagination using total count (avoids DOM query)
+    function updateCountAndPaginationFromTotal(totalCount) {
+        try {
+            console.log('[YATCO] updateCountAndPaginationFromTotal: Called with', totalCount, 'vessels, currentPage:', currentPage);
+            
+            // Update count display
+            if (resultsCount) {
+                const shownStart = totalCount > 0 ? (currentPage - 1) * vesselsPerPage + 1 : 0;
+                const shownEnd = Math.min(currentPage * vesselsPerPage, totalCount);
+                const countHtml = shownStart + ' - ' + shownEnd + ' of <span id="yatco-total-count">' + totalCount + '</span> YACHTS FOUND';
+                console.log('[YATCO] updateCountAndPaginationFromTotal: Updating count HTML:', countHtml);
+                resultsCount.innerHTML = countHtml;
+            }
+            
+            // Update pagination controls
+            updatePaginationControls(totalCount);
+            console.log('[YATCO] updateCountAndPaginationFromTotal: Completed');
+        } catch (error) {
+            console.error('[YATCO] updateCountAndPaginationFromTotal: Error:', error);
+        }
+    }
     const resultsCount = document.querySelector('.yatco-results-count');
     const totalCount = document.getElementById('yatco-total-count');
     
