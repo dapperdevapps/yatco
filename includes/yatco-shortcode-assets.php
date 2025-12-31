@@ -276,6 +276,9 @@ if ( ! defined( 'ABSPATH' ) ) {
     let allVessels = Array.from(document.querySelectorAll('.yatco-vessel-card')); // Changed to let so it can be updated
     console.log('[YATCO] Initial vessel count from DOM:', allVessels.length);
     
+    // Track total vessel count separately (set from AJAX response, avoids expensive DOM queries)
+    let totalVesselCount = allVessels.length;
+    
     const grid = document.getElementById('yatco-vessels-grid');
     if (!grid) {
         console.warn('[YATCO] Grid element not found!');
@@ -288,37 +291,37 @@ if ( ! defined( 'ABSPATH' ) ) {
     
     // Listen for event when new vessels are loaded via AJAX (set up early)
     document.addEventListener('yatco:vessels-loaded', function(event) {
-        console.log('[YATCO] yatco:vessels-loaded event fired', event.detail ? '(count: ' + event.detail.count + ')' : '');
+        const newTotalCount = event.detail && event.detail.count ? parseInt(event.detail.count) : null;
+        console.log('[YATCO] yatco:vessels-loaded event fired, new total count:', newTotalCount);
         
         try {
-            // Invalidate cache when new vessels are added (do this immediately, it's fast)
+            // Update total count from AJAX response (avoids expensive DOM query)
+            if (newTotalCount && newTotalCount > totalVesselCount) {
+                totalVesselCount = newTotalCount;
+                console.log('[YATCO] yatco:vessels-loaded: Updated totalVesselCount to', totalVesselCount);
+            }
+            
+            // Invalidate cache so next query gets fresh data
             invalidateVesselsCache();
             
             // Always refresh the display when new vessels are loaded via AJAX
-            // Use requestIdleCallback to avoid blocking, with setTimeout fallback
-            console.log('[YATCO] yatco:vessels-loaded: Scheduling filterAndDisplay refresh (will update allVessels internally)');
+            // Use setTimeout to defer the work (don't query DOM immediately - let browser settle)
+            console.log('[YATCO] yatco:vessels-loaded: Scheduling display refresh');
             
-            function refreshDisplay() {
+            setTimeout(function() {
                 try {
-                    console.log('[YATCO] yatco:vessels-loaded: Calling filterAndDisplay to refresh display');
-                    // filterAndDisplay will call getVesselsFromDOM() which will query and cache all vessels
+                    console.log('[YATCO] yatco:vessels-loaded: Refreshing display with totalVesselCount:', totalVesselCount);
+                    // Now call filterAndDisplay which will query DOM and update counts/pagination
                     filterAndDisplay();
-                    console.log('[YATCO] yatco:vessels-loaded: filterAndDisplay completed');
+                    console.log('[YATCO] yatco:vessels-loaded: Display refresh completed');
                     if (window.yatcoWaitingForVessels) {
                         window.yatcoWaitingForVessels = false;
                     }
                 } catch (filterError) {
-                    console.error('[YATCO] yatco:vessels-loaded: Error in filterAndDisplay:', filterError);
+                    console.error('[YATCO] yatco:vessels-loaded: Error refreshing display:', filterError);
                     console.error('[YATCO] yatco:vessels-loaded: Error stack:', filterError.stack);
                 }
-            }
-            
-            // Use requestIdleCallback if available (non-blocking), otherwise setTimeout
-            if (window.requestIdleCallback) {
-                requestIdleCallback(refreshDisplay, { timeout: 500 });
-            } else {
-                setTimeout(refreshDisplay, 200);
-            }
+            }, 500); // Longer delay to let browser finish appending all vessels
         } catch (error) {
             console.error('[YATCO] yatco:vessels-loaded: Error in event handler:', error);
             console.error('[YATCO] yatco:vessels-loaded: Error stack:', error.stack);
@@ -712,10 +715,22 @@ if ( ! defined( 'ABSPATH' ) ) {
         }
         console.log('[YATCO] getVesselsFromDOM: Querying DOM for vessels...');
         const startTime = Date.now();
-        vesselsCache = Array.from(document.querySelectorAll('.yatco-vessel-card'));
+        
+        // Limit query to avoid blocking with too many elements
+        // If we know total count, we can be smarter about this
+        const nodeList = document.querySelectorAll('.yatco-vessel-card');
+        vesselsCache = Array.from(nodeList);
+        
         const queryTime = Date.now() - startTime;
         vesselsCacheTime = now;
         allVessels = vesselsCache; // Keep allVessels in sync
+        
+        // Update total count if we got more vessels than we knew about
+        if (vesselsCache.length > totalVesselCount) {
+            totalVesselCount = vesselsCache.length;
+            console.log('[YATCO] getVesselsFromDOM: Updated totalVesselCount to', totalVesselCount);
+        }
+        
         console.log('[YATCO] getVesselsFromDOM: Found', vesselsCache.length, 'vessels in', queryTime, 'ms');
         return vesselsCache;
     }
