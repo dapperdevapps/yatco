@@ -297,6 +297,15 @@ if ( ! defined( 'ABSPATH' ) ) {
     // Flag to track if we're waiting for vessels to load (for URL parameter filtering)
     window.yatcoWaitingForVessels = false;
     
+    // Flag to track if vessels are still loading via AJAX
+    let vesselsAreLoading = false;
+    const initialLoadedCount = container.dataset.yatcoLoaded ? parseInt(container.dataset.yatcoLoaded) : 0;
+    const initialTotalCount = container.dataset.yatcoTotal ? parseInt(container.dataset.yatcoTotal) : 0;
+    if (initialTotalCount > initialLoadedCount) {
+        vesselsAreLoading = true;
+        console.log('[YATCO] Vessels are loading via AJAX (initial loaded:', initialLoadedCount, ', total:', initialTotalCount, ')');
+    }
+    
     // Listen for event when new vessels are loaded via AJAX (set up early)
     document.addEventListener('yatco:vessels-loaded', function(event) {
         const newTotalCount = event.detail && event.detail.count ? parseInt(event.detail.count) : null;
@@ -332,6 +341,9 @@ if ( ! defined( 'ABSPATH' ) ) {
     // Listen for when all vessels are done appending (then refresh filter/display)
     document.addEventListener('yatco:vessels-append-complete', function(event) {
         console.log('[YATCO] yatco:vessels-append-complete: All vessels appended, refreshing filter/display');
+        // Mark that vessels are done loading
+        vesselsAreLoading = false;
+        console.log('[YATCO] Vessels loading complete - pagination now enabled');
         // Reset to page 1 when vessels finish loading (prevents showing wrong page)
         currentPage = 1;
         // Now that all vessels are in DOM, refresh the display
@@ -754,17 +766,10 @@ if ( ! defined( 'ABSPATH' ) ) {
     }
     
     window.yatcoGoToPage = function(page) {
-        // Get current vessel count from DOM
-        const currentVesselCount = document.querySelectorAll('.yatco-vessel-card').length;
-        const vesselsNeeded = page * vesselsPerPage;
-        
-        // If trying to go to a page that requires more vessels than are currently loaded,
-        // and we have a server total that indicates more vessels should be coming,
-        // reset to page 1 (vessels are still loading via AJAX)
-        if (vesselsNeeded > currentVesselCount && totalVesselCount > currentVesselCount) {
-            console.log('[YATCO] yatcoGoToPage: Page', page, 'requires', vesselsNeeded, 'vessels, but only', currentVesselCount, 'are loaded. Resetting to page 1 (vessels still loading).');
-            currentPage = 1;
-            filterAndDisplay();
+        // Only prevent pagination if vessels are still loading via AJAX
+        if (vesselsAreLoading) {
+            console.log('[YATCO] yatcoGoToPage: Cannot navigate to page', page, '- vessels are still loading via AJAX. Please wait...');
+            // Don't change page, just return (stay on current page)
             return;
         }
         
