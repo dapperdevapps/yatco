@@ -677,13 +677,13 @@ function yatco_vessels_shortcode( $atts ) {
                                                 if (batch.length > 0) {
                                                     // Filter out duplicates by checking if vessel with same href already exists
                                                     var existingLinks = {};
-                                                    grid.find('.yatco-vessel-card').each(function() {
-                                                        var href = $(this).attr('href');
+                                                    grid.find(".yatco-vessel-card").each(function() {
+                                                        var href = $(this).attr("href");
                                                         if (href) existingLinks[href] = true;
                                                     });
                                                     
                                                     var filteredBatch = batch.filter(function() {
-                                                        var href = $(this).attr('href');
+                                                        var href = $(this).attr("href");
                                                         if (!href || existingLinks[href]) {
                                                             return false; // Skip duplicate
                                                         }
