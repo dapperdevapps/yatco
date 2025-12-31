@@ -260,32 +260,53 @@ if ( ! defined( 'ABSPATH' ) ) {
 </style>
 <script>
 (function() {
+    console.log('[YATCO] Script starting...');
+    
     const container = document.querySelector('.yatco-vessels-container');
-    if (!container) return;
+    if (!container) {
+        console.warn('[YATCO] Container not found, exiting');
+        return;
+    }
+    console.log('[YATCO] Container found');
     
     const currency = container.dataset.currency || 'USD';
     const lengthUnit = container.dataset.lengthUnit || 'FT';
+    console.log('[YATCO] Currency:', currency, ', LengthUnit:', lengthUnit);
+    
     let allVessels = Array.from(document.querySelectorAll('.yatco-vessel-card')); // Changed to let so it can be updated
+    console.log('[YATCO] Initial vessel count from DOM:', allVessels.length);
+    
     const grid = document.getElementById('yatco-vessels-grid');
+    if (!grid) {
+        console.warn('[YATCO] Grid element not found!');
+    } else {
+        console.log('[YATCO] Grid element found');
+    }
     
     // Flag to track if we're waiting for vessels to load (for URL parameter filtering)
     window.yatcoWaitingForVessels = false;
     
     // Listen for event when new vessels are loaded via AJAX (set up early)
-    document.addEventListener('yatco:vessels-loaded', function() {
+    document.addEventListener('yatco:vessels-loaded', function(event) {
+        console.log('[YATCO] yatco:vessels-loaded event fired', event.detail ? '(count: ' + event.detail.count + ')' : '');
         // Invalidate cache when new vessels are added
         invalidateVesselsCache();
         
         // Update allVessels array when new vessels are added to DOM
+        const newVesselCount = document.querySelectorAll('.yatco-vessel-card').length;
+        console.log('[YATCO] yatco:vessels-loaded: Found', newVesselCount, 'total vessels in DOM');
         allVessels = Array.from(document.querySelectorAll('.yatco-vessel-card'));
         
         // If we were waiting for vessels to load (due to URL parameters), filter now
         if (window.yatcoWaitingForVessels) {
+            console.log('[YATCO] yatco:vessels-loaded: Was waiting for vessels, filtering now');
             // Small delay to ensure DOM is fully updated
             setTimeout(function() {
                 filterAndDisplay();
                 window.yatcoWaitingForVessels = false;
             }, 100);
+        } else {
+            console.log('[YATCO] yatco:vessels-loaded: Not waiting for vessels, cache invalidated');
         }
     });
     const resultsCount = document.querySelector('.yatco-results-count');
@@ -591,17 +612,26 @@ if ( ! defined( 'ABSPATH' ) ) {
     }
     
     function updatePaginationControls(totalVessels) {
+        console.log('[YATCO] updatePaginationControls: Called with', totalVessels, 'vessels, currentPage:', currentPage);
         const totalPages = Math.ceil(totalVessels / vesselsPerPage);
+        console.log('[YATCO] updatePaginationControls: Total pages calculated:', totalPages);
+        
         if (totalPages <= 1) {
             // Hide pagination if only one page
+            console.log('[YATCO] updatePaginationControls: Only 1 page or less, hiding pagination');
             const paginationContainer = document.querySelector('.yatco-pagination');
             if (paginationContainer) {
                 paginationContainer.style.display = 'none';
+            } else {
+                console.log('[YATCO] updatePaginationControls: Pagination container not found (may not exist yet)');
             }
             return;
         }
         
+        console.log('[YATCO] updatePaginationControls: Creating pagination for', totalPages, 'pages');
         const pageRange = getPaginationRange(currentPage, totalPages);
+        console.log('[YATCO] updatePaginationControls: Page range:', pageRange);
+        
         let paginationHtml = '<div class="yatco-pagination">';
         
         // Previous button
@@ -629,14 +659,23 @@ if ( ! defined( 'ABSPATH' ) ) {
         
         let paginationContainer = document.querySelector('.yatco-pagination');
         if (!paginationContainer) {
+            console.log('[YATCO] updatePaginationControls: Pagination container not found, creating new one');
             paginationContainer = document.createElement('div');
             paginationContainer.className = 'yatco-pagination';
             if (grid && grid.parentNode) {
                 grid.parentNode.insertBefore(paginationContainer, grid.nextSibling);
+                console.log('[YATCO] updatePaginationControls: Created and inserted pagination container');
+            } else {
+                console.error('[YATCO] updatePaginationControls: grid or grid.parentNode not found, cannot insert pagination!');
             }
+        } else {
+            console.log('[YATCO] updatePaginationControls: Using existing pagination container');
         }
+        
+        console.log('[YATCO] updatePaginationControls: Setting pagination HTML (length:', paginationHtml.length, 'chars)');
         paginationContainer.innerHTML = paginationHtml;
         paginationContainer.style.display = 'flex';
+        console.log('[YATCO] updatePaginationControls: Pagination displayed, container display:', paginationContainer.style.display);
     }
     
     window.yatcoGoToPage = function(page) {
@@ -653,26 +692,37 @@ if ( ! defined( 'ABSPATH' ) ) {
         // Use cached vessels if available and recent, otherwise query DOM
         const now = Date.now();
         if (vesselsCache && (now - vesselsCacheTime) < VESSELS_CACHE_DURATION) {
+            console.log('[YATCO] getVesselsFromDOM: Using cached vessels, count:', vesselsCache.length);
             return vesselsCache;
         }
+        console.log('[YATCO] getVesselsFromDOM: Querying DOM for vessels...');
+        const startTime = Date.now();
         vesselsCache = Array.from(document.querySelectorAll('.yatco-vessel-card'));
+        const queryTime = Date.now() - startTime;
         vesselsCacheTime = now;
         allVessels = vesselsCache; // Keep allVessels in sync
+        console.log('[YATCO] getVesselsFromDOM: Found', vesselsCache.length, 'vessels in', queryTime, 'ms');
         return vesselsCache;
     }
     
     function invalidateVesselsCache() {
+        console.log('[YATCO] invalidateVesselsCache: Clearing cache');
         vesselsCache = null;
         vesselsCacheTime = 0;
     }
     
     function filterAndDisplay() {
+        console.log('[YATCO] filterAndDisplay: Starting, currentPage:', currentPage);
+        const funcStartTime = Date.now();
+        
         try {
             // Get vessels (use cache if available, otherwise query DOM)
             const currentVessels = getVesselsFromDOM();
+            console.log('[YATCO] filterAndDisplay: Got', currentVessels.length, 'vessels from DOM');
             
             // Early return if no vessels (prevents errors)
             if (!currentVessels || currentVessels.length === 0) {
+                console.log('[YATCO] filterAndDisplay: No vessels found, returning early');
                 if (resultsCount) {
                     resultsCount.innerHTML = '0 of <span id="yatco-total-count">0</span> YACHTS FOUND';
                 }
@@ -684,42 +734,67 @@ if ( ! defined( 'ABSPATH' ) ) {
             }
             
             // Use the vessels for filtering
+            const filterStartTime = Date.now();
             const filtered = filterVessels(currentVessels);
+            console.log('[YATCO] filterAndDisplay: Filtered to', filtered.length, 'vessels in', Date.now() - filterStartTime, 'ms');
+            
+            const sortStartTime = Date.now();
             const sorted = sortVessels(filtered);
+            console.log('[YATCO] filterAndDisplay: Sorted', sorted.length, 'vessels in', Date.now() - sortStartTime, 'ms');
+            
+            const paginateStartTime = Date.now();
             const paginated = paginateVessels(sorted);
+            console.log('[YATCO] filterAndDisplay: Paginated to', paginated.length, 'vessels (page', currentPage, ') in', Date.now() - paginateStartTime, 'ms');
             
             // Get total filtered count for display
             const totalFiltered = sorted.length;
+            const totalPages = Math.ceil(totalFiltered / vesselsPerPage);
+            console.log('[YATCO] filterAndDisplay: Total filtered:', totalFiltered, ', Total pages:', totalPages, ', Showing page:', currentPage);
             
             // Hide all vessels first - use requestAnimationFrame to avoid blocking UI
+            console.log('[YATCO] filterAndDisplay: Scheduling DOM updates via requestAnimationFrame');
             requestAnimationFrame(function() {
+                const domUpdateStartTime = Date.now();
+                console.log('[YATCO] filterAndDisplay: requestAnimationFrame callback executing');
+                
                 // Batch hide operations for better performance
+                console.log('[YATCO] filterAndDisplay: Hiding', currentVessels.length, 'vessels');
                 for (let i = 0; i < currentVessels.length; i++) {
                     currentVessels[i].style.display = 'none';
                 }
                 
                 // Show paginated vessels
+                console.log('[YATCO] filterAndDisplay: Showing', paginated.length, 'paginated vessels');
                 for (let i = 0; i < paginated.length; i++) {
                     paginated[i].style.display = '';
                 }
+                console.log('[YATCO] filterAndDisplay: DOM visibility updated in', Date.now() - domUpdateStartTime, 'ms');
                 
                 // Update count
                 if (resultsCount) {
                     const shownStart = totalFiltered > 0 ? (currentPage - 1) * vesselsPerPage + 1 : 0;
                     const shownEnd = Math.min(currentPage * vesselsPerPage, totalFiltered);
-                    resultsCount.innerHTML = shownStart + ' - ' + shownEnd + ' of <span id="yatco-total-count">' + totalFiltered + '</span> YACHTS FOUND';
+                    const countHtml = shownStart + ' - ' + shownEnd + ' of <span id="yatco-total-count">' + totalFiltered + '</span> YACHTS FOUND';
+                    console.log('[YATCO] filterAndDisplay: Updating count HTML:', countHtml);
+                    resultsCount.innerHTML = countHtml;
+                } else {
+                    console.warn('[YATCO] filterAndDisplay: resultsCount element not found!');
                 }
                 
                 // Update pagination controls (MUST show pagination if more than 1 page)
+                console.log('[YATCO] filterAndDisplay: Calling updatePaginationControls with', totalFiltered, 'vessels');
                 updatePaginationControls(totalFiltered);
                 
                 // Update URL parameters (defer to avoid blocking)
                 setTimeout(function() {
                     updateUrlParameters();
                 }, 0);
+                
+                console.log('[YATCO] filterAndDisplay: Completed in', Date.now() - funcStartTime, 'ms total');
             });
         } catch (error) {
-            console.error('Error in filterAndDisplay:', error);
+            console.error('[YATCO] filterAndDisplay: ERROR:', error);
+            console.error('[YATCO] filterAndDisplay: Error stack:', error.stack);
         }
     }
     
@@ -763,25 +838,40 @@ if ( ! defined( 'ABSPATH' ) ) {
     }
     
     // Initialize - defer everything to prevent lockup
+    console.log('[YATCO] Script loaded, starting initialization...');
+    
     // Apply URL parameters first (if present in URL) - but do it asynchronously
     setTimeout(function() {
-        applyUrlParameters();
-        updateToggleButtons();
+        console.log('[YATCO] Initialization timeout fired, document.readyState:', document.readyState);
         
-        // Wait for DOM to be fully interactive before filtering
-        // This ensures the page doesn't lock up during initial render
-        if (document.readyState === 'complete') {
-            // Page already loaded, wait a bit more for any AJAX-loaded content
-            setTimeout(function() {
-                filterAndDisplay();
-            }, 300);
-        } else {
-            // Wait for page to fully load
-            window.addEventListener('load', function() {
+        try {
+            applyUrlParameters();
+            console.log('[YATCO] URL parameters applied');
+            updateToggleButtons();
+            console.log('[YATCO] Toggle buttons updated');
+            
+            // Wait for DOM to be fully interactive before filtering
+            // This ensures the page doesn't lock up during initial render
+            if (document.readyState === 'complete') {
+                // Page already loaded, wait a bit more for any AJAX-loaded content
+                console.log('[YATCO] Document already complete, waiting 300ms before filtering');
                 setTimeout(function() {
+                    console.log('[YATCO] Calling filterAndDisplay (document complete path)');
                     filterAndDisplay();
                 }, 300);
-            });
+            } else {
+                // Wait for page to fully load
+                console.log('[YATCO] Waiting for window.load event');
+                window.addEventListener('load', function() {
+                    console.log('[YATCO] Window.load fired, waiting 300ms before filtering');
+                    setTimeout(function() {
+                        console.log('[YATCO] Calling filterAndDisplay (window.load path)');
+                        filterAndDisplay();
+                    }, 300);
+                });
+            }
+        } catch (error) {
+            console.error('[YATCO] Error during initialization:', error);
         }
     }, 0);
 })();
