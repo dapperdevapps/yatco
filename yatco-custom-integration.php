@@ -613,10 +613,12 @@ function yatco_ajax_load_all_vessels() {
     $year_max = isset( $_POST['year_max'] ) && $_POST['year_max'] !== '' && $_POST['year_max'] !== '0' ? intval( $_POST['year_max'] ) : '';
     $loa_min = isset( $_POST['loa_min'] ) && $_POST['loa_min'] !== '' && $_POST['loa_min'] !== '0' ? floatval( $_POST['loa_min'] ) : '';
     $loa_max = isset( $_POST['loa_max'] ) && $_POST['loa_max'] !== '' && $_POST['loa_max'] !== '0' ? floatval( $_POST['loa_max'] ) : '';
-    $builder = isset( $_POST['builder'] ) && $_POST['builder'] !== '' ? sanitize_text_field( $_POST['builder'] ) : '';
-    $category = isset( $_POST['category'] ) && $_POST['category'] !== '' ? sanitize_text_field( $_POST['category'] ) : '';
-    $type = isset( $_POST['type'] ) && $_POST['type'] !== '' ? sanitize_text_field( $_POST['type'] ) : '';
-    $condition = isset( $_POST['condition'] ) && $_POST['condition'] !== '' ? sanitize_text_field( $_POST['condition'] ) : '';
+    $builder = isset( $_POST['builder'] ) && $_POST['builder'] !== '' ? sanitize_text_field( urldecode( $_POST['builder'] ) ) : '';
+    $category = isset( $_POST['category'] ) && $_POST['category'] !== '' ? sanitize_text_field( urldecode( $_POST['category'] ) ) : '';
+    $type = isset( $_POST['type'] ) && $_POST['type'] !== '' ? sanitize_text_field( urldecode( $_POST['type'] ) ) : '';
+    $condition = isset( $_POST['condition'] ) && $_POST['condition'] !== '' ? sanitize_text_field( urldecode( $_POST['condition'] ) ) : '';
+    $keywords = isset( $_POST['keywords'] ) && $_POST['keywords'] !== '' ? sanitize_text_field( $_POST['keywords'] ) : '';
+    $cabins = isset( $_POST['cabins'] ) && $_POST['cabins'] !== '' && $_POST['cabins'] !== '0' ? intval( $_POST['cabins'] ) : '';
     
     // Build query args (same as shortcode but load ALL vessels with matching order)
     $query_args = array(
@@ -709,6 +711,17 @@ function yatco_ajax_load_all_vessels() {
             'compare' => '=',
         );
     }
+    if ( $cabins !== '' ) {
+        $query_args['meta_query'][] = array(
+            'key'     => 'yacht_state_rooms',
+            'value'   => $cabins,
+            'compare' => '>=',
+            'type'    => 'NUMERIC',
+        );
+    }
+    if ( $keywords !== '' ) {
+        $query_args['s'] = $keywords; // WordPress search
+    }
     
     // First, get the total count (before applying offset)
     $count_query_args = $query_args;
@@ -723,8 +736,14 @@ function yatco_ajax_load_all_vessels() {
     $query_args['no_found_rows'] = true; // Don't need count again
     $post_ids = get_posts( $query_args );
     
+    // Debug logging
+    error_log( '[YATCO AJAX] Category filter: ' . $category );
+    error_log( '[YATCO AJAX] Total filtered: ' . $total_filtered );
+    error_log( '[YATCO AJAX] Post IDs after offset: ' . count( $post_ids ) );
+    
     if ( empty( $post_ids ) ) {
-        wp_send_json_success( array( 'html' => '', 'total_count' => min( $total_filtered, 12 ) ) );
+        error_log( '[YATCO AJAX] No post IDs found, returning empty HTML' );
+        wp_send_json_success( array( 'html' => '', 'total_count' => $total_filtered ) );
         return;
     }
     
