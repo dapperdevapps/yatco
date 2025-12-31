@@ -652,28 +652,47 @@ function yatco_vessels_shortcode( $atts ) {
                                 },
                                 success: function(response) {
                                     if (response && response.success && response.data && response.data.html) {
-                                        // Append new vessels to grid (they\'re hidden by default - pagination will show them)
+                                        // Trigger event immediately with total count (before appending, so count/pagination update first)
+                                        var event = new CustomEvent("yatco:vessels-loaded", {
+                                            detail: { count: response.data.total_count || 0 }
+                                        });
+                                        document.dispatchEvent(event);
+                                        
+                                        // Append vessels in batches to avoid blocking the page
                                         var grid = container.find("#yatco-vessels-grid");
                                         if (grid.length) {
-                                            // Create temporary container to parse HTML
+                                            // Parse HTML once
                                             var tempDiv = $("<div>").html(response.data.html);
-                                            var newVessels = tempDiv.find(".yatco-vessel-card");
+                                            var vesselCards = tempDiv.find(".yatco-vessel-card");
+                                            var totalVessels = vesselCards.length;
+                                            var batchSize = 100; // Append 100 vessels at a time
+                                            var currentIndex = 0;
                                             
-                                            // Append vessels (hidden by default via style attribute)
-                                            grid.append(response.data.html);
+                                            console.log("[YATCO AJAX] Appending", totalVessels, "vessels in batches of", batchSize);
                                             
-                                            // Trigger event to notify main script that new vessels were loaded
-                                            // This will invalidate the cache and update the vessel list
-                                            var event = new CustomEvent("yatco:vessels-loaded", {
-                                                detail: { count: response.data.total_count || 0 }
-                                            });
-                                            document.dispatchEvent(event);
-                                            
-                                            // Update total count in results header (if element exists)
-                                            var totalCount = $("#yatco-total-count");
-                                            if (totalCount.length && response.data.total_count) {
-                                                totalCount.text(response.data.total_count);
+                                            function appendBatch() {
+                                                var endIndex = Math.min(currentIndex + batchSize, totalVessels);
+                                                var batch = vesselCards.slice(currentIndex, endIndex);
+                                                
+                                                if (batch.length > 0) {
+                                                    // Append this batch (jQuery handles the DOM manipulation)
+                                                    grid.append(batch);
+                                                    
+                                                    currentIndex = endIndex;
+                                                    
+                                                    // Continue with next batch if more remain
+                                                    if (currentIndex < totalVessels) {
+                                                        requestAnimationFrame(appendBatch);
+                                                    } else {
+                                                        console.log("[YATCO AJAX] Finished appending all vessels");
+                                                    }
+                                                }
                                             }
+                                            
+                                            // Start appending in batches (defer slightly to let count/pagination render first)
+                                            setTimeout(function() {
+                                                requestAnimationFrame(appendBatch);
+                                            }, 100);
                                         }
                                     }
                                 },
