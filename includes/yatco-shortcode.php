@@ -642,10 +642,12 @@ function yatco_vessels_shortcode( $atts ) {
             // Always use lazy loading to prevent timeouts, even when URL params are present
             if ( $initial_load && $total_vessels > 12 ) {
                 // Add data attributes to container for JavaScript
-                $vessels_html = str_replace(
-                    '<div class="yatco-vessels-container',
-                    '<div class="yatco-vessels-container" data-yatco-total="' . esc_attr( $total_vessels ) . '" data-yatco-loaded="' . esc_attr( count( $vessels ) ) . '"',
-                    $vessels_html
+                // Match the opening div tag (may have existing data attributes)
+                $vessels_html = preg_replace(
+                    '/(<div class="yatco-vessels-container"[^>]*)(>)/',
+                    '$1 data-yatco-total="' . esc_attr( $total_vessels ) . '" data-yatco-loaded="' . esc_attr( count( $vessels ) ) . '"$2',
+                    $vessels_html,
+                    1 // Only replace first occurrence
                 );
                 
                 // Add inline script to load remaining vessels in background (after page load)
