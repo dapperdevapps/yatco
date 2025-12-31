@@ -753,7 +753,7 @@ function yatco_vessels_shortcode( $atts ) {
                                                     currentIndex = endIndex;
                                                 }
                                                 
-                                                // Check if we're done (regardless of whether batch was empty)
+                                                // Check if we are done (regardless of whether batch was empty)
                                                 if (currentIndex >= totalVessels) {
                                                     console.log("[YATCO AJAX] Finished appending all vessels");
                                                     // All vessels appended - trigger a final refresh event
