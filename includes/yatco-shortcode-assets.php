@@ -663,9 +663,6 @@ if ( ! defined( 'ABSPATH' ) ) {
         updateUrlParameters();
     }
     
-    // Apply URL parameters on page load (must be before filterAndDisplay)
-    applyUrlParameters();
-    
     if (resetBtn) {
         resetBtn.addEventListener('click', function() {
             if (keywords) keywords.value = '';
