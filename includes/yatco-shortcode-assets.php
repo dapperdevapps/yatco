@@ -289,24 +289,40 @@ if ( ! defined( 'ABSPATH' ) ) {
     // Listen for event when new vessels are loaded via AJAX (set up early)
     document.addEventListener('yatco:vessels-loaded', function(event) {
         console.log('[YATCO] yatco:vessels-loaded event fired', event.detail ? '(count: ' + event.detail.count + ')' : '');
-        // Invalidate cache when new vessels are added
-        invalidateVesselsCache();
         
-        // Update allVessels array when new vessels are added to DOM
-        const newVesselCount = document.querySelectorAll('.yatco-vessel-card').length;
-        console.log('[YATCO] yatco:vessels-loaded: Found', newVesselCount, 'total vessels in DOM');
-        allVessels = Array.from(document.querySelectorAll('.yatco-vessel-card'));
-        
-        // Always refresh the display when new vessels are loaded via AJAX
-        // This ensures counts, pagination, and displayed vessels are updated
-        console.log('[YATCO] yatco:vessels-loaded: Refreshing display with new vessel count');
-        setTimeout(function() {
-            console.log('[YATCO] yatco:vessels-loaded: Calling filterAndDisplay after delay');
-            filterAndDisplay();
-            if (window.yatcoWaitingForVessels) {
-                window.yatcoWaitingForVessels = false;
+        try {
+            // Invalidate cache when new vessels are added (do this immediately, it's fast)
+            invalidateVesselsCache();
+            
+            // Always refresh the display when new vessels are loaded via AJAX
+            // Use requestIdleCallback to avoid blocking, with setTimeout fallback
+            console.log('[YATCO] yatco:vessels-loaded: Scheduling filterAndDisplay refresh (will update allVessels internally)');
+            
+            function refreshDisplay() {
+                try {
+                    console.log('[YATCO] yatco:vessels-loaded: Calling filterAndDisplay to refresh display');
+                    // filterAndDisplay will call getVesselsFromDOM() which will query and cache all vessels
+                    filterAndDisplay();
+                    console.log('[YATCO] yatco:vessels-loaded: filterAndDisplay completed');
+                    if (window.yatcoWaitingForVessels) {
+                        window.yatcoWaitingForVessels = false;
+                    }
+                } catch (filterError) {
+                    console.error('[YATCO] yatco:vessels-loaded: Error in filterAndDisplay:', filterError);
+                    console.error('[YATCO] yatco:vessels-loaded: Error stack:', filterError.stack);
+                }
             }
-        }, 100);
+            
+            // Use requestIdleCallback if available (non-blocking), otherwise setTimeout
+            if (window.requestIdleCallback) {
+                requestIdleCallback(refreshDisplay, { timeout: 500 });
+            } else {
+                setTimeout(refreshDisplay, 200);
+            }
+        } catch (error) {
+            console.error('[YATCO] yatco:vessels-loaded: Error in event handler:', error);
+            console.error('[YATCO] yatco:vessels-loaded: Error stack:', error.stack);
+        }
     });
     const resultsCount = document.querySelector('.yatco-results-count');
     const totalCount = document.getElementById('yatco-total-count');
