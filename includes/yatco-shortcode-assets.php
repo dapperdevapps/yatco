@@ -277,7 +277,15 @@ if ( ! defined( 'ABSPATH' ) ) {
     console.log('[YATCO] Initial vessel count from DOM:', allVessels.length);
     
     // Track total vessel count separately (set from AJAX response, avoids expensive DOM queries)
+    // Check if container has data-yatco-total attribute (server-provided total) and use that, otherwise use DOM count
     let totalVesselCount = allVessels.length;
+    if (container.dataset.yatcoTotal) {
+        const serverTotal = parseInt(container.dataset.yatcoTotal) || 0;
+        if (serverTotal > totalVesselCount) {
+            totalVesselCount = serverTotal;
+            console.log('[YATCO] Initialized totalVesselCount from data-yatco-total:', totalVesselCount);
+        }
+    }
     
     const grid = document.getElementById('yatco-vessels-grid');
     if (!grid) {
