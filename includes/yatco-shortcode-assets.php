@@ -720,48 +720,9 @@ if ( ! defined( 'ABSPATH' ) ) {
     applyUrlParameters();
     updateToggleButtons();
     
-    // Check if we have URL parameters - if so, wait for all vessels to load before filtering
-    const hasUrlParams = window.location.search.length > 0;
-    const totalVesselsAttr = container.getAttribute('data-yatco-total');
-    const loadedVesselsAttr = container.getAttribute('data-yatco-loaded');
-    
-    if (hasUrlParams && totalVesselsAttr && loadedVesselsAttr) {
-        // URL parameters present and we have vessel count attributes - wait for all vessels to load
-        const totalVessels = parseInt(totalVesselsAttr) || 0;
-        const loadedVessels = parseInt(loadedVesselsAttr) || 0;
-        
-        if (totalVessels > loadedVessels) {
-            // Not all vessels loaded yet - set flag and wait for AJAX load
-            window.yatcoWaitingForVessels = true;
-            
-            // Also set up a polling check as backup (in case event doesn't fire)
-            const checkInterval = setInterval(function() {
-                const currentCount = document.querySelectorAll('.yatco-vessel-card').length;
-                if (currentCount >= totalVessels) {
-                    clearInterval(checkInterval);
-                    window.yatcoWaitingForVessels = false;
-                    filterAndDisplay();
-                }
-            }, 300);
-            
-            // Clear interval after 10 seconds (safety timeout)
-            setTimeout(function() {
-                clearInterval(checkInterval);
-                if (window.yatcoWaitingForVessels) {
-                    window.yatcoWaitingForVessels = false;
-                    filterAndDisplay(); // Filter with whatever we have
-                }
-            }, 10000);
-            
-            // Don't filter yet - will filter after AJAX loads all vessels (via event listener or polling)
-        } else {
-            // All vessels already loaded - filter immediately
-            filterAndDisplay();
-        }
-    } else {
-        // No URL parameters or all vessels already loaded - proceed with normal initialization
-        filterAndDisplay();
-    }
+    // When URL parameters are present, PHP loads all vessels immediately (no AJAX needed)
+    // So we can filter immediately without waiting
+    filterAndDisplay();
 })();
 </script>
 <?php

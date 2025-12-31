@@ -347,6 +347,12 @@ function yatco_vessels_shortcode( $atts ) {
         
         // OPTIMIZATION: For initial page load, limit to first 12 vessels for instant display
         // Remaining vessels will be loaded via AJAX in the background
+        // Check if URL parameters are present (filtering requested via URL)
+        $has_url_params = ! empty( $_GET['keywords'] ) || ! empty( $_GET['builder'] ) || ! empty( $_GET['category'] ) || 
+                         ! empty( $_GET['type'] ) || ! empty( $_GET['condition'] ) || ! empty( $_GET['year_min'] ) || 
+                         ! empty( $_GET['year_max'] ) || ! empty( $_GET['loa_min'] ) || ! empty( $_GET['loa_max'] ) || 
+                         ! empty( $_GET['price_min'] ) || ! empty( $_GET['price_max'] ) || ! empty( $_GET['cabins'] );
+        
         $initial_load = ! isset( $_GET['yatco_ajax_load'] ) || $_GET['yatco_ajax_load'] !== 'all';
         
         // Query ALL posts first to get filter options (builders, categories, types, conditions)
@@ -358,10 +364,14 @@ function yatco_vessels_shortcode( $atts ) {
         $all_post_ids_for_filters = get_posts( $filter_query_args );
         
         // Now get the limited set for display
-        if ( $initial_load ) {
-            // Initial load: only get first 12 for instant display
+        if ( $initial_load && ! $has_url_params ) {
+            // Initial load WITHOUT URL params: only get first 12 for instant display (AJAX loads rest)
             $query_args['posts_per_page'] = 12;
             $query_args['no_found_rows'] = false; // Need total count for pagination
+        } else {
+            // URL params present OR not initial load: load ALL vessels immediately (no AJAX needed)
+            $query_args['posts_per_page'] = -1; // Load all immediately when URL params present
+            $query_args['no_found_rows'] = true; // Don't need count when loading all
         }
         
         // Query CPT posts for display (only IDs to save memory)
