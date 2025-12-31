@@ -613,6 +613,10 @@ function yatco_ajax_load_all_vessels() {
     $year_max = isset( $_POST['year_max'] ) && $_POST['year_max'] !== '' && $_POST['year_max'] !== '0' ? intval( $_POST['year_max'] ) : '';
     $loa_min = isset( $_POST['loa_min'] ) && $_POST['loa_min'] !== '' && $_POST['loa_min'] !== '0' ? floatval( $_POST['loa_min'] ) : '';
     $loa_max = isset( $_POST['loa_max'] ) && $_POST['loa_max'] !== '' && $_POST['loa_max'] !== '0' ? floatval( $_POST['loa_max'] ) : '';
+    $builder = isset( $_POST['builder'] ) && $_POST['builder'] !== '' ? sanitize_text_field( $_POST['builder'] ) : '';
+    $category = isset( $_POST['category'] ) && $_POST['category'] !== '' ? sanitize_text_field( $_POST['category'] ) : '';
+    $type = isset( $_POST['type'] ) && $_POST['type'] !== '' ? sanitize_text_field( $_POST['type'] ) : '';
+    $condition = isset( $_POST['condition'] ) && $_POST['condition'] !== '' ? sanitize_text_field( $_POST['condition'] ) : '';
     
     // Build query args (same as shortcode but load ALL vessels with matching order)
     $query_args = array(
@@ -675,6 +679,34 @@ function yatco_ajax_load_all_vessels() {
             'value'   => $loa_max,
             'compare' => '<=',
             'type'    => 'DECIMAL',
+        );
+    }
+    if ( $builder !== '' ) {
+        $query_args['meta_query'][] = array(
+            'key'     => 'yacht_make',
+            'value'   => $builder,
+            'compare' => '=',
+        );
+    }
+    if ( $category !== '' ) {
+        $query_args['meta_query'][] = array(
+            'key'     => 'yacht_category',
+            'value'   => $category,
+            'compare' => '=',
+        );
+    }
+    if ( $type !== '' ) {
+        $query_args['meta_query'][] = array(
+            'key'     => 'yacht_type',
+            'value'   => $type,
+            'compare' => '=',
+        );
+    }
+    if ( $condition !== '' ) {
+        $query_args['meta_query'][] = array(
+            'key'     => 'yacht_condition',
+            'value'   => $condition,
+            'compare' => '=',
         );
     }
     

@@ -363,16 +363,10 @@ function yatco_vessels_shortcode( $atts ) {
         $filter_query_args['no_found_rows'] = true;
         $all_post_ids_for_filters = get_posts( $filter_query_args );
         
-        // Now get the limited set for display
-        if ( $initial_load && ! $has_url_params ) {
-            // Initial load WITHOUT URL params: only get first 12 for instant display (AJAX loads rest)
-            $query_args['posts_per_page'] = 12;
-            $query_args['no_found_rows'] = false; // Need total count for pagination
-        } else {
-            // URL params present OR not initial load: load ALL vessels immediately (no AJAX needed)
-            $query_args['posts_per_page'] = -1; // Load all immediately when URL params present
-            $query_args['no_found_rows'] = true; // Don't need count when loading all
-        }
+        // Always limit to first 12 for instant display (AJAX loads rest in background)
+        // This prevents timeouts even when URL parameters are present
+        $query_args['posts_per_page'] = 12;
+        $query_args['no_found_rows'] = false; // Need total count for pagination
         
         // Query CPT posts for display (only IDs to save memory)
         $vessel_query = new WP_Query( $query_args );
@@ -637,18 +631,26 @@ function yatco_vessels_shortcode( $atts ) {
                         
                         // Load remaining vessels in background after page load (1 second delay)
                         setTimeout(function() {
+                            // Get current filter values from URL params (if any)
+                            var urlParams = new URLSearchParams(window.location.search);
                             $.ajax({
                                 url: ' . json_encode( admin_url( 'admin-ajax.php' ) ) . ',
                                 type: "POST",
                                 data: {
                                     action: "yatco_load_all_vessels",
                                     nonce: ' . json_encode( wp_create_nonce( 'yatco_load_vessels' ) ) . ',
-                                    price_min: ' . json_encode( $price_min ) . ',
-                                    price_max: ' . json_encode( $price_max ) . ',
-                                    year_min: ' . json_encode( $year_min ) . ',
-                                    year_max: ' . json_encode( $year_max ) . ',
-                                    loa_min: ' . json_encode( $loa_min ) . ',
-                                    loa_max: ' . json_encode( $loa_max ) . '
+                                    price_min: urlParams.get("price_min") || ' . json_encode( $price_min ) . ',
+                                    price_max: urlParams.get("price_max") || ' . json_encode( $price_max ) . ',
+                                    year_min: urlParams.get("year_min") || ' . json_encode( $year_min ) . ',
+                                    year_max: urlParams.get("year_max") || ' . json_encode( $year_max ) . ',
+                                    loa_min: urlParams.get("loa_min") || ' . json_encode( $loa_min ) . ',
+                                    loa_max: urlParams.get("loa_max") || ' . json_encode( $loa_max ) . ',
+                                    builder: urlParams.get("builder") || "",
+                                    category: urlParams.get("category") || "",
+                                    type: urlParams.get("type") || "",
+                                    condition: urlParams.get("condition") || "",
+                                    keywords: urlParams.get("keywords") || "",
+                                    cabins: urlParams.get("cabins") || ""
                                 },
                                 success: function(response) {
                                     if (response && response.success && response.data && response.data.html) {
