@@ -675,8 +675,26 @@ function yatco_vessels_shortcode( $atts ) {
                                                 var batch = vesselCards.slice(currentIndex, endIndex);
                                                 
                                                 if (batch.length > 0) {
-                                                    // Append this batch (jQuery handles the DOM manipulation)
-                                                    grid.append(batch);
+                                                    // Filter out duplicates by checking if vessel with same href already exists
+                                                    var existingLinks = {};
+                                                    grid.find('.yatco-vessel-card').each(function() {
+                                                        var href = $(this).attr('href');
+                                                        if (href) existingLinks[href] = true;
+                                                    });
+                                                    
+                                                    var filteredBatch = batch.filter(function() {
+                                                        var href = $(this).attr('href');
+                                                        if (!href || existingLinks[href]) {
+                                                            return false; // Skip duplicate
+                                                        }
+                                                        existingLinks[href] = true; // Mark as seen
+                                                        return true;
+                                                    });
+                                                    
+                                                    if (filteredBatch.length > 0) {
+                                                        // Append only non-duplicate vessels
+                                                        grid.append(filteredBatch);
+                                                    }
                                                     
                                                     currentIndex = endIndex;
                                                     

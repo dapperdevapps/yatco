@@ -614,12 +614,14 @@ function yatco_ajax_load_all_vessels() {
     $loa_min = isset( $_POST['loa_min'] ) && $_POST['loa_min'] !== '' && $_POST['loa_min'] !== '0' ? floatval( $_POST['loa_min'] ) : '';
     $loa_max = isset( $_POST['loa_max'] ) && $_POST['loa_max'] !== '' && $_POST['loa_max'] !== '0' ? floatval( $_POST['loa_max'] ) : '';
     
-    // Build query args (same as shortcode but load ALL vessels)
+    // Build query args (same as shortcode but load ALL vessels with matching order)
     $query_args = array(
         'post_type'      => 'yacht',
         'post_status'    => 'publish',
         'posts_per_page' => -1,
         'fields'         => 'ids',
+        'orderby'        => 'date', // Match shortcode default ordering
+        'order'          => 'DESC', // Match shortcode default ordering
         'meta_query'     => array(),
         'no_found_rows'  => true,
         'update_post_meta_cache' => false,
@@ -676,7 +678,7 @@ function yatco_ajax_load_all_vessels() {
         );
     }
     
-    // Skip first 12 (already loaded)
+    // Skip first 12 (already loaded) - now safe because we've added matching orderby/order
     $query_args['offset'] = 12;
     
     // Use the same efficient loading function from shortcode
