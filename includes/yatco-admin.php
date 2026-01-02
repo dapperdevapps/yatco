@@ -2451,6 +2451,97 @@ function yatco_options_page() {
         }
     }
     
+    echo '<h3>Test Server Cron Execution</h3>';
+    echo '<div style="background: #fff; border: 1px solid #ddd; padding: 15px; margin: 10px 0;">';
+    echo '<p>Manually trigger wp-cron.php to see if scheduled events execute:</p>';
+    echo '<form method="post" style="margin-bottom: 15px;">';
+    wp_nonce_field( 'yatco_test_wpcron', 'yatco_test_wpcron_nonce' );
+    submit_button( 'Test wp-cron.php Execution', 'secondary', 'yatco_test_wpcron', false );
+    echo '</form>';
+    
+    if ( isset( $_POST['yatco_test_wpcron'] ) && check_admin_referer( 'yatco_test_wpcron', 'yatco_test_wpcron_nonce' ) ) {
+        echo '<div style="background: #f9f9f9; border: 1px solid #ddd; padding: 15px; margin: 10px 0;">';
+        echo '<h4>wp-cron.php Test Results:</h4>';
+        
+        // Get scheduled events before
+        $before_sync = wp_next_scheduled( 'yatco_daily_sync_hook' );
+        $before_full = wp_next_scheduled( 'yatco_full_import_hook' );
+        
+        echo '<p><strong>Before triggering wp-cron:</strong></p>';
+        echo '<ul>';
+        if ( $before_sync ) {
+            echo '<li>Daily Sync scheduled for: ' . date( 'Y-m-d H:i:s', $before_sync ) . ' (' . ( $before_sync <= time() ? 'DUE NOW' : 'Future' ) . ')</li>';
+        } else {
+            echo '<li>Daily Sync: Not scheduled</li>';
+        }
+        if ( $before_full ) {
+            echo '<li>Full Import scheduled for: ' . date( 'Y-m-d H:i:s', $before_full ) . ' (' . ( $before_full <= time() ? 'DUE NOW' : 'Future' ) . ')</li>';
+        } else {
+            echo '<li>Full Import: Not scheduled</li>';
+        }
+        echo '</ul>';
+        
+        // Trigger wp-cron
+        if ( function_exists( 'spawn_cron' ) ) {
+            echo '<p><strong>Triggering spawn_cron()...</strong></p>';
+            $spawned = spawn_cron();
+            echo '<p>spawn_cron() returned: ' . ( $spawned ? 'TRUE' : 'FALSE' ) . '</p>';
+        } else {
+            echo '<p><strong>spawn_cron() function not available. Attempting to simulate wp-cron execution...</strong></p>';
+            // Manually trigger cron
+            $crons = _get_cron_array();
+            if ( $crons ) {
+                $due_crons = array();
+                foreach ( $crons as $timestamp => $cron ) {
+                    if ( $timestamp <= time() ) {
+                        $due_crons[$timestamp] = $cron;
+                    }
+                }
+                if ( ! empty( $due_crons ) ) {
+                    echo '<p>Found ' . count( $due_crons ) . ' due cron event(s). Executing...</p>';
+                    foreach ( $due_crons as $timestamp => $cron ) {
+                        foreach ( $cron as $hook => $dings ) {
+                            foreach ( $dings as $key => $data ) {
+                                echo '<p>Executing hook: ' . esc_html( $hook ) . '</p>';
+                                do_action( $hook, $data['args'] );
+                            }
+                        }
+                    }
+                } else {
+                    echo '<p>No due cron events found.</p>';
+                }
+            } else {
+                echo '<p>No cron events found in database.</p>';
+            }
+        }
+        
+        // Wait a moment for any async operations
+        sleep( 2 );
+        
+        // Get scheduled events after
+        $after_sync = wp_next_scheduled( 'yatco_daily_sync_hook' );
+        $after_full = wp_next_scheduled( 'yatco_full_import_hook' );
+        
+        echo '<p><strong>After triggering wp-cron:</strong></p>';
+        echo '<ul>';
+        if ( $after_sync ) {
+            $changed = ( $before_sync != $after_sync ) ? ' (CHANGED - rescheduled)' : '';
+            echo '<li>Daily Sync scheduled for: ' . date( 'Y-m-d H:i:s', $after_sync ) . $changed . '</li>';
+        } else {
+            echo '<li>Daily Sync: Not scheduled' . ( $before_sync ? ' (was scheduled, now cleared)' : '' ) . '</li>';
+        }
+        if ( $after_full ) {
+            $changed = ( $before_full != $after_full ) ? ' (CHANGED - rescheduled)' : '';
+            echo '<li>Full Import scheduled for: ' . date( 'Y-m-d H:i:s', $after_full ) . $changed . '</li>';
+        } else {
+            echo '<li>Full Import: Not scheduled' . ( $before_full ? ' (was scheduled, now cleared)' : '' ) . '</li>';
+        }
+        echo '</ul>';
+        
+        echo '<p><strong>Note:</strong> This test runs wp-cron in the web context. Your server cron runs it in CLI context, which may behave differently.</p>';
+        echo '</div>';
+    }
+    
     echo '<h3>Server Cron Setup (Required for Auto-Resume & Auto-Update)</h3>';
     echo '<div style="background: #fff; border: 1px solid #ddd; padding: 15px; margin: 10px 0;">';
     echo '<p>Set up a server cron job to enable auto-resume and automatic vessel updates. <strong>This is required if you want these features to work automatically.</strong></p>';
