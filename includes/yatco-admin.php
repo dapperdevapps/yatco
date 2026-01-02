@@ -450,12 +450,17 @@ function yatco_options_page() {
                     $next_scheduled = wp_next_scheduled( 'yatco_daily_sync_hook' );
                     if ( $next_scheduled ) {
                         echo ' <span style="color: #d63638;">(Rescheduled - Next run: ' . date( 'Y-m-d H:i:s', $next_scheduled ) . ')</span>';
+                    } else {
+                        echo ' <span style="color: #d63638;">(⚠ Rescheduling failed - please save settings to reschedule)</span>';
                     }
                 } else {
                     echo ' <span style="color: #d63638;">(⚠ Not scheduled - please save settings to reschedule)</span>';
                 }
             } elseif ( $next_scheduled ) {
                 echo ' (Next run: ' . date( 'Y-m-d H:i:s', $next_scheduled ) . ')';
+            } else {
+                // Fallback case - should not reach here normally
+                echo ' <span style="color: #d63638;">(⚠ Not scheduled)</span>';
             }
             
             // Check if previous run was missed/failed
