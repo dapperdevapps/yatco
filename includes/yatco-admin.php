@@ -2466,20 +2466,51 @@ function yatco_options_page() {
         // Get scheduled events before
         $before_sync = wp_next_scheduled( 'yatco_daily_sync_hook' );
         $before_full = wp_next_scheduled( 'yatco_full_import_hook' );
+        $now = time();
         
         echo '<p><strong>Before triggering wp-cron:</strong></p>';
         echo '<ul>';
         if ( $before_sync ) {
-            echo '<li>Daily Sync scheduled for: ' . date( 'Y-m-d H:i:s', $before_sync ) . ' (' . ( $before_sync <= time() ? 'DUE NOW' : 'Future' ) . ')</li>';
+            $due_status = $before_sync <= $now ? 'DUE NOW (overdue by ' . round( ( $now - $before_sync ) / 3600, 1 ) . ' hours)' : 'Future';
+            echo '<li>Daily Sync scheduled for: ' . date( 'Y-m-d H:i:s', $before_sync ) . ' (' . $due_status . ')</li>';
         } else {
             echo '<li>Daily Sync: Not scheduled</li>';
         }
         if ( $before_full ) {
-            echo '<li>Full Import scheduled for: ' . date( 'Y-m-d H:i:s', $before_full ) . ' (' . ( $before_full <= time() ? 'DUE NOW' : 'Future' ) . ')</li>';
+            $due_status = $before_full <= $now ? 'DUE NOW (overdue by ' . round( ( $now - $before_full ) / 3600, 1 ) . ' hours)' : 'Future';
+            echo '<li>Full Import scheduled for: ' . date( 'Y-m-d H:i:s', $before_full ) . ' (' . $due_status . ')</li>';
         } else {
             echo '<li>Full Import: Not scheduled</li>';
         }
         echo '</ul>';
+        
+        // Check all cron events to see what's due
+        $crons = _get_cron_array();
+        $due_events = array();
+        if ( $crons ) {
+            foreach ( $crons as $timestamp => $cron ) {
+                if ( $timestamp <= $now ) {
+                    foreach ( $cron as $hook => $dings ) {
+                        $due_events[] = array(
+                            'hook' => $hook,
+                            'timestamp' => $timestamp,
+                            'due_in_hours' => round( ( $now - $timestamp ) / 3600, 1 ),
+                        );
+                    }
+                }
+            }
+        }
+        if ( ! empty( $due_events ) ) {
+            echo '<p><strong>⚠️ Found ' . count( $due_events ) . ' overdue cron event(s) in WordPress database:</strong></p>';
+            echo '<ul>';
+            foreach ( $due_events as $event ) {
+                echo '<li>' . esc_html( $event['hook'] ) . ' - scheduled for ' . date( 'Y-m-d H:i:s', $event['timestamp'] ) . ' (overdue by ' . $event['due_in_hours'] . ' hours)</li>';
+            }
+            echo '</ul>';
+            echo '<p style="color: #d63638;"><strong>These should be executed by your server cron. If they remain overdue, your server cron is not working correctly.</strong></p>';
+        } else {
+            echo '<p>✓ No overdue events found in WordPress cron database.</p>';
+        }
         
         // Trigger wp-cron
         if ( function_exists( 'spawn_cron' ) ) {
