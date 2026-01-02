@@ -439,8 +439,65 @@ function yatco_options_page() {
         if ( $sync_enabled === 'yes' ) {
             echo '<span style="color: #46b450;">✓ Enabled</span> - ' . esc_html( $frequency_labels[ $sync_frequency ] ?? $sync_frequency );
             $next_scheduled = wp_next_scheduled( 'yatco_daily_sync_hook' );
-            if ( $next_scheduled ) {
+            $last_run = get_option( 'yatco_daily_sync_last_run', false );
+            
+            // If enabled but not scheduled, reschedule it (wp-cron might have missed it)
+            if ( ! $next_scheduled || $next_scheduled < time() ) {
+                // Reschedule if missing or if the scheduled time has passed
+                // Function should be available since yatco-custom-integration.php is included by WordPress
+                if ( function_exists( 'yatco_schedule_next_daily_sync' ) ) {
+                    yatco_schedule_next_daily_sync();
+                    $next_scheduled = wp_next_scheduled( 'yatco_daily_sync_hook' );
+                    if ( $next_scheduled ) {
+                        echo ' <span style="color: #d63638;">(Rescheduled - Next run: ' . date( 'Y-m-d H:i:s', $next_scheduled ) . ')</span>';
+                    }
+                } else {
+                    echo ' <span style="color: #d63638;">(⚠ Not scheduled - please save settings to reschedule)</span>';
+                }
+            } elseif ( $next_scheduled ) {
                 echo ' (Next run: ' . date( 'Y-m-d H:i:s', $next_scheduled ) . ')';
+            }
+            
+            // Check if previous run was missed/failed
+            if ( $last_run !== false ) {
+                $time_since_last_run = time() - $last_run;
+                // Calculate expected interval based on frequency
+                $expected_interval = 86400; // Default to 24 hours
+                switch ( $sync_frequency ) {
+                    case 'hourly':
+                        $expected_interval = 3600;
+                        break;
+                    case '6hours':
+                        $expected_interval = 21600;
+                        break;
+                    case '12hours':
+                        $expected_interval = 43200;
+                        break;
+                    case 'daily':
+                        $expected_interval = 86400;
+                        break;
+                    case '2days':
+                        $expected_interval = 172800;
+                        break;
+                    case 'weekly':
+                        $expected_interval = 604800;
+                        break;
+                }
+                
+                // If last run was more than 1.5x the expected interval, it was likely missed
+                if ( $time_since_last_run > ( $expected_interval * 1.5 ) ) {
+                    $days_overdue = floor( ( $time_since_last_run - $expected_interval ) / 86400 );
+                    echo ' <span style="color: #d63638; font-weight: bold;">⚠ Last run: ' . date( 'Y-m-d H:i:s', $last_run ) . ' (' . $days_overdue . ' day' . ( $days_overdue != 1 ? 's' : '' ) . ' overdue)</span>';
+                } else {
+                    echo ' <span style="color: #666; font-size: 0.9em;">(Last run: ' . date( 'Y-m-d H:i:s', $last_run ) . ')</span>';
+                }
+            } else {
+                echo ' <span style="color: #666; font-size: 0.9em;">(No previous runs recorded)</span>';
+            }
+            
+            // Warn if wp-cron is disabled
+            if ( defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON ) {
+                echo ' <span style="color: #d63638; font-weight: bold;">⚠ WP-Cron is disabled - you must set up a server cron job</span>';
             }
         } else {
             echo '<span style="color: #dc3232;">✗ Disabled</span>';
