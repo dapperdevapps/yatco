@@ -2299,19 +2299,37 @@ function yatco_options_page() {
     $scheduled_warm = wp_next_scheduled( 'yatco_warm_cache_hook' );
     echo '<tr><td><strong>Scheduled Events:</strong></td><td>';
     $scheduled_events = array();
+    $now = time();
     if ( $scheduled_full ) {
-        $scheduled_events[] = 'Full Import: ' . date( 'Y-m-d H:i:s', $scheduled_full );
+        $status = $scheduled_full < $now ? ' (OVERDUE)' : '';
+        $scheduled_events[] = 'Full Import: ' . date( 'Y-m-d H:i:s', $scheduled_full ) . $status;
     }
     if ( $scheduled_sync ) {
-        $scheduled_events[] = 'Daily Sync: ' . date( 'Y-m-d H:i:s', $scheduled_sync );
+        $status = $scheduled_sync < $now ? ' (OVERDUE - wp-cron not running?)' : '';
+        $scheduled_events[] = 'Daily Sync: ' . date( 'Y-m-d H:i:s', $scheduled_sync ) . $status;
     }
     if ( $scheduled_warm ) {
-        $scheduled_events[] = 'Update All Vessels: ' . date( 'Y-m-d H:i:s', $scheduled_warm );
+        $status = $scheduled_warm < $now ? ' (OVERDUE)' : '';
+        $scheduled_events[] = 'Update All Vessels: ' . date( 'Y-m-d H:i:s', $scheduled_warm ) . $status;
     }
     if ( ! empty( $scheduled_events ) ) {
         echo '<span style="color: #ff9800;">⚠ ' . esc_html( implode( '<br />', $scheduled_events ) ) . '</span>';
+        if ( defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON ) {
+            echo '<br /><span style="color: #d63638; font-size: 12px;">⚠ WP-Cron is disabled. Server cron MUST call wp-cron.php every 5-15 minutes. Check your server cron is running.</span>';
+        }
     } else {
         echo 'None scheduled';
+    }
+    echo '</td></tr>';
+    
+    // Check if DISABLE_WP_CRON is set
+    echo '<tr><td><strong>WP-Cron Status:</strong></td><td>';
+    if ( defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON ) {
+        echo '<span style="color: #d63638;">❌ DISABLED</span>';
+        echo '<br /><span style="color: #666; font-size: 12px;">Server cron must call: <code>' . esc_html( home_url( '/wp-cron.php?doing_wp_cron' ) ) . '</code></span>';
+        echo '<br /><span style="color: #666; font-size: 12px;">Or via CLI: <code>/usr/bin/php ' . esc_html( ABSPATH . 'wp-cron.php' ) . '</code></span>';
+    } else {
+        echo '<span style="color: #46b450;">✔ ENABLED (runs on page load)</span>';
     }
     echo '</td></tr>';
     
