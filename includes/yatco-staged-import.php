@@ -1505,6 +1505,7 @@ function yatco_daily_sync_check( $token ) {
     yatco_update_import_status_message( 'Daily Sync: Checking for already imported vessels...' );
     global $wpdb;
     $imported_vessel_id_lookup = array();
+    $imported_mlsid_lookup = array();
     
     // Get all existing yacht posts with their vessel IDs
     $vessel_id_posts = $wpdb->get_results( $wpdb->prepare( "
@@ -1520,6 +1521,23 @@ function yatco_daily_sync_check( $token ) {
     foreach ( $vessel_id_posts as $post ) {
         if ( ! empty( $post->vessel_id ) ) {
             $imported_vessel_id_lookup[ intval( $post->vessel_id ) ] = intval( $post->post_id );
+        }
+    }
+    
+    // Also get all existing yacht posts with their MLS IDs
+    $mlsid_posts = $wpdb->get_results( $wpdb->prepare( "
+        SELECT pm.post_id, pm.meta_value as mlsid
+        FROM {$wpdb->postmeta} pm
+        INNER JOIN {$wpdb->posts} p ON pm.post_id = p.ID
+        WHERE p.post_type = %s
+        AND pm.meta_key = 'yacht_mlsid'
+        AND pm.meta_value != ''
+        AND pm.meta_value IS NOT NULL
+    ", 'yacht' ) );
+    
+    foreach ( $mlsid_posts as $post ) {
+        if ( ! empty( $post->mlsid ) ) {
+            $imported_mlsid_lookup[ $post->mlsid ] = intval( $post->post_id );
         }
     }
     
@@ -1669,10 +1687,8 @@ function yatco_daily_sync_check( $token ) {
                     // DON'T delete stop flag - keep it so it can be checked again
                     return;
                 }
+                // First try to find post by Vessel ID
                 $post_id = yatco_find_vessel_post_by_id( $vessel_id );
-                if ( ! $post_id ) {
-                    continue;
-                }
                 
                 // Fetch lightweight data to check price and days on market
                 $endpoint = 'https://api.yatcoboss.com/api/v1/ForSale/Vessel/' . intval( $vessel_id ) . '/Details/FullSpecsAll';
@@ -1698,6 +1714,18 @@ function yatco_daily_sync_check( $token ) {
                 
                 $result = $data['Result'];
                 $basic = isset( $data['BasicInfo'] ) ? $data['BasicInfo'] : array();
+                
+                // If post not found by Vessel ID, try MLS ID from API response
+                if ( ! $post_id ) {
+                    $api_mlsid = isset( $result['MLSID'] ) ? $result['MLSID'] : ( isset( $basic['MLSID'] ) ? $basic['MLSID'] : null );
+                    if ( ! empty( $api_mlsid ) ) {
+                        $post_id = yatco_find_vessel_post_by_id( $vessel_id, $api_mlsid );
+                    }
+                }
+                
+                if ( ! $post_id ) {
+                    continue;
+                }
                 $misc = isset( $data['MiscInfo'] ) ? $data['MiscInfo'] : array();
                 
                 // Check and update price
@@ -1863,9 +1891,10 @@ function yatco_find_or_create_vessel_post( $vessel_id, $mlsid, $name ) {
 }
 
 /**
- * Helper: Find vessel post by VesselID.
+ * Helper: Find vessel post by VesselID (checks both Vessel ID and MLS ID).
  */
-function yatco_find_vessel_post_by_id( $vessel_id ) {
+function yatco_find_vessel_post_by_id( $vessel_id, $mlsid = null ) {
+    // First try Vessel ID
     $posts = get_posts( array(
         'post_type' => 'yacht',
         'meta_query' => array(
@@ -1881,6 +1910,26 @@ function yatco_find_vessel_post_by_id( $vessel_id ) {
     
     if ( ! empty( $posts ) ) {
         return $posts[0]->ID;
+    }
+    
+    // If MLS ID provided, try MLS ID as fallback
+    if ( ! empty( $mlsid ) ) {
+        $posts = get_posts( array(
+            'post_type' => 'yacht',
+            'meta_query' => array(
+                array(
+                    'key' => 'yacht_mlsid',
+                    'value' => $mlsid,
+                    'compare' => '=',
+                ),
+            ),
+            'posts_per_page' => 1,
+            'post_status' => 'any',
+        ) );
+        
+        if ( ! empty( $posts ) ) {
+            return $posts[0]->ID;
+        }
     }
     
     return false;
