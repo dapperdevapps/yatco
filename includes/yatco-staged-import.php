@@ -1541,15 +1541,82 @@ function yatco_daily_sync_check( $token ) {
         }
     }
     
-    $already_imported_count = count( $imported_vessel_id_lookup );
-    yatco_log( "Daily Sync: Found {$already_imported_count} vessels already imported in database", 'info' );
+    $already_imported_by_vessel_id = count( $imported_vessel_id_lookup );
+    $already_imported_by_mlsid = count( $imported_mlsid_lookup );
+    yatco_log( "Daily Sync: Found {$already_imported_by_vessel_id} vessels with Vessel ID and {$already_imported_by_mlsid} vessels with MLS ID in database", 'info' );
     
-    // Filter out vessels that are already imported
+    // Convert current IDs to integers
     $current_ids_int = array_map( 'intval', $current_ids );
-    $imported_ids = array_keys( $imported_vessel_id_lookup );
-    $vessels_not_imported = array_diff( $current_ids_int, $imported_ids );
     
-    yatco_log( "Daily Sync: {$total_from_api} total from API, {$already_imported_count} already imported, " . count( $vessels_not_imported ) . " vessels need importing", 'info' );
+    // Build list of vessels that are "existing" (already imported)
+    // Check both Vessel ID and MLS ID lookups
+    $existing_ids = array();
+    $vessels_checked_by_mlsid = 0;
+    
+    // First, add all vessels that match by Vessel ID
+    $imported_vessel_ids = array_keys( $imported_vessel_id_lookup );
+    $existing_by_vessel_id = array_intersect( $current_ids_int, $imported_vessel_ids );
+    $existing_ids = $existing_by_vessel_id;
+    
+    // For vessels NOT found by Vessel ID, we need to check if they match by MLS ID
+    // We'll do this by fetching vessel data to get MLS IDs (but only for vessels not already matched)
+    $vessels_not_matched_by_id = array_diff( $current_ids_int, $existing_by_vessel_id );
+    
+    if ( ! empty( $vessels_not_matched_by_id ) && ! empty( $imported_mlsid_lookup ) ) {
+        yatco_log( "Daily Sync: Checking " . count( $vessels_not_matched_by_id ) . " vessels by MLS ID (not found by Vessel ID)", 'info' );
+        
+        // Batch process to check MLS IDs (limit to avoid too many API calls)
+        // We'll check a sample, or process all if the count is reasonable
+        $check_limit = 1000; // Limit to 1000 to avoid excessive API calls
+        $vessels_to_check = array_slice( $vessels_not_matched_by_id, 0, $check_limit );
+        
+        foreach ( $vessels_to_check as $vessel_id ) {
+            // Fetch vessel data to get MLS ID
+            $endpoint = 'https://api.yatcoboss.com/api/v1/ForSale/Vessel/' . intval( $vessel_id ) . '/Details/FullSpecsAll';
+            $response = wp_remote_get(
+                $endpoint,
+                array(
+                    'headers' => array(
+                        'Authorization' => 'Basic ' . $token,
+                        'Accept'        => 'application/json',
+                    ),
+                    'timeout' => 10, // Shorter timeout for batch checks
+                )
+            );
+            
+            if ( ! is_wp_error( $response ) && wp_remote_retrieve_response_code( $response ) === 200 ) {
+                $data = json_decode( wp_remote_retrieve_body( $response ), true );
+                if ( ! empty( $data ) && isset( $data['Result'] ) ) {
+                    $result = $data['Result'];
+                    $basic = isset( $data['BasicInfo'] ) ? $data['BasicInfo'] : array();
+                    $api_mlsid = isset( $result['MLSID'] ) ? $result['MLSID'] : ( isset( $basic['MLSID'] ) ? $basic['MLSID'] : null );
+                    
+                    if ( ! empty( $api_mlsid ) && isset( $imported_mlsid_lookup[ $api_mlsid ] ) ) {
+                        // Found by MLS ID - this is an existing vessel
+                        $existing_ids[] = $vessel_id;
+                        $vessels_checked_by_mlsid++;
+                    }
+                }
+            }
+            
+            // Small delay to avoid rate limiting
+            usleep( 100000 ); // 100ms
+        }
+        
+        if ( count( $vessels_not_matched_by_id ) > $check_limit ) {
+            yatco_log( "Daily Sync: Warning - " . ( count( $vessels_not_matched_by_id ) - $check_limit ) . " vessels not checked by MLS ID (limit reached)", 'warning' );
+        }
+        
+        yatco_log( "Daily Sync: Found {$vessels_checked_by_mlsid} additional existing vessels by MLS ID", 'info' );
+    }
+    
+    $existing_ids = array_unique( $existing_ids );
+    $already_imported_count = count( $existing_ids );
+    
+    // Vessels not imported (by either ID)
+    $vessels_not_imported = array_diff( $current_ids_int, $existing_ids );
+    
+    yatco_log( "Daily Sync: {$total_from_api} total from API, {$already_imported_count} already imported (by Vessel ID or MLS ID), " . count( $vessels_not_imported ) . " vessels need importing", 'info' );
     
     // Get stored vessel IDs (for tracking new/removed based on API list)
     $stored_ids = get_option( 'yatco_vessel_ids', array() );
@@ -1563,9 +1630,6 @@ function yatco_daily_sync_check( $token ) {
     $new_ids = array_intersect( $new_in_api, $vessels_not_imported );
     
     yatco_log( "Daily Sync: Found " . count( $new_ids ) . " new vessels to import (not in stored list and not already imported)", 'info' );
-    
-    // Find existing vessels (for price/days on market updates) - these are vessels that are both in current_ids and already imported
-    $existing_ids = array_intersect( $current_ids_int, $imported_ids );
     
     // Update stored IDs
     update_option( 'yatco_vessel_ids', $current_ids, false );
