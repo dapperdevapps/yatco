@@ -1549,65 +1549,84 @@ function yatco_daily_sync_check( $token ) {
     $current_ids_int = array_map( 'intval', $current_ids );
     
     // Build list of vessels that are "existing" (already imported)
-    // Check both Vessel ID and MLS ID lookups
+    // Check both Vessel ID and MLS ID lookups (same logic as full import)
     $existing_ids = array();
     $vessels_checked_by_mlsid = 0;
     
-    // First, add all vessels that match by Vessel ID
+    // First, add all vessels that match by Vessel ID (same as full import)
     $imported_vessel_ids = array_keys( $imported_vessel_id_lookup );
     $existing_by_vessel_id = array_intersect( $current_ids_int, $imported_vessel_ids );
     $existing_ids = $existing_by_vessel_id;
     
     // For vessels NOT found by Vessel ID, we need to check if they match by MLS ID
+    // This uses the same fallback logic as yatco_import_single_vessel
     // We'll do this by fetching vessel data to get MLS IDs (but only for vessels not already matched)
     $vessels_not_matched_by_id = array_diff( $current_ids_int, $existing_by_vessel_id );
     
     if ( ! empty( $vessels_not_matched_by_id ) && ! empty( $imported_mlsid_lookup ) ) {
-        yatco_log( "Daily Sync: Checking " . count( $vessels_not_matched_by_id ) . " vessels by MLS ID (not found by Vessel ID)", 'info' );
+        yatco_log( "Daily Sync: Checking " . count( $vessels_not_matched_by_id ) . " vessels by MLS ID (not found by Vessel ID) - using both IDs with fallback like full import", 'info' );
         
-        // Batch process to check MLS IDs (limit to avoid too many API calls)
-        // We'll check a sample, or process all if the count is reasonable
-        $check_limit = 1000; // Limit to 1000 to avoid excessive API calls
-        $vessels_to_check = array_slice( $vessels_not_matched_by_id, 0, $check_limit );
-        
-        foreach ( $vessels_to_check as $vessel_id ) {
-            // Fetch vessel data to get MLS ID
-            $endpoint = 'https://api.yatcoboss.com/api/v1/ForSale/Vessel/' . intval( $vessel_id ) . '/Details/FullSpecsAll';
-            $response = wp_remote_get(
-                $endpoint,
-                array(
-                    'headers' => array(
-                        'Authorization' => 'Basic ' . $token,
-                        'Accept'        => 'application/json',
-                    ),
-                    'timeout' => 10, // Shorter timeout for batch checks
-                )
-            );
+        // Process all vessels (no limit) to ensure we check both IDs properly
+        // This matches the full import behavior which checks all vessels
+        foreach ( $vessels_not_matched_by_id as $vessel_id ) {
+            // Fetch vessel data to get MLS ID (same approach as yatco_import_single_vessel)
+            // Try to resolve as MLS ID first, then as Vessel ID (matching import logic)
+            $api_mlsid = null;
+            $resolved_vessel_id = null;
             
-            if ( ! is_wp_error( $response ) && wp_remote_retrieve_response_code( $response ) === 200 ) {
-                $data = json_decode( wp_remote_retrieve_body( $response ), true );
-                if ( ! empty( $data ) && isset( $data['Result'] ) ) {
-                    $result = $data['Result'];
-                    $basic = isset( $data['BasicInfo'] ) ? $data['BasicInfo'] : array();
-                    $api_mlsid = isset( $result['MLSID'] ) ? $result['MLSID'] : ( isset( $basic['MLSID'] ) ? $basic['MLSID'] : null );
+            // Step 1: Try to resolve lookup ID as an MLS ID (convert MLS → Vessel ID)
+            // This matches the logic in yatco_import_single_vessel
+            $converted_vessel_id = yatco_convert_mlsid_to_vessel_id( $token, $vessel_id );
+            
+            if ( ! is_wp_error( $converted_vessel_id ) && $converted_vessel_id != $vessel_id ) {
+                // Success: lookup ID IS an MLS ID, we now have the vessel ID
+                $resolved_vessel_id = $converted_vessel_id;
+                $api_mlsid = $vessel_id; // The original lookup ID is the MLS ID
+            } else {
+                // Step 2: If MLS resolution failed, try resolving lookup ID as a Vessel ID (convert Vessel → MLS ID)
+                $converted_mls_id = yatco_convert_vessel_id_to_mlsid( $token, $vessel_id );
+                
+                if ( ! is_wp_error( $converted_mls_id ) && $converted_mls_id != $vessel_id ) {
+                    // Success: lookup ID IS a vessel ID, we now have the MLS ID
+                    $resolved_vessel_id = $vessel_id;
+                    $api_mlsid = $converted_mls_id;
+                } else {
+                    // Both resolutions failed - fetch full data to get MLS ID
+                    $endpoint = 'https://api.yatcoboss.com/api/v1/ForSale/Vessel/' . intval( $vessel_id ) . '/Details/FullSpecsAll';
+                    $response = wp_remote_get(
+                        $endpoint,
+                        array(
+                            'headers' => array(
+                                'Authorization' => 'Basic ' . $token,
+                                'Accept'        => 'application/json',
+                            ),
+                            'timeout' => 10, // Shorter timeout for batch checks
+                        )
+                    );
                     
-                    if ( ! empty( $api_mlsid ) && isset( $imported_mlsid_lookup[ $api_mlsid ] ) ) {
-                        // Found by MLS ID - this is an existing vessel
-                        $existing_ids[] = $vessel_id;
-                        $vessels_checked_by_mlsid++;
+                    if ( ! is_wp_error( $response ) && wp_remote_retrieve_response_code( $response ) === 200 ) {
+                        $data = json_decode( wp_remote_retrieve_body( $response ), true );
+                        if ( ! empty( $data ) && isset( $data['Result'] ) ) {
+                            $result = $data['Result'];
+                            $basic = isset( $data['BasicInfo'] ) ? $data['BasicInfo'] : array();
+                            $api_mlsid = isset( $result['MLSID'] ) ? $result['MLSID'] : ( isset( $basic['MLSID'] ) ? $basic['MLSID'] : null );
+                        }
                     }
                 }
+            }
+            
+            // Check if this vessel exists by MLS ID (fallback check, same as yatco_import_single_vessel)
+            if ( ! empty( $api_mlsid ) && isset( $imported_mlsid_lookup[ $api_mlsid ] ) ) {
+                // Found by MLS ID - this is an existing vessel (using fallback like full import)
+                $existing_ids[] = $vessel_id;
+                $vessels_checked_by_mlsid++;
             }
             
             // Small delay to avoid rate limiting
             usleep( 100000 ); // 100ms
         }
         
-        if ( count( $vessels_not_matched_by_id ) > $check_limit ) {
-            yatco_log( "Daily Sync: Warning - " . ( count( $vessels_not_matched_by_id ) - $check_limit ) . " vessels not checked by MLS ID (limit reached)", 'warning' );
-        }
-        
-        yatco_log( "Daily Sync: Found {$vessels_checked_by_mlsid} additional existing vessels by MLS ID", 'info' );
+        yatco_log( "Daily Sync: Found {$vessels_checked_by_mlsid} additional existing vessels by MLS ID (using both IDs with fallback)", 'info' );
     }
     
     $existing_ids = array_unique( $existing_ids );
@@ -1751,8 +1770,13 @@ function yatco_daily_sync_check( $token ) {
                     // DON'T delete stop flag - keep it so it can be checked again
                     return;
                 }
-                // First try to find post by Vessel ID
-                $post_id = yatco_find_vessel_post_by_id( $vessel_id );
+                // Use lookup maps to find post (same logic as yatco_import_single_vessel - check both IDs with fallback)
+                $post_id = 0;
+                
+                // First try Vessel ID lookup (same as full import)
+                if ( isset( $imported_vessel_id_lookup[ intval( $vessel_id ) ] ) ) {
+                    $post_id = (int) $imported_vessel_id_lookup[ intval( $vessel_id ) ];
+                }
                 
                 // Fetch lightweight data to check price and days on market
                 $endpoint = 'https://api.yatcoboss.com/api/v1/ForSale/Vessel/' . intval( $vessel_id ) . '/Details/FullSpecsAll';
@@ -1779,11 +1803,11 @@ function yatco_daily_sync_check( $token ) {
                 $result = $data['Result'];
                 $basic = isset( $data['BasicInfo'] ) ? $data['BasicInfo'] : array();
                 
-                // If post not found by Vessel ID, try MLS ID from API response
+                // If post not found by Vessel ID, try MLS ID from API response (fallback, same as full import)
                 if ( ! $post_id ) {
                     $api_mlsid = isset( $result['MLSID'] ) ? $result['MLSID'] : ( isset( $basic['MLSID'] ) ? $basic['MLSID'] : null );
-                    if ( ! empty( $api_mlsid ) ) {
-                        $post_id = yatco_find_vessel_post_by_id( $vessel_id, $api_mlsid );
+                    if ( ! empty( $api_mlsid ) && isset( $imported_mlsid_lookup[ $api_mlsid ] ) ) {
+                        $post_id = (int) $imported_mlsid_lookup[ $api_mlsid ];
                     }
                 }
                 
