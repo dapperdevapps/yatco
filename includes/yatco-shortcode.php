@@ -1413,17 +1413,6 @@ function yatco_price_reductions_shortcode( $atts ) {
             $image_url = wp_get_attachment_image_url( $thumbnail_ids[ $post_id ], 'medium' );
         }
         
-        // Build listing URL if missing
-        if ( empty( $listing_url ) ) {
-            $mlsid = isset( $all_meta['yacht_mlsid'] ) ? $all_meta['yacht_mlsid'] : '';
-            if ( ! function_exists( 'yatco_build_listing_url' ) ) {
-                require_once YATCO_PLUGIN_DIR . 'includes/yatco-helpers.php';
-            }
-            if ( ! empty( $mlsid ) || ! empty( $vessel_id ) ) {
-                $listing_url = yatco_build_listing_url( $post_id, $mlsid, $vessel_id, $loa_feet, $builder, $category, $year );
-            }
-        }
-        
         // Format price
         $currency = strtoupper( $atts['currency'] ) === 'EUR' ? 'EUR' : 'USD';
         $price_formatted = '';
@@ -1434,6 +1423,9 @@ function yatco_price_reductions_shortcode( $atts ) {
         } elseif ( ! empty( $price ) ) {
             $price_formatted = '$' . number_format( floatval( $price ), 0 );
         }
+        
+        // Always link to WordPress post, not YATCO
+        $vessel_permalink = get_permalink( $post_id );
         
         $vessels[] = array(
             'id'          => $vessel_id ? $vessel_id : $post_id,
@@ -1452,7 +1444,7 @@ function yatco_price_reductions_shortcode( $atts ) {
             'state_rooms' => $state_rooms,
             'location'    => $location,
             'image'       => $image_url,
-            'link'        => ! empty( $listing_url ) ? $listing_url : get_permalink( $post_id ),
+            'link'        => $vessel_permalink,
             'price_reduction' => $price_reduction,
             'price_reduction_percent' => $price_reduction_percent,
         );
