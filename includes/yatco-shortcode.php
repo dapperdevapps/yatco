@@ -1584,7 +1584,7 @@ function yatco_price_reductions_shortcode( $atts ) {
         <?php endif; ?>
         <div class="yatco-vessels-grid <?php echo esc_attr( $column_class ); ?>">
         <?php foreach ( $vessels as $vessel ) : ?>
-            <a href="<?php echo esc_url( $vessel['link'] ); ?>" class="yatco-vessel-card"
+            <a href="<?php echo esc_url( get_permalink( $vessel['post_id'] ) ); ?>" class="yatco-vessel-card"
                  data-name="<?php echo esc_attr( strtolower( $vessel['name'] ) ); ?>"
                  data-location="<?php echo esc_attr( strtolower( $vessel['location'] ) ); ?>"
                  data-builder="<?php echo esc_attr( $vessel['builder'] ); ?>"
