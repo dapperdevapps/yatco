@@ -14,6 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 function yatco_register_shortcode() {
     add_shortcode( 'yatco_vessels', 'yatco_vessels_shortcode' );
+    add_shortcode( 'yatco_price_reductions', 'yatco_price_reductions_shortcode' );
 }
 
 /**
@@ -1266,4 +1267,407 @@ function yatco_vessels_shortcode_api_only( $atts, $token ) {
     $output = yatco_generate_vessels_html_from_data( $vessels, $builders, $categories, $types, $conditions, $atts );
     
     return $warning_message . $output;
+}
+
+/**
+ * Shortcode to display YATCO vessels with price reductions.
+ * 
+ * Usage: [yatco_price_reductions max="50" columns="3" show_price="yes" show_year="yes" show_loa="yes" show_filters="yes" currency="USD" length_unit="FT"]
+ */
+function yatco_price_reductions_shortcode( $atts ) {
+    $atts = shortcode_atts(
+        array(
+            'max'           => '50',
+            'columns'       => '3',
+            'show_price'    => 'yes',
+            'show_year'     => 'yes',
+            'show_loa'      => 'yes',
+            'show_filters'  => 'yes',
+            'currency'      => 'USD',
+            'length_unit'   => 'FT',
+        ),
+        $atts,
+        'yatco_price_reductions'
+    );
+    
+    // Increase memory limit for shortcode execution
+    @ini_set( 'memory_limit', '512M' );
+    
+    // Build WP_Query args for yacht CPT - only vessels with price reductions
+    $query_args = array(
+        'post_type'      => 'yacht',
+        'post_status'    => 'publish',
+        'posts_per_page' => intval( $atts['max'] ),
+        'fields'         => 'ids', // Only get IDs to save memory
+        'meta_query'     => array(
+            array(
+                'key'     => 'yacht_price_reduction',
+                'value'   => '0',
+                'compare' => '>',
+                'type'    => 'NUMERIC',
+            ),
+        ),
+        'no_found_rows'  => true,
+        'update_post_meta_cache' => false,
+        'update_post_term_cache' => false,
+        'orderby'        => 'meta_value_num',
+        'meta_key'       => 'yacht_price_reduction',
+        'order'          => 'DESC', // Highest reductions first
+    );
+    
+    $post_ids = get_posts( $query_args );
+    
+    if ( empty( $post_ids ) ) {
+        return '<p>No vessels with price reductions found at this time.</p>';
+    }
+    
+    // Load vessel data efficiently
+    global $wpdb;
+    $meta_keys = array(
+        'yacht_vessel_id', 'yacht_price_usd', 'yacht_price_eur', 'yacht_price',
+        'yacht_year', 'yacht_length', 'yacht_length_feet', 'yacht_length_meters',
+        'yacht_make', 'yacht_category', 'yacht_type', 'yacht_condition',
+        'yacht_location', 'yacht_state_rooms', 'yacht_image_url',
+        'yacht_price_reduction', 'yacht_price_reduction_percent',
+        'yacht_yatco_listing_url'
+    );
+    
+    // Bulk fetch meta
+    $post_ids_placeholder = implode( ',', array_fill( 0, count( $post_ids ), '%d' ) );
+    $meta_keys_placeholder = implode( ',', array_fill( 0, count( $meta_keys ), '%s' ) );
+    $prepare_values = array_merge( $post_ids, $meta_keys );
+    
+    $meta_query = $wpdb->prepare(
+        "SELECT post_id, meta_key, meta_value 
+         FROM {$wpdb->postmeta} 
+         WHERE post_id IN ($post_ids_placeholder) 
+         AND meta_key IN ($meta_keys_placeholder)",
+        $prepare_values
+    );
+    
+    $all_meta_results = $wpdb->get_results( $meta_query, ARRAY_A );
+    $meta_by_post = array();
+    foreach ( $all_meta_results as $meta_row ) {
+        $post_id = intval( $meta_row['post_id'] );
+        if ( ! isset( $meta_by_post[ $post_id ] ) ) {
+            $meta_by_post[ $post_id ] = array();
+        }
+        $meta_by_post[ $post_id ][ $meta_row['meta_key'] ] = $meta_row['meta_value'];
+    }
+    
+    // Get titles
+    $title_placeholder = implode( ',', array_fill( 0, count( $post_ids ), '%d' ) );
+    $title_query = $wpdb->prepare(
+        "SELECT ID, post_title FROM {$wpdb->posts} WHERE ID IN ($title_placeholder)",
+        $post_ids
+    );
+    $titles = $wpdb->get_results( $title_query, OBJECT_K );
+    
+    // Get thumbnail IDs
+    $thumbnail_query = $wpdb->prepare(
+        "SELECT post_id, meta_value as thumbnail_id 
+         FROM {$wpdb->postmeta} 
+         WHERE post_id IN ($title_placeholder) 
+         AND meta_key = '_thumbnail_id'",
+        $post_ids
+    );
+    $thumbnail_results = $wpdb->get_results( $thumbnail_query, ARRAY_A );
+    $thumbnail_ids = array();
+    foreach ( $thumbnail_results as $thumb_row ) {
+        $thumbnail_ids[ intval( $thumb_row['post_id'] ) ] = intval( $thumb_row['thumbnail_id'] );
+    }
+    
+    // Build vessel data array
+    $vessels = array();
+    foreach ( $post_ids as $post_id ) {
+        $all_meta = isset( $meta_by_post[ $post_id ] ) ? $meta_by_post[ $post_id ] : array();
+        
+        // Fill in missing keys with empty values
+        foreach ( $meta_keys as $key ) {
+            if ( ! isset( $all_meta[ $key ] ) ) {
+                $all_meta[ $key ] = '';
+            }
+        }
+        
+        $vessel_id = $all_meta['yacht_vessel_id'];
+        $price_usd = $all_meta['yacht_price_usd'];
+        $price_eur = $all_meta['yacht_price_eur'];
+        $price = $all_meta['yacht_price'];
+        $year = $all_meta['yacht_year'];
+        $loa_feet = $all_meta['yacht_length_feet'];
+        $loa_meters = $all_meta['yacht_length_meters'];
+        $builder = $all_meta['yacht_make'];
+        $category = $all_meta['yacht_category'];
+        $type = $all_meta['yacht_type'];
+        $condition = $all_meta['yacht_condition'];
+        $location = $all_meta['yacht_location'];
+        $state_rooms = $all_meta['yacht_state_rooms'];
+        $image_url = $all_meta['yacht_image_url'];
+        $price_reduction = $all_meta['yacht_price_reduction'];
+        $price_reduction_percent = $all_meta['yacht_price_reduction_percent'];
+        $post_title = isset( $titles[ $post_id ] ) ? $titles[ $post_id ]->post_title : '';
+        $listing_url = $all_meta['yacht_yatco_listing_url'];
+        
+        // Use thumbnail if image_url is empty
+        if ( empty( $image_url ) && isset( $thumbnail_ids[ $post_id ] ) && $thumbnail_ids[ $post_id ] > 0 ) {
+            $image_url = wp_get_attachment_image_url( $thumbnail_ids[ $post_id ], 'medium' );
+        }
+        
+        // Build listing URL if missing
+        if ( empty( $listing_url ) ) {
+            $mlsid = isset( $all_meta['yacht_mlsid'] ) ? $all_meta['yacht_mlsid'] : '';
+            if ( ! function_exists( 'yatco_build_listing_url' ) ) {
+                require_once YATCO_PLUGIN_DIR . 'includes/yatco-helpers.php';
+            }
+            if ( ! empty( $mlsid ) || ! empty( $vessel_id ) ) {
+                $listing_url = yatco_build_listing_url( $post_id, $mlsid, $vessel_id, $loa_feet, $builder, $category, $year );
+            }
+        }
+        
+        // Format price
+        $currency = strtoupper( $atts['currency'] ) === 'EUR' ? 'EUR' : 'USD';
+        $price_formatted = '';
+        if ( $currency === 'EUR' && ! empty( $price_eur ) ) {
+            $price_formatted = '€' . number_format( floatval( $price_eur ), 0 );
+        } elseif ( ! empty( $price_usd ) ) {
+            $price_formatted = '$' . number_format( floatval( $price_usd ), 0 );
+        } elseif ( ! empty( $price ) ) {
+            $price_formatted = '$' . number_format( floatval( $price ), 0 );
+        }
+        
+        $vessels[] = array(
+            'id'          => $vessel_id ? $vessel_id : $post_id,
+            'post_id'     => $post_id,
+            'name'        => $post_title,
+            'price'       => $price_formatted,
+            'price_usd'   => $price_usd,
+            'price_eur'   => $price_eur,
+            'year'        => $year,
+            'loa_feet'    => $loa_feet,
+            'loa_meters'  => $loa_meters,
+            'builder'     => $builder,
+            'category'    => $category,
+            'type'        => $type,
+            'condition'   => $condition,
+            'state_rooms' => $state_rooms,
+            'location'    => $location,
+            'image'       => $image_url,
+            'link'        => ! empty( $listing_url ) ? $listing_url : get_permalink( $post_id ),
+            'price_reduction' => $price_reduction,
+            'price_reduction_percent' => $price_reduction_percent,
+        );
+    }
+    
+    // Collect unique values for filter dropdowns
+    $builders = array();
+    $categories = array();
+    $types = array();
+    $conditions = array();
+    
+    foreach ( $vessels as $vessel ) {
+        if ( ! empty( $vessel['builder'] ) && ! in_array( $vessel['builder'], $builders ) ) {
+            $builders[] = $vessel['builder'];
+        }
+        if ( ! empty( $vessel['category'] ) && ! in_array( $vessel['category'], $categories ) ) {
+            $categories[] = $vessel['category'];
+        }
+        if ( ! empty( $vessel['type'] ) && ! in_array( $vessel['type'], $types ) ) {
+            $types[] = $vessel['type'];
+        }
+        if ( ! empty( $vessel['condition'] ) && ! in_array( $vessel['condition'], $conditions ) ) {
+            $conditions[] = $vessel['condition'];
+        }
+    }
+    sort( $builders );
+    sort( $categories );
+    sort( $types );
+    sort( $conditions );
+    
+    // Generate HTML with special styling for price reductions
+    ob_start();
+    $currency = strtoupper( $atts['currency'] ) === 'EUR' ? 'EUR' : 'USD';
+    $length_unit = strtoupper( $atts['length_unit'] ) === 'M' ? 'M' : 'FT';
+    $columns = intval( $atts['columns'] );
+    if ( $columns < 1 || $columns > 4 ) {
+        $columns = 3;
+    }
+    $column_class = 'yatco-col-' . $columns;
+    $show_price = $atts['show_price'] === 'yes';
+    $show_year  = $atts['show_year'] === 'yes';
+    $show_loa   = $atts['show_loa'] === 'yes';
+    $show_filters = $atts['show_filters'] === 'yes';
+    ?>
+    <style>
+        .yatco-price-reduction-badge {
+            background: #d63638;
+            color: #fff;
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: bold;
+            display: inline-block;
+            margin-left: 8px;
+        }
+    </style>
+    <div class="yatco-vessels-container yatco-price-reductions" data-currency="<?php echo esc_attr( $currency ); ?>" data-length-unit="<?php echo esc_attr( $length_unit ); ?>">
+        <?php if ( $show_filters ) : ?>
+        <div class="yatco-filters">
+            <div class="yatco-filters-row yatco-filters-row-1">
+                <div class="yatco-filter-group">
+                    <label for="yatco-keywords">Keywords</label>
+                    <input type="text" id="yatco-keywords" class="yatco-filter-input" placeholder="Boat Name, Location, Features" />
+                </div>
+                <div class="yatco-filter-group">
+                    <label for="yatco-builder">Builder</label>
+                    <select id="yatco-builder" class="yatco-filter-select">
+                        <option value="">Any</option>
+                        <?php foreach ( $builders as $builder ) : ?>
+                            <option value="<?php echo esc_attr( $builder ); ?>"><?php echo esc_html( $builder ); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="yatco-filter-group">
+                    <label>Year</label>
+                    <div class="yatco-filter-range">
+                        <input type="number" id="yatco-year-min" class="yatco-filter-input yatco-input-small" placeholder="Min" />
+                        <span>-</span>
+                        <input type="number" id="yatco-year-max" class="yatco-filter-input yatco-input-small" placeholder="Max" />
+                    </div>
+                </div>
+                <div class="yatco-filter-group">
+                    <label>Length</label>
+                    <div class="yatco-filter-range">
+                        <input type="number" id="yatco-loa-min" class="yatco-filter-input yatco-input-small" placeholder="Min" step="0.1" />
+                        <span>-</span>
+                        <input type="number" id="yatco-loa-max" class="yatco-filter-input yatco-input-small" placeholder="Max" step="0.1" />
+                    </div>
+                    <div class="yatco-filter-toggle">
+                        <button type="button" class="yatco-toggle-btn yatco-ft active" data-unit="FT">FT</button>
+                        <button type="button" class="yatco-toggle-btn yatco-m" data-unit="M">M</button>
+                    </div>
+                </div>
+                <div class="yatco-filter-group">
+                    <label>Price</label>
+                    <div class="yatco-filter-range">
+                        <input type="number" id="yatco-price-min" class="yatco-filter-input yatco-input-small" placeholder="Min" step="1" />
+                        <span>-</span>
+                        <input type="number" id="yatco-price-max" class="yatco-filter-input yatco-input-small" placeholder="Max" step="1" />
+                    </div>
+                    <div class="yatco-filter-toggle">
+                        <button type="button" class="yatco-toggle-btn yatco-usd active" data-currency="USD">USD</button>
+                        <button type="button" class="yatco-toggle-btn yatco-eur" data-currency="EUR">EUR</button>
+                    </div>
+                </div>
+            </div>
+            <div class="yatco-filters-row yatco-filters-row-2">
+                <div class="yatco-filter-group">
+                    <label for="yatco-condition">Condition</label>
+                    <select id="yatco-condition" class="yatco-filter-select">
+                        <option value="">Any</option>
+                        <?php foreach ( $conditions as $condition ) : ?>
+                            <option value="<?php echo esc_attr( $condition ); ?>"><?php echo esc_html( $condition ); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="yatco-filter-group">
+                    <label for="yatco-category">Category</label>
+                    <select id="yatco-category" class="yatco-filter-select">
+                        <option value="">Any</option>
+                        <?php foreach ( $categories as $category ) : ?>
+                            <option value="<?php echo esc_attr( $category ); ?>"><?php echo esc_html( $category ); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="yatco-filter-group">
+                    <label for="yatco-type">Type</label>
+                    <select id="yatco-type" class="yatco-filter-select">
+                        <option value="">Any</option>
+                        <?php foreach ( $types as $type ) : ?>
+                            <option value="<?php echo esc_attr( $type ); ?>"><?php echo esc_html( $type ); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
+        <div class="yatco-vessels-grid <?php echo esc_attr( $column_class ); ?>">
+        <?php foreach ( $vessels as $vessel ) : ?>
+            <a href="<?php echo esc_url( $vessel['link'] ); ?>" class="yatco-vessel-card"
+                 data-name="<?php echo esc_attr( strtolower( $vessel['name'] ) ); ?>"
+                 data-location="<?php echo esc_attr( strtolower( $vessel['location'] ) ); ?>"
+                 data-builder="<?php echo esc_attr( $vessel['builder'] ); ?>"
+                 data-category="<?php echo esc_attr( $vessel['category'] ); ?>"
+                 data-type="<?php echo esc_attr( $vessel['type'] ); ?>"
+                 data-condition="<?php echo esc_attr( $vessel['condition'] ); ?>"
+                 data-year="<?php echo esc_attr( $vessel['year'] ); ?>"
+                 data-loa-feet="<?php echo esc_attr( $vessel['loa_feet'] ); ?>"
+                 data-loa-meters="<?php echo esc_attr( $vessel['loa_meters'] ); ?>"
+                 data-price-usd="<?php echo esc_attr( $vessel['price_usd'] ); ?>"
+                 data-price-eur="<?php echo esc_attr( $vessel['price_eur'] ); ?>"
+                 data-state-rooms="<?php echo esc_attr( $vessel['state_rooms'] ); ?>">
+                <?php if ( ! empty( $vessel['image'] ) ) : ?>
+                    <div class="yatco-vessel-image">
+                        <img src="<?php echo esc_url( $vessel['image'] ); ?>" alt="<?php echo esc_attr( $vessel['name'] ); ?>" />
+                        <?php if ( ! empty( $vessel['price_reduction'] ) && floatval( $vessel['price_reduction'] ) > 0 ) : ?>
+                            <span class="yatco-price-reduction-badge">
+                                <?php
+                                $reduction_display = '$' . number_format( floatval( $vessel['price_reduction'] ), 0 );
+                                if ( ! empty( $vessel['price_reduction_percent'] ) ) {
+                                    $reduction_display .= ' (' . $vessel['price_reduction_percent'] . '%)';
+                                }
+                                echo esc_html( $reduction_display );
+                                ?>
+                            </span>
+                        <?php endif; ?>
+                    </div>
+                <?php endif; ?>
+                <div class="yatco-vessel-info">
+                    <h3 class="yatco-vessel-name"><?php echo esc_html( $vessel['name'] ); ?></h3>
+                    <?php if ( ! empty( $vessel['location'] ) ) : ?>
+                        <div class="yatco-vessel-location"><?php echo esc_html( $vessel['location'] ); ?></div>
+                    <?php endif; ?>
+                    <div class="yatco-vessel-details">
+                        <?php if ( $show_price && ! empty( $vessel['price'] ) ) : ?>
+                            <?php
+                            $display_price = null;
+                            $currency_symbol = '$';
+                            if ( $currency === 'EUR' && ! empty( $vessel['price_eur'] ) ) {
+                                $display_price = $vessel['price_eur'];
+                                $currency_symbol = '€';
+                            } elseif ( ! empty( $vessel['price_usd'] ) ) {
+                                $display_price = $vessel['price_usd'];
+                            }
+                            ?>
+                            <?php if ( $display_price ) : ?>
+                                <span class="yatco-vessel-price"><?php echo esc_html( $currency_symbol . number_format( floatval( $display_price ) ) ); ?></span>
+                            <?php endif; ?>
+                        <?php endif; ?>
+                        <?php if ( $show_year && ! empty( $vessel['year'] ) ) : ?>
+                            <span class="yatco-vessel-year"><?php echo esc_html( $vessel['year'] ); ?></span>
+                        <?php endif; ?>
+                        <?php
+                        $display_loa = null;
+                        $loa_unit_text = ' ft';
+                        if ( $length_unit === 'M' && ! empty( $vessel['loa_meters'] ) ) {
+                            $display_loa = $vessel['loa_meters'];
+                            $loa_unit_text = ' m';
+                        } elseif ( ! empty( $vessel['loa_feet'] ) ) {
+                            $display_loa = $vessel['loa_feet'];
+                        }
+                        ?>
+                        <?php if ( $show_loa && $display_loa ) : ?>
+                            <span class="yatco-vessel-loa"><?php echo esc_html( number_format( $display_loa, 1 ) . $loa_unit_text ); ?></span>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </a>
+        <?php endforeach; ?>
+        </div>
+    </div>
+    <?php
+    // Include CSS and JavaScript (reuse existing assets)
+    if ( file_exists( YATCO_PLUGIN_DIR . 'includes/yatco-shortcode-assets.php' ) ) {
+        include YATCO_PLUGIN_DIR . 'includes/yatco-shortcode-assets.php';
+    }
+    return ob_get_clean();
 }

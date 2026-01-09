@@ -441,6 +441,22 @@ function yatco_options_page() {
             $next_scheduled = wp_next_scheduled( 'yatco_daily_sync_hook' );
             $last_run = get_option( 'yatco_daily_sync_last_run', false );
             
+            // Check for stale sync lock first and clear it if needed
+            $sync_lock = get_option( 'yatco_daily_sync_lock', false );
+            if ( $sync_lock !== false ) {
+                $lock_age = time() - intval( $sync_lock );
+                // If lock is older than 10 minutes, it's stale - clear it automatically
+                if ( $lock_age > 600 ) {
+                    yatco_log( "Admin Page: Clearing stale daily sync lock (age: {$lock_age}s)", 'warning' );
+                    delete_option( 'yatco_daily_sync_lock' );
+                    delete_option( 'yatco_daily_sync_process_id' );
+                    // Clear any stale status
+                    require_once YATCO_PLUGIN_DIR . 'includes/yatco-progress.php';
+                    yatco_clear_import_status( 'daily_sync' );
+                    echo ' <span style="color: #d63638;">(Cleared stale lock - lock was ' . round( $lock_age / 60 ) . ' minutes old)</span>';
+                }
+            }
+            
             // If enabled but not scheduled, reschedule it (wp-cron might have missed it)
             if ( ! $next_scheduled || $next_scheduled < time() ) {
                 // Reschedule if missing or if the scheduled time has passed
@@ -503,6 +519,16 @@ function yatco_options_page() {
             // Warn if wp-cron is disabled
             if ( defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON ) {
                 echo ' <span style="color: #d63638; font-weight: bold;">⚠ WP-Cron is disabled - you must set up a server cron job</span>';
+            } elseif ( ! defined( 'DISABLE_WP_CRON' ) || ! DISABLE_WP_CRON ) {
+                // Check if sync is overdue and provide troubleshooting tips
+                if ( $last_run !== false && isset( $expected_interval ) ) {
+                    $time_since_last_run = time() - $last_run;
+                    if ( $time_since_last_run > ( $expected_interval * 1.5 ) ) {
+                        echo ' <span style="color: #d63638; font-weight: bold;">⚠ Sync appears stuck - try clicking "Run Daily Sync Now" button below to manually trigger it.</span>';
+                    }
+                } elseif ( $last_run === false && $sync_enabled === 'yes' ) {
+                    echo ' <span style="color: #d63638;">⚠ Sync has never run - click "Run Daily Sync Now" button below to start it.</span>';
+                }
             }
         } else {
             echo '<span style="color: #dc3232;">✗ Disabled</span>';
