@@ -138,6 +138,21 @@ add_action( 'yatco_daily_sync_hook', function() {
         $process_id = time() . rand( 1000, 9999 );
     }
     
+    // Check if there's an incomplete sync that needs to be resumed
+    require_once YATCO_PLUGIN_DIR . 'includes/yatco-progress.php';
+    $sync_progress = yatco_get_import_status( 'daily_sync' );
+    $sync_auto_resume = get_option( 'yatco_daily_sync_auto_resume', false );
+    
+    // If auto-resume is enabled and sync is incomplete, this is a resume attempt
+    if ( $sync_auto_resume !== false && $sync_progress !== false && is_array( $sync_progress ) ) {
+        $processed = isset( $sync_progress['processed'] ) ? intval( $sync_progress['processed'] ) : 0;
+        $total = isset( $sync_progress['total'] ) ? intval( $sync_progress['total'] ) : 0;
+        
+        if ( $total > 0 && $processed < $total ) {
+            yatco_log( "Daily Sync: AUTO-RESUME detected - Sync incomplete ({$processed}/{$total} vessels), resuming...", 'info' );
+        }
+    }
+    
     // Check for existing daily sync lock - prevent duplicate syncs
     $sync_lock = get_option( 'yatco_daily_sync_lock', false );
     $lock_process_id = get_option( 'yatco_daily_sync_process_id', false );
@@ -152,7 +167,7 @@ add_action( 'yatco_daily_sync_hook', function() {
             delete_option( 'yatco_daily_sync_lock' );
             delete_option( 'yatco_daily_sync_process_id' );
         } elseif ( $lock_process_id !== false && strval( $lock_process_id ) !== strval( $process_id ) ) {
-            // Lock exists, is recent, and belongs to a different process - skip to prevent duplicates
+// Lock exists, is recent, and belongs to a different process - skip to prevent duplicates
             yatco_log( "Daily Sync: Hook triggered but sync already running in different process (lock age: {$lock_age}s, lock PID: {$lock_process_id}, this PID: {$process_id}), skipping", 'info' );
             return;
         } else {
@@ -161,9 +176,25 @@ add_action( 'yatco_daily_sync_hook', function() {
         }
     }
     
-    // Clear any stale stop flags when sync starts (important for manual triggers)
-    delete_option( 'yatco_import_stop_flag' );
-    delete_transient( 'yatco_cache_warming_stop' );
+    // Clear any stale stop flags when sync starts (important for manual triggers and auto-resume)
+    // Only clear if it's been more than 5 minutes since stop was requested (prevents clearing active stops)
+    $stop_flag = get_option( 'yatco_import_stop_flag', false );
+    if ( $stop_flag !== false ) {
+        $stop_age = time() - intval( $stop_flag );
+        if ( $stop_age > 300 ) {
+            // Stop flag is old (5+ minutes) - likely stale, clear it
+            yatco_log( "Daily Sync: Clearing stale stop flag (age: {$stop_age}s)", 'info' );
+            delete_option( 'yatco_import_stop_flag' );
+            delete_transient( 'yatco_cache_warming_stop' );
+        } else {
+            // Stop flag is recent - respect it and don't start
+            yatco_log( "Daily Sync: Stop flag is recent (age: {$stop_age}s), not starting sync", 'warning' );
+            return;
+        }
+    } else {
+        // No stop flag - clear transient just in case
+        delete_transient( 'yatco_cache_warming_stop' );
+    }
     
     // Set daily sync lock (acquire lock for this process)
     update_option( 'yatco_daily_sync_lock', time(), false );
@@ -180,6 +211,25 @@ add_action( 'yatco_daily_sync_hook', function() {
     if ( ! empty( $token ) ) {
         yatco_log( 'Daily Sync: Token found, calling sync function', 'info' );
         yatco_daily_sync_check( $token );
+        
+        // After sync completes, check if it's still incomplete and schedule another run if needed
+        $sync_progress_after = yatco_get_import_status( 'daily_sync' );
+        $sync_auto_resume_after = get_option( 'yatco_daily_sync_auto_resume', false );
+        
+        if ( $sync_auto_resume_after !== false && $sync_progress_after !== false && is_array( $sync_progress_after ) ) {
+            $processed_after = isset( $sync_progress_after['processed'] ) ? intval( $sync_progress_after['processed'] ) : 0;
+            $total_after = isset( $sync_progress_after['total'] ) ? intval( $sync_progress_after['total'] ) : 0;
+            
+            // If still incomplete, schedule another run in 30 seconds
+            if ( $total_after > 0 && $processed_after < $total_after ) {
+                $stop_flag_check = get_option( 'yatco_import_stop_flag', false );
+                if ( $stop_flag_check === false ) {
+                    yatco_log( "Daily Sync: Still incomplete after run ({$processed_after}/{$total_after}), scheduling next resume in 30 seconds", 'info' );
+                    wp_schedule_single_event( time() + 30, 'yatco_daily_sync_hook' );
+                    spawn_cron();
+                }
+            }
+        }
         
         // Only schedule next run if Daily Sync is enabled in settings (for automatic scheduling)
         $options = get_option( 'yatco_api_settings', array() );
@@ -208,6 +258,7 @@ function yatco_schedule_next_daily_sync() {
     if ( $enabled !== 'yes' ) {
         // Clear any existing scheduled events if disabled
         wp_clear_scheduled_hook( 'yatco_daily_sync_hook' );
+        wp_clear_scheduled_hook( 'yatco_daily_sync_auto_resume_check' );
         return;
     }
     
@@ -250,6 +301,92 @@ function yatco_schedule_next_daily_sync() {
     // Schedule next run
     wp_schedule_single_event( $next_run, 'yatco_daily_sync_hook' );
     yatco_log( "Daily Sync: Next run scheduled for " . date( 'Y-m-d H:i:s', $next_run ) . " (frequency: {$frequency})", 'info' );
+    
+    // Schedule periodic auto-resume check (runs every 5 minutes to catch incomplete syncs)
+    $next_check = wp_next_scheduled( 'yatco_daily_sync_auto_resume_check' );
+    if ( $next_check === false ) {
+        wp_schedule_event( time(), 'yatco_5min', 'yatco_daily_sync_auto_resume_check' );
+        yatco_log( "Daily Sync: Auto-resume check scheduled (runs every 5 minutes)", 'info' );
+    }
+}
+
+// Register custom cron interval for auto-resume checks (5 minutes)
+add_filter( 'cron_schedules', function( $schedules ) {
+    $schedules['yatco_5min'] = array(
+        'interval' => 300, // 5 minutes
+        'display'  => 'Every 5 Minutes',
+    );
+    return $schedules;
+} );
+
+// Register auto-resume check hook (runs every 5 minutes via wp-cron)
+add_action( 'yatco_daily_sync_auto_resume_check', 'yatco_check_daily_sync_auto_resume' );
+function yatco_check_daily_sync_auto_resume() {
+    require_once YATCO_PLUGIN_DIR . 'includes/yatco-progress.php';
+    
+    $sync_auto_resume = get_option( 'yatco_daily_sync_auto_resume', false );
+    if ( $sync_auto_resume === false ) {
+        return; // Auto-resume not enabled
+    }
+    
+    $sync_progress = yatco_get_import_status( 'daily_sync' );
+    if ( $sync_progress === false || ! is_array( $sync_progress ) ) {
+        // No progress data - might be complete or never started
+        return;
+    }
+    
+    $processed = isset( $sync_progress['processed'] ) ? intval( $sync_progress['processed'] ) : 0;
+    $total = isset( $sync_progress['total'] ) ? intval( $sync_progress['total'] ) : 0;
+    
+    // Check if sync is incomplete
+    if ( $total > 0 && $processed < $total ) {
+        $stop_flag = get_option( 'yatco_import_stop_flag', false );
+        $sync_lock = get_option( 'yatco_daily_sync_lock', false );
+        
+        // Don't trigger if user stopped it
+        if ( $stop_flag !== false ) {
+            $stop_age = time() - intval( $stop_flag );
+            if ( $stop_age < 300 ) {
+                // Stop flag is recent (less than 5 minutes) - respect it
+                return;
+            }
+        }
+        
+        // Check if sync is actually running (lock exists and is recent)
+        if ( $sync_lock !== false ) {
+            $lock_age = time() - intval( $sync_lock );
+            if ( $lock_age < 600 ) {
+                // Lock is recent (less than 10 minutes) - sync is running
+                return;
+            } else {
+                // Lock is stale - clear it
+                yatco_log( "Daily Sync Auto-Resume Check: Clearing stale lock (age: {$lock_age}s)", 'warning' );
+                delete_option( 'yatco_daily_sync_lock' );
+                delete_option( 'yatco_daily_sync_process_id' );
+            }
+        }
+        
+        // Check when auto-resume was last triggered to avoid spam
+        $last_resume = get_option( 'yatco_last_daily_sync_resume_time', 0 );
+        $time_since_last_resume = time() - $last_resume;
+        
+        // Only trigger resume if it's been at least 30 seconds since last attempt
+        if ( $time_since_last_resume >= 30 ) {
+            yatco_log( "Daily Sync Auto-Resume Check: Incomplete sync detected ({$processed}/{$total} vessels), scheduling resume...", 'info' );
+            
+            // Schedule resume via wp-cron
+            wp_schedule_single_event( time() + 5, 'yatco_daily_sync_hook' );
+            spawn_cron();
+            
+            // Update last resume time
+            update_option( 'yatco_last_daily_sync_resume_time', time(), false );
+        }
+    } else {
+        // Sync is complete - clear auto-resume flag
+        delete_option( 'yatco_daily_sync_auto_resume' );
+        delete_option( 'yatco_last_daily_sync_resume_time' );
+        yatco_log( "Daily Sync Auto-Resume Check: Sync appears complete ({$processed}/{$total}), clearing auto-resume flag", 'info' );
+    }
 }
 
 // Schedule Daily Sync when settings are saved
