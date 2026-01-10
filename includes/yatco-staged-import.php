@@ -1808,8 +1808,9 @@ function yatco_daily_sync_check( $token ) {
     // Check and update prices and days on market for existing vessels
     $price_updates = 0;
     $days_on_market_updates = 0;
-    $batch_size = 50; // Process 50 at a time
-    $delay_seconds = 1; // 1 second delay between batches
+    $batch_size = 25; // Reduced from 50 to prevent server lockup - process 25 at a time
+    $delay_seconds = 3; // Increased from 1 to 3 seconds delay between batches to prevent overload
+    $delay_between_items = 500000; // 500ms delay between individual vessels (microseconds)
     
     if ( ! empty( $existing_ids ) ) {
         yatco_log( "Daily Sync: Checking prices and days on market for " . count( $existing_ids ) . " existing vessels", 'info' );
@@ -1818,7 +1819,55 @@ function yatco_daily_sync_check( $token ) {
         $existing_total = count( $existing_ids );
         $existing_processed = 0;
         
-        foreach ( array_chunk( $existing_ids, $batch_size ) as $batch ) {
+        // Check execution time limit and stop if approaching limit (prevent server lockup)
+        $max_execution_time = ini_get( 'max_execution_time' );
+        $start_time = time();
+        $safety_margin = 30; // Stop 30 seconds before timeout to allow cleanup
+        
+        foreach ( array_chunk( $existing_ids, $batch_size ) as $batch_number => $batch ) {
+            // Check execution time - stop before timeout to prevent server lockup
+            if ( $max_execution_time > 0 ) {
+                $elapsed = time() - $start_time;
+                if ( $elapsed >= ( $max_execution_time - $safety_margin ) ) {
+                    yatco_log( "Daily Sync: Approaching execution time limit ({$elapsed}/{$max_execution_time}s), stopping to prevent server lockup. Will resume on next run.", 'warning' );
+                    // Save progress before stopping
+                    $sync_progress['processed'] = $processed;
+                    $sync_progress['price_updates'] = $price_updates;
+                    $sync_progress['days_on_market_updates'] = $days_on_market_updates;
+                    $sync_progress['updated_at'] = time();
+                    yatco_update_import_status( $sync_progress, 'daily_sync' );
+                    yatco_update_import_status_message( "Daily Sync: Paused at {$existing_processed}/{$existing_total} vessels (approaching time limit). Will resume automatically." );
+                    // Don't return - let it schedule auto-resume below
+                    break;
+                }
+            }
+            
+            // Check memory usage - stop if memory is getting high (prevent server lockup)
+            if ( function_exists( 'memory_get_usage' ) ) {
+                $memory_usage = memory_get_usage( true ) / 1024 / 1024; // MB
+                $memory_limit_str = ini_get( 'memory_limit' );
+                $memory_limit = 512; // Default to 512MB
+                if ( preg_match( '/^(\d+)(.)$/', $memory_limit_str, $matches ) ) {
+                    $memory_limit = intval( $matches[1] );
+                    if ( strtoupper( $matches[2] ) === 'G' ) {
+                        $memory_limit *= 1024;
+                    }
+                }
+                
+                // Stop if using more than 80% of memory limit
+                if ( $memory_usage > ( $memory_limit * 0.8 ) ) {
+                    yatco_log( "Daily Sync: High memory usage ({$memory_usage}MB/{$memory_limit}MB), stopping to prevent server lockup. Will resume on next run.", 'warning' );
+                    // Save progress before stopping
+                    $sync_progress['processed'] = $processed;
+                    $sync_progress['price_updates'] = $price_updates;
+                    $sync_progress['days_on_market_updates'] = $days_on_market_updates;
+                    $sync_progress['updated_at'] = time();
+                    yatco_update_import_status( $sync_progress, 'daily_sync' );
+                    yatco_update_import_status_message( "Daily Sync: Paused at {$existing_processed}/{$existing_total} vessels (high memory usage). Will resume automatically." );
+                    break;
+                }
+            }
+            
             // Check stop flag - check both option and transient
             $stop_flag = get_option( 'yatco_import_stop_flag', false );
             if ( $stop_flag === false ) {
@@ -1826,8 +1875,15 @@ function yatco_daily_sync_check( $token ) {
             }
             if ( $stop_flag !== false ) {
                 yatco_log( '🛑 Daily Sync: Stop flag detected in batch, cancelling', 'warning' );
-                delete_transient( 'yatco_daily_sync_progress' );
-                set_transient( 'yatco_cache_warming_status', 'Daily Sync stopped by user.', 60 );
+                // Save progress before stopping
+                $sync_progress['processed'] = $processed;
+                $sync_progress['price_updates'] = $price_updates;
+                $sync_progress['days_on_market_updates'] = $days_on_market_updates;
+                $sync_progress['updated_at'] = time();
+                yatco_update_import_status( $sync_progress, 'daily_sync' );
+                yatco_update_import_status_message( 'Daily Sync stopped by user.' );
+                delete_option( 'yatco_daily_sync_auto_resume' );
+                delete_option( 'yatco_last_daily_sync_resume_time' );
                 // DON'T delete stop flag - keep it so it can be checked again
                 return;
             }
@@ -2019,13 +2075,22 @@ function yatco_daily_sync_check( $token ) {
                     update_option( 'yatco_daily_sync_results', $partial_results, false );
                 }
                 
-                // Small delay between items
-                usleep( 200000 ); // 200ms
+                // Small delay between items to prevent server overload
+                usleep( $delay_between_items ); // 500ms delay between vessels
             }
             
-            // Delay between batches
+            // Delay between batches - increased to prevent server overload
             if ( count( $batch ) === $batch_size ) {
-                sleep( $delay_seconds );
+                sleep( $delay_seconds ); // 3 second delay between batches
+                
+                // Additional check: if we've been running for more than 5 minutes continuously, pause
+                // This prevents server lockup from long-running processes
+                $elapsed_total = time() - $start_time;
+                if ( $elapsed_total > 300 ) { // 5 minutes
+                    yatco_log( "Daily Sync: Processed batch {$batch_number}, pausing for 10 seconds to prevent server overload (elapsed: {$elapsed_total}s)", 'info' );
+                    sleep( 10 ); // Pause for 10 seconds every 5 minutes
+                    $start_time = time(); // Reset timer
+                }
             }
         }
     }

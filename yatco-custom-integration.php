@@ -370,16 +370,34 @@ function yatco_check_daily_sync_auto_resume() {
         $last_resume = get_option( 'yatco_last_daily_sync_resume_time', 0 );
         $time_since_last_resume = time() - $last_resume;
         
-        // Only trigger resume if it's been at least 30 seconds since last attempt
-        if ( $time_since_last_resume >= 30 ) {
+        // Only trigger resume if it's been at least 2 minutes since last attempt (prevent rapid-fire restarts)
+        // Also check if sync has made progress recently - if not, it might be stuck
+        $updated_at = isset( $sync_progress['updated_at'] ) ? intval( $sync_progress['updated_at'] ) : 0;
+        $progress_age = time() - $updated_at;
+        
+        // Don't auto-resume if progress hasn't updated in over 10 minutes (likely stuck, not just slow)
+        if ( $progress_age > 600 ) {
+            yatco_log( "Daily Sync Auto-Resume Check: Sync progress hasn't updated in {$progress_age} seconds - sync may be stuck. Clearing and will restart fresh.", 'warning' );
+            // Clear progress and auto-resume to allow fresh start
+            yatco_clear_import_status( 'daily_sync' );
+            delete_option( 'yatco_daily_sync_auto_resume' );
+            delete_option( 'yatco_last_daily_sync_resume_time' );
+            delete_option( 'yatco_daily_sync_lock' );
+            delete_option( 'yatco_daily_sync_process_id' );
+            return;
+        }
+        
+        if ( $time_since_last_resume >= 120 ) { // Increased to 2 minutes to prevent rapid restarts
             yatco_log( "Daily Sync Auto-Resume Check: Incomplete sync detected ({$processed}/{$total} vessels), scheduling resume...", 'info' );
             
-            // Schedule resume via wp-cron
-            wp_schedule_single_event( time() + 5, 'yatco_daily_sync_hook' );
+            // Schedule resume via wp-cron (give it 15 seconds to start)
+            wp_schedule_single_event( time() + 15, 'yatco_daily_sync_hook' );
             spawn_cron();
             
             // Update last resume time
             update_option( 'yatco_last_daily_sync_resume_time', time(), false );
+        } else {
+            yatco_log( "Daily Sync Auto-Resume Check: Incomplete sync detected but resuming too soon (last resume {$time_since_last_resume}s ago), waiting...", 'debug' );
         }
     } else {
         // Sync is complete - clear auto-resume flag
