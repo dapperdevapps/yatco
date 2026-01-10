@@ -812,6 +812,13 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
         $price_usd = floatval( $result['AskingPriceCompare'] );
     }
     
+    // MINIMUM PRICE FILTER: Skip vessels under $200,000 USD
+    $minimum_price_usd = 200000;
+    if ( $price_usd !== null && $price_usd > 0 && $price_usd < $minimum_price_usd ) {
+        yatco_log( "Import: Vessel {$lookup_id} skipped - price (${$price_usd}) is below minimum ({$minimum_price_usd} USD)", 'info' );
+        return new WP_Error( 'price_too_low', "Vessel price ({$price_usd} USD) is below minimum threshold ({$minimum_price_usd} USD)" );
+    }
+    
     $price_eur = isset( $basic['AskingPrice'] ) && $basic['AskingPrice'] > 0 && isset( $basic['Currency'] ) && $basic['Currency'] === 'EUR' ? floatval( $basic['AskingPrice'] ) : null;
     
     // Get additional metadata

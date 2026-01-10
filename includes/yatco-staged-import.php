@@ -1824,7 +1824,29 @@ function yatco_daily_sync_check( $token ) {
                     $api_price_usd = floatval( $result['AskingPriceCompare'] );
                 }
                 
-                if ( $api_price_usd !== null ) {
+                // MINIMUM PRICE FILTER: Draft vessel if price drops below $200,000 USD
+                $minimum_price_usd = 200000;
+                if ( $api_price_usd !== null && $api_price_usd > 0 && $api_price_usd < $minimum_price_usd ) {
+                    // Price is below minimum - draft the vessel
+                    $current_status = get_post_status( $post_id );
+                    if ( $current_status === 'publish' ) {
+                        wp_update_post( array(
+                            'ID' => $post_id,
+                            'post_status' => 'draft',
+                        ) );
+                        update_post_meta( $post_id, 'yacht_price_below_minimum', true );
+                        update_post_meta( $post_id, 'yacht_price_below_minimum_date', time() );
+                        yatco_log( "Daily Sync: Drafted vessel {$vessel_id} - price ({$api_price_usd} USD) dropped below minimum ({$minimum_price_usd} USD)", 'info' );
+                    }
+                    // Update price even if drafting so we have the latest price
+                    if ( $api_price_usd !== null ) {
+                        $price_formatted = isset( $result['AskingPriceFormatted'] ) ? $result['AskingPriceFormatted'] : '';
+                        update_post_meta( $post_id, 'yacht_price_usd', $api_price_usd );
+                        update_post_meta( $post_id, 'yacht_price', $price_formatted );
+                        update_post_meta( $post_id, 'yacht_last_updated', time() );
+                        $price_updates++;
+                    }
+                } elseif ( $api_price_usd !== null ) {
                     $stored_price = get_post_meta( $post_id, 'yacht_price_usd', true );
                     $stored_price = ! empty( $stored_price ) ? floatval( $stored_price ) : null;
                     
@@ -1835,6 +1857,20 @@ function yatco_daily_sync_check( $token ) {
                         update_post_meta( $post_id, 'yacht_price_usd', $api_price_usd );
                         update_post_meta( $post_id, 'yacht_price', $price_formatted );
                         update_post_meta( $post_id, 'yacht_last_updated', time() );
+                        
+                        // If price is now above minimum and vessel was drafted for low price, publish it again
+                        $was_drafted_for_low_price = get_post_meta( $post_id, 'yacht_price_below_minimum', true );
+                        $current_status = get_post_status( $post_id );
+                        if ( $was_drafted_for_low_price && $current_status === 'draft' && $api_price_usd >= $minimum_price_usd ) {
+                            wp_update_post( array(
+                                'ID' => $post_id,
+                                'post_status' => 'publish',
+                            ) );
+                            delete_post_meta( $post_id, 'yacht_price_below_minimum' );
+                            delete_post_meta( $post_id, 'yacht_price_below_minimum_date' );
+                            yatco_log( "Daily Sync: Re-published vessel {$vessel_id} - price ({$api_price_usd} USD) is now above minimum ({$minimum_price_usd} USD)", 'info' );
+                        }
+                        
                         $price_updates++;
                         yatco_log( "Daily Sync: Updated price for vessel {$vessel_id} from {$stored_price} to {$api_price_usd}", 'info' );
                     }
