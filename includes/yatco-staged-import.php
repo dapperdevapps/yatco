@@ -2099,8 +2099,24 @@ function yatco_daily_sync_check( $token ) {
                     }
                 }
                 
-                // Save partial results every 50 vessels to ensure we capture progress even if sync is interrupted
-                if ( $existing_processed % 50 === 0 ) {
+                // Track last lock refresh time to refresh based on time (not just vessel count)
+                static $last_lock_refresh_time = 0;
+                if ( $last_lock_refresh_time === 0 ) {
+                    $last_lock_refresh_time = time();
+                }
+                
+                // Refresh lock every 25 vessels OR every 4 minutes (whichever comes first)
+                // This prevents stale locks during slow processing
+                $should_refresh_lock = false;
+                if ( $existing_processed % 25 === 0 ) {
+                    $should_refresh_lock = true;
+                } elseif ( ( time() - $last_lock_refresh_time ) >= 240 ) { // 4 minutes
+                    $should_refresh_lock = true;
+                    yatco_log( "Daily Sync: Lock refresh triggered by time (4 minutes elapsed, {$existing_processed} vessels processed)", 'debug' );
+                }
+                
+                if ( $should_refresh_lock ) {
+                    // Save partial results
                     $partial_results = array(
                         'removed' => $removed_count,
                         'new' => $new_count,
@@ -2111,6 +2127,33 @@ function yatco_daily_sync_check( $token ) {
                         'partial' => true,
                     );
                     update_option( 'yatco_daily_sync_results', $partial_results, false );
+                    
+                    // HEARTBEAT: Refresh lock to prevent stale locks
+                    // Critical - prevents lock from becoming stale (>10 minutes) during slow processing
+                    $current_process_id = getmypid();
+                    if ( ! $current_process_id ) {
+                        $current_process_id = time() . rand( 1000, 9999 );
+                    }
+                    $lock_process_id = get_option( 'yatco_daily_sync_process_id', false );
+                    
+                    if ( $lock_process_id !== false && strval( $lock_process_id ) === strval( $current_process_id ) ) {
+                        update_option( 'yatco_daily_sync_lock', time(), false );
+                        $last_lock_refresh_time = time();
+                        yatco_log( "Daily Sync: Lock heartbeat refreshed at vessel {$existing_processed} (still processing)", 'debug' );
+                    } else {
+                        yatco_log( "Daily Sync: Lock ownership changed during existing vessels check, stopping", 'warning' );
+                        yatco_clear_import_status( 'daily_sync' );
+                        yatco_update_import_status_message( 'Daily Sync: Stopped - another sync process started.' );
+                        return;
+                    }
+                    
+                    // Also update progress more frequently
+                    $sync_progress['processed'] = $processed;
+                    $sync_progress['price_updates'] = $price_updates;
+                    $sync_progress['days_on_market_updates'] = $days_on_market_updates;
+                    $sync_progress['updated_at'] = time();
+                    yatco_update_import_status( $sync_progress, 'daily_sync' );
+                    yatco_update_import_status_message( "Daily Sync: Updating prices and days on market ({$existing_processed}/{$existing_total} vessels)..." );
                 }
                 
                 // Small delay between items to prevent server overload
