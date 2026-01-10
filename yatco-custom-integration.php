@@ -1052,10 +1052,11 @@ function yatco_heartbeat_send( $response, $screen_id ) {
 // Add auto-resume functionality - check on heartbeat if import needs to continue
 add_filter( 'heartbeat_received', 'yatco_heartbeat_received', 10, 2 );
 function yatco_heartbeat_received( $response, $data ) {
-    // Check if auto-resume is enabled and import is incomplete
+    require_once YATCO_PLUGIN_DIR . 'includes/yatco-progress.php';
+    
+    // Check if auto-resume is enabled for full import and import is incomplete
     $auto_resume = get_option( 'yatco_import_auto_resume', false );
     if ( $auto_resume !== false ) {
-        require_once YATCO_PLUGIN_DIR . 'includes/yatco-progress.php';
         $import_progress = yatco_get_import_status( 'full' );
         if ( $import_progress !== false && is_array( $import_progress ) ) {
             $processed = isset( $import_progress['processed'] ) ? intval( $import_progress['processed'] ) : 0;
@@ -1099,6 +1100,63 @@ function yatco_heartbeat_received( $response, $data ) {
                 delete_option( 'yatco_import_auto_resume' );
                 delete_option( 'yatco_last_auto_resume_time' );
             }
+        }
+    }
+    
+    // Check if auto-resume is enabled for daily sync and sync is incomplete
+    $sync_auto_resume = get_option( 'yatco_daily_sync_auto_resume', false );
+    if ( $sync_auto_resume !== false ) {
+        $sync_progress = yatco_get_import_status( 'daily_sync' );
+        if ( $sync_progress !== false && is_array( $sync_progress ) ) {
+            $processed = isset( $sync_progress['processed'] ) ? intval( $sync_progress['processed'] ) : 0;
+            $total = isset( $sync_progress['total'] ) ? intval( $sync_progress['total'] ) : 0;
+            
+            // If sync is incomplete, trigger resume
+            if ( $total > 0 && $processed < $total ) {
+                $stop_flag = get_option( 'yatco_import_stop_flag', false );
+                $sync_lock = get_option( 'yatco_daily_sync_lock', false );
+                
+                // Don't trigger resume if sync is already running (lock exists and is recent)
+                if ( $sync_lock !== false ) {
+                    $lock_age = time() - intval( $sync_lock );
+                    if ( $lock_age < 600 ) { // Lock is less than 10 minutes old
+                        // Sync is already running, don't trigger another one
+                        return $response;
+                    } else {
+                        // Lock is stale - clear it so we can resume
+                        yatco_log( "Daily Sync: AUTO-RESUME - Clearing stale lock (age: {$lock_age}s) before resuming", 'warning' );
+                        delete_option( 'yatco_daily_sync_lock' );
+                        delete_option( 'yatco_daily_sync_process_id' );
+                    }
+                }
+                
+                if ( $stop_flag === false ) {
+                    // Check when auto-resume was last triggered to avoid spam
+                    $last_sync_resume = get_option( 'yatco_last_daily_sync_resume_time', 0 );
+                    $time_since_last_resume = time() - $last_sync_resume;
+                    
+                    // Only trigger resume if it's been at least 10 seconds since last attempt (daily sync is slower)
+                    if ( $time_since_last_resume >= 10 ) {
+                        yatco_log( "Daily Sync: AUTO-RESUME TRIGGERED - Sync incomplete ({$processed}/{$total} vessels processed). Scheduling resume...", 'info' );
+                        
+                        // Schedule resume via wp-cron (non-blocking)
+                        wp_schedule_single_event( time() + 3, 'yatco_daily_sync_hook' );
+                        spawn_cron();
+                        $response['yatco_daily_sync_auto_resume'] = true;
+                        
+                        // Update last resume time
+                        update_option( 'yatco_last_daily_sync_resume_time', time(), false );
+                    }
+                }
+            } else {
+                // Sync complete, clear auto-resume
+                delete_option( 'yatco_daily_sync_auto_resume' );
+                delete_option( 'yatco_last_daily_sync_resume_time' );
+            }
+        } else {
+            // No progress data but auto-resume is set - might be a stale flag, clear it
+            delete_option( 'yatco_daily_sync_auto_resume' );
+            delete_option( 'yatco_last_daily_sync_resume_time' );
         }
     }
     

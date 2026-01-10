@@ -1457,18 +1457,59 @@ function yatco_daily_sync_check( $token ) {
         $process_id = time() . rand( 1000, 9999 );
     }
     
+    // Check if we're resuming an incomplete sync
+    $sync_progress_existing = yatco_get_import_status( 'daily_sync' );
+    $is_resuming = false;
+    $resume_processed = 0;
+    $resume_total = 0;
+    
+    if ( $sync_progress_existing !== false && is_array( $sync_progress_existing ) ) {
+        $resume_processed = isset( $sync_progress_existing['processed'] ) ? intval( $sync_progress_existing['processed'] ) : 0;
+        $resume_total = isset( $sync_progress_existing['total'] ) ? intval( $sync_progress_existing['total'] ) : 0;
+        
+        // Check if sync was incomplete (has progress but not finished)
+        if ( $resume_total > 0 && $resume_processed < $resume_total ) {
+            $is_resuming = true;
+            yatco_log( "Daily Sync: RESUMING incomplete sync ({$resume_processed}/{$resume_total} vessels processed)", 'info' );
+        }
+    }
+    
+    // Enable auto-resume for daily sync
+    update_option( 'yatco_daily_sync_auto_resume', time(), false );
+    
     // CRITICAL: Verify this process still owns the lock (prevents conflicts if multiple syncs try to run)
     $sync_lock = get_option( 'yatco_daily_sync_lock', false );
     $lock_process_id = get_option( 'yatco_daily_sync_process_id', false );
     
-    if ( $sync_lock !== false && $lock_process_id !== false && strval( $lock_process_id ) !== strval( $process_id ) ) {
-        yatco_log( "Daily Sync: Lock owned by different process ({$lock_process_id} vs {$process_id}), aborting to prevent conflicts", 'warning' );
-        yatco_clear_import_status( 'daily_sync' );
-        yatco_update_import_status_message( 'Daily Sync: Another sync is already running. Please wait for it to complete.' );
-        return;
+    // If resuming and lock is stale (older than 10 minutes), clear it and continue
+    if ( $is_resuming && $sync_lock !== false ) {
+        $lock_age = time() - intval( $sync_lock );
+        if ( $lock_age > 600 ) {
+            yatco_log( "Daily Sync: Resuming - clearing stale lock (age: {$lock_age}s)", 'warning' );
+            delete_option( 'yatco_daily_sync_lock' );
+            delete_option( 'yatco_daily_sync_process_id' );
+            $sync_lock = false;
+        }
     }
     
-    yatco_log( 'Daily Sync: Starting', 'info' );
+    if ( $sync_lock !== false && $lock_process_id !== false && strval( $lock_process_id ) !== strval( $process_id ) ) {
+        // Check if lock is stale (older than 10 minutes)
+        $lock_age = time() - intval( $sync_lock );
+        if ( $lock_age > 600 ) {
+            // Stale lock from previous run - clear it and continue
+            yatco_log( "Daily Sync: Clearing stale lock (age: {$lock_age}s) and continuing", 'warning' );
+            delete_option( 'yatco_daily_sync_lock' );
+            delete_option( 'yatco_daily_sync_process_id' );
+        } else {
+            // Lock belongs to different active process - skip
+            yatco_log( "Daily Sync: Lock owned by different process ({$lock_process_id} vs {$process_id}), aborting to prevent conflicts", 'warning' );
+            yatco_clear_import_status( 'daily_sync' );
+            yatco_update_import_status_message( 'Daily Sync: Another sync is already running. Please wait for it to complete.' );
+            return;
+        }
+    }
+    
+    yatco_log( 'Daily Sync: Starting' . ( $is_resuming ? ' (RESUMING)' : ' (NEW)' ), 'info' );
     
     // Increase execution time and memory limits
     @set_time_limit( 0 );
@@ -1672,8 +1713,15 @@ function yatco_daily_sync_check( $token ) {
         }
         if ( $stop_flag !== false ) {
             yatco_log( '🛑 Daily Sync: Stop flag detected, cancelling', 'warning' );
-            yatco_clear_import_status( 'daily_sync' );
+            // Save progress before stopping
+            $sync_progress['processed'] = $processed;
+            $sync_progress['removed'] = $removed_count;
+            $sync_progress['updated_at'] = time();
+            yatco_update_import_status( $sync_progress, 'daily_sync' );
             yatco_update_import_status_message( 'Daily Sync stopped by user.' );
+            // Disable auto-resume when user stops
+            delete_option( 'yatco_daily_sync_auto_resume' );
+            delete_option( 'yatco_last_daily_sync_resume_time' );
             // DON'T delete stop flag - keep it so it can be checked again
             return;
         }
@@ -1709,8 +1757,15 @@ function yatco_daily_sync_check( $token ) {
             }
             if ( $stop_flag !== false ) {
                 yatco_log( '🛑 Daily Sync: Stop flag detected, cancelling', 'warning' );
-                delete_transient( 'yatco_daily_sync_progress' );
-                set_transient( 'yatco_cache_warming_status', 'Daily Sync stopped by user.', 60 );
+                // Save progress before stopping
+                $sync_progress['processed'] = $processed;
+                $sync_progress['new'] = $new_count;
+                $sync_progress['updated_at'] = time();
+                yatco_update_import_status( $sync_progress, 'daily_sync' );
+                yatco_update_import_status_message( 'Daily Sync stopped by user.' );
+                // Disable auto-resume when user stops
+                delete_option( 'yatco_daily_sync_auto_resume' );
+                delete_option( 'yatco_last_daily_sync_resume_time' );
                 // DON'T delete stop flag - keep it so it can be checked again
                 return;
             }
@@ -1725,6 +1780,26 @@ function yatco_daily_sync_check( $token ) {
             $sync_progress['updated_at'] = time();
             yatco_update_import_status( $sync_progress, 'daily_sync' );
             yatco_update_import_status_message( "Daily Sync: Importing new vessels ({$processed}/{$total_steps})..." );
+            
+            // HEARTBEAT: Refresh lock every 10 new vessel imports to indicate process is still alive
+            if ( $new_count % 10 === 0 ) {
+                $current_process_id = getmypid();
+                if ( ! $current_process_id ) {
+                    $current_process_id = time() . rand( 1000, 9999 );
+                }
+                $lock_process_id = get_option( 'yatco_daily_sync_process_id', false );
+                
+                if ( $lock_process_id !== false && strval( $lock_process_id ) === strval( $current_process_id ) ) {
+                    update_option( 'yatco_daily_sync_lock', time(), false );
+                    yatco_log( "Daily Sync: Lock heartbeat refreshed during new imports (processed: {$new_count} new vessels)", 'debug' );
+                } else {
+                    yatco_log( "Daily Sync: Lock ownership changed during new imports, stopping", 'warning' );
+                    yatco_clear_import_status( 'daily_sync' );
+                    yatco_update_import_status_message( 'Daily Sync: Stopped - another sync process started.' );
+                    return;
+                }
+            }
+            
             // Small delay between imports
             usleep( 500000 ); // 500ms
         }
@@ -1907,6 +1982,29 @@ function yatco_daily_sync_check( $token ) {
                 yatco_update_import_status( $sync_progress, 'daily_sync' );
                 yatco_update_import_status_message( "Daily Sync: Checking existing vessels ({$existing_processed}/{$existing_total}) - {$percent}% complete..." );
                 
+                // HEARTBEAT: Refresh lock every 50 vessels to indicate process is still alive
+                // This prevents locks from becoming stale if sync runs for a long time
+                if ( $existing_processed % 50 === 0 ) {
+                    // Verify this process still owns the lock before refreshing
+                    $current_process_id = getmypid();
+                    if ( ! $current_process_id ) {
+                        $current_process_id = time() . rand( 1000, 9999 );
+                    }
+                    $lock_process_id = get_option( 'yatco_daily_sync_process_id', false );
+                    
+                    if ( $lock_process_id !== false && strval( $lock_process_id ) === strval( $current_process_id ) ) {
+                        // Still own the lock - refresh it
+                        update_option( 'yatco_daily_sync_lock', time(), false );
+                        yatco_log( "Daily Sync: Lock heartbeat refreshed at vessel {$existing_processed} (still processing)", 'debug' );
+                    } else {
+                        // Lock ownership changed - stop processing
+                        yatco_log( "Daily Sync: Lock ownership changed during processing (was: {$lock_process_id}, now: {$current_process_id}), stopping", 'warning' );
+                        yatco_clear_import_status( 'daily_sync' );
+                        yatco_update_import_status_message( 'Daily Sync: Stopped - another sync process started.' );
+                        return;
+                    }
+                }
+                
                 // Save partial results every 50 vessels to ensure we capture progress even if sync is interrupted
                 if ( $existing_processed % 50 === 0 ) {
                     $partial_results = array(
@@ -1973,6 +2071,11 @@ function yatco_daily_sync_check( $token ) {
     // Clear progress and set final status (using wp_options)
     yatco_clear_import_status( 'daily_sync' );
     yatco_update_import_status_message( $status_message );
+    
+    // Disable auto-resume now that sync is complete
+    delete_option( 'yatco_daily_sync_auto_resume' );
+    delete_option( 'yatco_last_daily_sync_resume_time' );
+    
     yatco_log( $status_message, 'info' );
 }
 
