@@ -55,6 +55,26 @@ add_action( 'yatco_full_import_hook', function() {
     // Connection state should not affect background execution
     ignore_user_abort( true );
     
+    // Load file lock system to prevent OPcache contention
+    require_once YATCO_PLUGIN_DIR . 'includes/yatco-file-lock.php';
+    
+    // CRITICAL: Acquire file-based lock FIRST to prevent multiple FPM workers
+    // from causing OPcache lock contention
+    yatco_log( 'Full Import: Attempting to acquire file lock...', 'info' );
+    $file_lock = yatco_acquire_file_lock( 'full_import', 30 );
+    if ( $file_lock === false ) {
+        yatco_log( 'Full Import: Could not acquire file lock - another import process is running. Exiting to prevent OPcache lock contention.', 'info' );
+        return;
+    }
+    yatco_log( 'Full Import: File lock acquired successfully', 'info' );
+    
+    // Register shutdown function to ensure lock is released
+    register_shutdown_function( function() use ( $file_lock ) {
+        if ( $file_lock ) {
+            yatco_release_file_lock( $file_lock );
+        }
+    } );
+    
     // Get process ID for lock tracking
     $process_id = getmypid();
     if ( ! $process_id ) {
@@ -121,10 +141,16 @@ add_action( 'yatco_full_import_hook', function() {
     require_once YATCO_PLUGIN_DIR . 'includes/yatco-staged-import.php';
     yatco_full_import( $token );
     
-    // Release lock when done
+    // Release database locks
     delete_option( 'yatco_import_lock' );
     delete_option( 'yatco_import_process_id' );
-    yatco_log( 'Full Import: Import lock released', 'info' );
+    yatco_log( 'Full Import: Database locks released', 'info' );
+    
+    // Release file lock (critical for preventing OPcache contention)
+    if ( isset( $file_lock ) && $file_lock ) {
+        yatco_release_file_lock( $file_lock );
+        yatco_log( 'Full Import: File lock released', 'info' );
+    }
 } );
 
 // Register daily sync hook
@@ -132,11 +158,35 @@ add_action( 'yatco_daily_sync_hook', function() {
     // CRITICAL: Ignore user abort - we're running in background via wp-cron
     ignore_user_abort( true );
     
+    // Load file lock system to prevent OPcache contention
+    require_once YATCO_PLUGIN_DIR . 'includes/yatco-file-lock.php';
+    
+    // CRITICAL: Acquire file-based lock FIRST (before any other operations)
+    // This prevents multiple FPM workers from running sync simultaneously
+    // and causing OPcache lock contention which leads to busy loops
+    // File locks work across FPM workers and don't interfere with OPcache
+    yatco_log( 'Daily Sync: Attempting to acquire file lock to prevent OPcache contention...', 'info' );
+    $file_lock = yatco_acquire_file_lock( 'daily_sync', 30 );
+    if ( $file_lock === false ) {
+        yatco_log( 'Daily Sync: Could not acquire file lock after 30s - another sync process is running. Exiting to prevent OPcache lock contention.', 'info' );
+        return; // Another process has the lock - exit silently to prevent contention
+    }
+    yatco_log( 'Daily Sync: File lock acquired successfully - proceeding with sync', 'info' );
+    
     // Get process ID for lock tracking
     $process_id = getmypid();
     if ( ! $process_id ) {
         $process_id = time() . rand( 1000, 9999 );
     }
+    
+    // Register shutdown function to ensure lock is ALWAYS released (even on fatal errors)
+    // This is critical - prevents stale locks that cause OPcache contention
+    register_shutdown_function( function() use ( $file_lock ) {
+        if ( $file_lock ) {
+            yatco_release_file_lock( $file_lock );
+            yatco_log( 'Daily Sync: File lock released on shutdown', 'info' );
+        }
+    } );
     
     // Check if there's an incomplete sync that needs to be resumed
     require_once YATCO_PLUGIN_DIR . 'includes/yatco-progress.php';
@@ -241,10 +291,16 @@ add_action( 'yatco_daily_sync_hook', function() {
         yatco_log( 'Daily Sync: Hook triggered but no token found', 'error' );
     }
     
-    // Release lock when done
+    // Release database locks
     delete_option( 'yatco_daily_sync_lock' );
     delete_option( 'yatco_daily_sync_process_id' );
-    yatco_log( 'Daily Sync: Sync lock released', 'info' );
+    yatco_log( 'Daily Sync: Database locks released', 'info' );
+    
+    // Release file lock (critical for preventing OPcache contention)
+    if ( isset( $file_lock ) && $file_lock ) {
+        yatco_release_file_lock( $file_lock );
+        yatco_log( 'Daily Sync: File lock released', 'info' );
+    }
 } );
 
 /**
