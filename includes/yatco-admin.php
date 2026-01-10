@@ -516,7 +516,7 @@ function yatco_options_page() {
                 echo ' <span style="color: #666; font-size: 0.9em;">(No previous runs recorded)</span>';
             }
             
-            // Warn if wp-cron is disabled
+            // Warn if wp-cron is disabled or not working
             if ( defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON ) {
                 echo ' <span style="color: #d63638; font-weight: bold;">⚠ WP-Cron is disabled - you must set up a server cron job</span>';
             } elseif ( ! defined( 'DISABLE_WP_CRON' ) || ! DISABLE_WP_CRON ) {
@@ -524,10 +524,21 @@ function yatco_options_page() {
                 if ( $last_run !== false && isset( $expected_interval ) ) {
                     $time_since_last_run = time() - $last_run;
                     if ( $time_since_last_run > ( $expected_interval * 1.5 ) ) {
-                        echo ' <span style="color: #d63638; font-weight: bold;">⚠ Sync appears stuck - try clicking "Run Daily Sync Now" button below to manually trigger it.</span>';
+                        echo ' <span style="color: #d63638; font-weight: bold;">⚠ Sync appears stuck - wp-cron may not be running.</span>';
+                        echo ' <br /><span style="color: #d63638; font-size: 12px;">💡 <strong>Solution:</strong> Set up a server cron job (see Troubleshooting tab) OR use the "Run Daily Sync Now" button below to manually trigger it.</span>';
                     }
                 } elseif ( $last_run === false && $sync_enabled === 'yes' ) {
-                    echo ' <span style="color: #d63638;">⚠ Sync has never run - click "Run Daily Sync Now" button below to start it.</span>';
+                    echo ' <span style="color: #d63638;">⚠ Sync has never run - wp-cron may not be working.</span>';
+                    echo ' <br /><span style="color: #d63638; font-size: 12px;">💡 <strong>Solution:</strong> Set up a server cron job (see Troubleshooting tab) OR click "Run Daily Sync Now" button below to start it manually.</span>';
+                }
+                
+                // Check if next scheduled time has passed (indicates wp-cron isn't running)
+                if ( $next_scheduled && $next_scheduled < time() ) {
+                    $overdue_minutes = floor( ( time() - $next_scheduled ) / 60 );
+                    if ( $overdue_minutes > 15 ) {
+                        echo ' <br /><span style="color: #d63638; font-weight: bold;">⚠ Scheduled sync is ' . $overdue_minutes . ' minutes overdue - wp-cron is likely not running automatically.</span>';
+                        echo ' <br /><span style="color: #666; font-size: 12px;">💡 <strong>Recommended:</strong> Set up a server cron job to call wp-cron.php every 5-15 minutes (see Troubleshooting tab for instructions). Until then, use "Run Daily Sync Now" to trigger manually.</span>';
+                    }
                 }
             }
         } else {
@@ -2542,7 +2553,25 @@ function yatco_options_page() {
         if ( function_exists( 'spawn_cron' ) ) {
             echo '<p><strong>Triggering spawn_cron()...</strong></p>';
             $spawned = spawn_cron();
-            echo '<p>spawn_cron() returned: ' . ( $spawned ? 'TRUE' : 'FALSE' ) . '</p>';
+            $spawn_result = $spawned ? 'TRUE' : 'FALSE';
+            echo '<p>spawn_cron() returned: <strong>' . $spawn_result . '</strong></p>';
+            
+            if ( ! $spawned ) {
+                echo '<div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; margin: 15px 0;">';
+                echo '<p style="margin: 0; font-weight: bold; color: #856404;">⚠️ spawn_cron() returned FALSE</p>';
+                echo '<p style="margin: 5px 0 0 0; color: #856404;">This means WordPress cron cannot trigger automatically via HTTP. This is normal if:</p>';
+                echo '<ul style="margin: 5px 0; color: #856404;">';
+                echo '<li>Your site URL is not accessible from the server itself</li>';
+                echo '<li>wp-cron.php is blocked or returns 404 via HTTP</li>';
+                echo '<li>There are firewall restrictions</li>';
+                echo '</ul>';
+                echo '<p style="margin: 10px 0 0 0; color: #856404; font-weight: bold;">✅ <strong>Solution:</strong> Set up a server cron job (see instructions below). Manual triggers (like "Run Daily Sync Now" button) will still work perfectly.</p>';
+                echo '</div>';
+            } else {
+                echo '<div style="background: #d4edda; border-left: 4px solid #28a745; padding: 12px; margin: 15px 0;">';
+                echo '<p style="margin: 0; color: #155724;">✅ spawn_cron() returned TRUE - WordPress cron can trigger automatically.</p>';
+                echo '</div>';
+            }
         } else {
             echo '<p><strong>spawn_cron() function not available. Attempting to simulate wp-cron execution...</strong></p>';
             // Manually trigger cron
