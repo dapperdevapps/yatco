@@ -1605,11 +1605,44 @@ function yatco_daily_sync_check( $token ) {
     $vessels_not_matched_by_id = array_diff( $current_ids_int, $existing_by_vessel_id );
     
     if ( ! empty( $vessels_not_matched_by_id ) && ! empty( $imported_mlsid_lookup ) ) {
-        yatco_log( "Daily Sync: Checking " . count( $vessels_not_matched_by_id ) . " vessels by MLS ID (not found by Vessel ID) - using both IDs with fallback like full import", 'info' );
+        $vessels_to_check_count = count( $vessels_not_matched_by_id );
+        yatco_log( "Daily Sync: Checking {$vessels_to_check_count} vessels by MLS ID (not found by Vessel ID) - using both IDs with fallback like full import", 'info' );
+        
+        // Update progress to show we're checking MLS IDs
+        $sync_progress['step'] = 'checking_mls_ids';
+        $sync_progress['total'] = $vessels_to_check_count; // Temporary total for MLS check phase
+        $sync_progress['updated_at'] = time();
+        yatco_update_import_status( $sync_progress, 'daily_sync' );
+        yatco_update_import_status_message( "Daily Sync: Checking {$vessels_to_check_count} vessels by MLS ID..." );
+        
+        $mls_check_start_time = time();
+        $mls_check_processed = 0;
+        $check_batch_size = 50; // Update progress every 50 vessels
         
         // Process all vessels (no limit) to ensure we check both IDs properly
         // This matches the full import behavior which checks all vessels
         foreach ( $vessels_not_matched_by_id as $vessel_id ) {
+            $mls_check_processed++;
+            
+            // Update progress every batch_size vessels
+            if ( $mls_check_processed % $check_batch_size === 0 ) {
+                $sync_progress['processed'] = $mls_check_processed;
+                $sync_progress['updated_at'] = time();
+                yatco_update_import_status( $sync_progress, 'daily_sync' );
+                yatco_update_import_status_message( "Daily Sync: Checking MLS IDs ({$mls_check_processed}/{$vessels_to_check_count})..." );
+                yatco_log( "Daily Sync: MLS ID check progress: {$mls_check_processed}/{$vessels_to_check_count}", 'debug' );
+                
+                // Check execution time limit during MLS check phase
+                $max_execution_time = ini_get( 'max_execution_time' );
+                if ( $max_execution_time > 0 ) {
+                    $elapsed = time() - $mls_check_start_time;
+                    if ( $elapsed >= ( $max_execution_time - 60 ) ) {
+                        yatco_log( "Daily Sync: Approaching execution time limit during MLS ID check ({$elapsed}/{$max_execution_time}s), saving progress...", 'warning' );
+                        // Progress is already saved above
+                        break; // Will resume later
+                    }
+                }
+            }
             // Fetch vessel data to get MLS ID (same approach as yatco_import_single_vessel)
             // Try to resolve as MLS ID first, then as Vessel ID (matching import logic)
             $api_mlsid = null;
@@ -1668,6 +1701,11 @@ function yatco_daily_sync_check( $token ) {
         }
         
         yatco_log( "Daily Sync: Found {$vessels_checked_by_mlsid} additional existing vessels by MLS ID (using both IDs with fallback)", 'info' );
+        
+        // Reset progress after MLS check phase - will set actual total below
+        $sync_progress['processed'] = 0;
+        $sync_progress['step'] = 'calculating_totals';
+        yatco_update_import_status( $sync_progress, 'daily_sync' );
     }
     
     $existing_ids = array_unique( $existing_ids );

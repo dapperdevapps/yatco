@@ -393,9 +393,16 @@ function yatco_check_daily_sync_auto_resume() {
     
     $processed = isset( $sync_progress['processed'] ) ? intval( $sync_progress['processed'] ) : 0;
     $total = isset( $sync_progress['total'] ) ? intval( $sync_progress['total'] ) : 0;
+    $step = isset( $sync_progress['step'] ) ? $sync_progress['step'] : '';
+    $updated_at = isset( $sync_progress['updated_at'] ) ? intval( $sync_progress['updated_at'] ) : 0;
+    $progress_age = time() - $updated_at;
     
     // Check if sync is incomplete
-    if ( $total > 0 && $processed < $total ) {
+    // Don't treat 0/0 as complete if:
+    // 1. Progress was updated recently (less than 10 minutes ago) - sync is still running
+    // 2. Step indicates sync is in progress (checking_mls_ids, fetching_ids, etc)
+    if ( ( $total > 0 && $processed < $total ) || 
+         ( $total == 0 && $updated_at > 0 && $progress_age < 600 && in_array( $step, array( 'fetching_ids', 'checking_mls_ids', 'processing' ) ) ) ) {
         $stop_flag = get_option( 'yatco_import_stop_flag', false );
         $sync_lock = get_option( 'yatco_daily_sync_lock', false );
         
@@ -456,10 +463,17 @@ function yatco_check_daily_sync_auto_resume() {
             yatco_log( "Daily Sync Auto-Resume Check: Incomplete sync detected but resuming too soon (last resume {$time_since_last_resume}s ago), waiting...", 'debug' );
         }
     } else {
-        // Sync is complete - clear auto-resume flag
-        delete_option( 'yatco_daily_sync_auto_resume' );
-        delete_option( 'yatco_last_daily_sync_resume_time' );
-        yatco_log( "Daily Sync Auto-Resume Check: Sync appears complete ({$processed}/{$total}), clearing auto-resume flag", 'info' );
+        // Check if sync is actually complete or just hasn't updated progress yet
+        // If progress was updated recently (less than 10 minutes), sync might still be running
+        if ( $updated_at > 0 && $progress_age < 600 && in_array( $step, array( 'fetching_ids', 'checking_mls_ids', 'processing' ) ) ) {
+            // Progress is recent and step indicates sync is running - don't clear auto-resume
+            yatco_log( "Daily Sync Auto-Resume Check: Sync appears to be running (step: {$step}, updated {$progress_age}s ago), keeping auto-resume enabled", 'debug' );
+        } else {
+            // Sync is complete or truly stale - clear auto-resume flag
+            delete_option( 'yatco_daily_sync_auto_resume' );
+            delete_option( 'yatco_last_daily_sync_resume_time' );
+            yatco_log( "Daily Sync Auto-Resume Check: Sync appears complete ({$processed}/{$total}, step: {$step}), clearing auto-resume flag", 'info' );
+        }
     }
 }
 
@@ -1321,9 +1335,16 @@ function yatco_heartbeat_received( $response, $data ) {
         if ( $sync_progress !== false && is_array( $sync_progress ) ) {
             $processed = isset( $sync_progress['processed'] ) ? intval( $sync_progress['processed'] ) : 0;
             $total = isset( $sync_progress['total'] ) ? intval( $sync_progress['total'] ) : 0;
+            $step = isset( $sync_progress['step'] ) ? $sync_progress['step'] : '';
+            $updated_at = isset( $sync_progress['updated_at'] ) ? intval( $sync_progress['updated_at'] ) : 0;
+            $progress_age = time() - $updated_at;
             
             // If sync is incomplete, trigger resume
-            if ( $total > 0 && $processed < $total ) {
+            // Also check if sync is in progress phase (0/0 but step indicates running)
+            $is_in_progress = ( $total > 0 && $processed < $total ) ||
+                              ( $total == 0 && $updated_at > 0 && $progress_age < 600 && in_array( $step, array( 'fetching_ids', 'checking_mls_ids', 'processing' ) ) );
+            
+            if ( $is_in_progress ) {
                 $stop_flag = get_option( 'yatco_import_stop_flag', false );
                 $sync_lock = get_option( 'yatco_daily_sync_lock', false );
                 
@@ -1360,14 +1381,23 @@ function yatco_heartbeat_received( $response, $data ) {
                     }
                 }
             } else {
-                // Sync complete, clear auto-resume
-                delete_option( 'yatco_daily_sync_auto_resume' );
-                delete_option( 'yatco_last_daily_sync_resume_time' );
+                // Check if sync is actually complete or just hasn't updated progress yet
+                if ( $updated_at > 0 && $progress_age < 600 && in_array( $step, array( 'fetching_ids', 'checking_mls_ids', 'processing' ) ) ) {
+                    // Progress is recent and step indicates sync is running - keep auto-resume
+                } else {
+                    // Sync complete, clear auto-resume
+                    delete_option( 'yatco_daily_sync_auto_resume' );
+                    delete_option( 'yatco_last_daily_sync_resume_time' );
+                }
             }
         } else {
             // No progress data but auto-resume is set - might be a stale flag, clear it
-            delete_option( 'yatco_daily_sync_auto_resume' );
-            delete_option( 'yatco_last_daily_sync_resume_time' );
+            // But only if auto-resume was set more than 10 minutes ago
+            $auto_resume_age = time() - intval( $sync_auto_resume );
+            if ( $auto_resume_age > 600 ) {
+                delete_option( 'yatco_daily_sync_auto_resume' );
+                delete_option( 'yatco_last_daily_sync_resume_time' );
+            }
         }
     }
     
