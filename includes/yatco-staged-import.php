@@ -1445,6 +1445,71 @@ function yatco_full_import( $token ) {
 }
 
 /**
+ * Helper function to save partial daily sync history when sync is interrupted.
+ * 
+ * @param array $sync_progress Current sync progress data
+ * @param int $removed_count Count of removed vessels
+ * @param int $new_count Count of new vessels
+ * @param int $price_updates Count of price updates
+ * @param int $days_on_market_updates Count of days on market updates
+ */
+function yatco_save_partial_daily_sync_history( $sync_progress, $removed_count = 0, $new_count = 0, $price_updates = 0, $days_on_market_updates = 0 ) {
+    // Get values from sync_progress if available, otherwise use passed parameters
+    $removed = isset( $sync_progress['removed'] ) ? intval( $sync_progress['removed'] ) : $removed_count;
+    $new = isset( $sync_progress['new'] ) ? intval( $sync_progress['new'] ) : $new_count;
+    $price = isset( $sync_progress['price_updates'] ) ? intval( $sync_progress['price_updates'] ) : $price_updates;
+    $days = isset( $sync_progress['days_on_market_updates'] ) ? intval( $sync_progress['days_on_market_updates'] ) : $days_on_market_updates;
+    
+    // Only save if there's actual progress (at least one update)
+    if ( $removed === 0 && $new === 0 && $price === 0 && $days === 0 ) {
+        return; // No progress to save
+    }
+    
+    $sync_results = array(
+        'removed' => $removed,
+        'new' => $new,
+        'price_updates' => $price,
+        'days_on_market_updates' => $days,
+        'timestamp' => time(),
+        'date' => date( 'Y-m-d', time() ),
+        'partial' => true, // Mark as partial/incomplete
+    );
+    
+    // Store in history (keep last 90 days)
+    $history = get_option( 'yatco_daily_sync_history', array() );
+    if ( ! is_array( $history ) ) {
+        $history = array();
+    }
+    
+    // Add today's partial results (will be merged with complete results if sync completes later)
+    $today = date( 'Y-m-d', time() );
+    
+    // If there's already a history entry for today, merge the counts (take the higher values)
+    if ( isset( $history[ $today ] ) && is_array( $history[ $today ] ) ) {
+        $existing = $history[ $today ];
+        $sync_results['removed'] = max( $existing['removed'], $removed );
+        $sync_results['new'] = max( $existing['new'], $new );
+        $sync_results['price_updates'] = max( $existing['price_updates'], $price );
+        $sync_results['days_on_market_updates'] = max( $existing['days_on_market_updates'], $days );
+        // If existing was complete, keep it as complete
+        if ( ! isset( $existing['partial'] ) || $existing['partial'] === false ) {
+            $sync_results['partial'] = false;
+        }
+    }
+    
+    $history[ $today ] = $sync_results;
+    
+    // Keep only last 90 days
+    ksort( $history );
+    if ( count( $history ) > 90 ) {
+        $history = array_slice( $history, -90, null, true );
+    }
+    
+    update_option( 'yatco_daily_sync_history', $history, false );
+    yatco_log( "Daily Sync: Saved partial history - {$removed} removed, {$new} new, {$price} price updates, {$days} days on market updates", 'info' );
+}
+
+/**
  * Daily Sync: Check for new/removed vessels and update prices/days on market.
  */
 function yatco_daily_sync_check( $token ) {
@@ -1503,6 +1568,11 @@ function yatco_daily_sync_check( $token ) {
         } else {
             // Lock belongs to different active process - skip
             yatco_log( "Daily Sync: Lock owned by different process ({$lock_process_id} vs {$process_id}), aborting to prevent conflicts", 'warning' );
+            // Save any partial progress before clearing
+            $sync_progress_existing = yatco_get_import_status( 'daily_sync' );
+            if ( $sync_progress_existing !== false && is_array( $sync_progress_existing ) ) {
+                yatco_save_partial_daily_sync_history( $sync_progress_existing );
+            }
             yatco_clear_import_status( 'daily_sync' );
             yatco_update_import_status_message( 'Daily Sync: Another sync is already running. Please wait for it to complete.' );
             return;
@@ -1533,6 +1603,11 @@ function yatco_daily_sync_check( $token ) {
     $current_ids = yatco_get_active_vessel_ids( $token, 0 );
     
     if ( is_wp_error( $current_ids ) ) {
+        // Save any partial progress before clearing
+        $sync_progress_existing = yatco_get_import_status( 'daily_sync' );
+        if ( $sync_progress_existing !== false && is_array( $sync_progress_existing ) ) {
+            yatco_save_partial_daily_sync_history( $sync_progress_existing );
+        }
         yatco_update_import_status_message( 'Daily Sync Error: ' . $current_ids->get_error_message() );
         yatco_clear_import_status( 'daily_sync' );
         yatco_log( 'Daily Sync Error: ' . $current_ids->get_error_message(), 'error' );
@@ -1800,6 +1875,8 @@ function yatco_daily_sync_check( $token ) {
                 $sync_progress['new'] = $new_count;
                 $sync_progress['updated_at'] = time();
                 yatco_update_import_status( $sync_progress, 'daily_sync' );
+                // Save partial history before stopping
+                yatco_save_partial_daily_sync_history( $sync_progress, $removed_count, $new_count, $price_updates, $days_on_market_updates );
                 yatco_update_import_status_message( 'Daily Sync stopped by user.' );
                 // Disable auto-resume when user stops
                 delete_option( 'yatco_daily_sync_auto_resume' );
@@ -1832,6 +1909,8 @@ function yatco_daily_sync_check( $token ) {
                     yatco_log( "Daily Sync: Lock heartbeat refreshed during new imports (processed: {$new_count} new vessels)", 'debug' );
                 } else {
                     yatco_log( "Daily Sync: Lock ownership changed during new imports, stopping", 'warning' );
+                    // Save partial history before clearing
+                    yatco_save_partial_daily_sync_history( $sync_progress, $removed_count, $new_count, $price_updates, $days_on_market_updates );
                     yatco_clear_import_status( 'daily_sync' );
                     yatco_update_import_status_message( 'Daily Sync: Stopped - another sync process started.' );
                     return;
@@ -2093,6 +2172,8 @@ function yatco_daily_sync_check( $token ) {
                     } else {
                         // Lock ownership changed - stop processing
                         yatco_log( "Daily Sync: Lock ownership changed during processing (was: {$lock_process_id}, now: {$current_process_id}), stopping", 'warning' );
+                        // Save partial history before clearing
+                        yatco_save_partial_daily_sync_history( $sync_progress, $removed_count, $new_count, $price_updates, $days_on_market_updates );
                         yatco_clear_import_status( 'daily_sync' );
                         yatco_update_import_status_message( 'Daily Sync: Stopped - another sync process started.' );
                         return;
@@ -2116,17 +2197,8 @@ function yatco_daily_sync_check( $token ) {
                 }
                 
                 if ( $should_refresh_lock ) {
-                    // Save partial results
-                    $partial_results = array(
-                        'removed' => $removed_count,
-                        'new' => $new_count,
-                        'price_updates' => $price_updates,
-                        'days_on_market_updates' => $days_on_market_updates,
-                        'timestamp' => time(),
-                        'date' => date( 'Y-m-d', time() ),
-                        'partial' => true,
-                    );
-                    update_option( 'yatco_daily_sync_results', $partial_results, false );
+                    // Save partial results to history (for lock refresh, don't clear progress)
+                    yatco_save_partial_daily_sync_history( $sync_progress, $removed_count, $new_count, $price_updates, $days_on_market_updates );
                     
                     // HEARTBEAT: Refresh lock to prevent stale locks
                     // Critical - prevents lock from becoming stale (>10 minutes) during slow processing
@@ -2142,6 +2214,8 @@ function yatco_daily_sync_check( $token ) {
                         yatco_log( "Daily Sync: Lock heartbeat refreshed at vessel {$existing_processed} (still processing)", 'debug' );
                     } else {
                         yatco_log( "Daily Sync: Lock ownership changed during existing vessels check, stopping", 'warning' );
+                        // Save partial history before clearing
+                        yatco_save_partial_daily_sync_history( $sync_progress, $removed_count, $new_count, $price_updates, $days_on_market_updates );
                         yatco_clear_import_status( 'daily_sync' );
                         yatco_update_import_status_message( 'Daily Sync: Stopped - another sync process started.' );
                         return;
@@ -2192,8 +2266,9 @@ function yatco_daily_sync_check( $token ) {
         $history = array();
     }
     
-    // Add today's results
+    // Add today's results (mark as complete, not partial)
     $today = date( 'Y-m-d', time() );
+    $sync_results['partial'] = false; // Mark as complete
     $history[ $today ] = $sync_results;
     
     // Keep only last 90 days
