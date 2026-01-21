@@ -144,7 +144,7 @@ function yatco_generate_vessels_html_from_data( $vessels, $builders, $categories
                     <option value="">Pick a sort</option>
                     <option value="price_asc">Price: Low to High</option>
                     <option value="price_desc">Price: High to Low</option>
-                    <option value="year_desc">Year: Newest First</option>
+                    <option value="year_desc" selected>Year: Newest First</option>
                     <option value="year_asc">Year: Oldest First</option>
                     <option value="length_desc">Length: Largest First</option>
                     <option value="length_asc">Length: Smallest First</option>
@@ -155,12 +155,27 @@ function yatco_generate_vessels_html_from_data( $vessels, $builders, $categories
         <?php endif; ?>
         <div class="yatco-vessels-grid <?php echo esc_attr( $column_class ); ?>" id="yatco-vessels-grid">
         <?php foreach ( $vessels as $vessel ) : 
+            // Skip incomplete listings - must have name, location, and image
+            $has_name = ! empty( $vessel['name'] ) && trim( $vessel['name'] ) !== '';
+            $has_location = ! empty( $vessel['location'] ) && trim( $vessel['location'] ) !== '';
+            $has_image = ! empty( $vessel['image'] );
+            
+            if ( ! $has_name || ! $has_location || ! $has_image ) {
+                // Skip this incomplete listing
+                continue;
+            }
+            
             // Get the link - prefer CPT permalink if post_id exists, otherwise use the link from vessel data
             $vessel_link = '';
             if ( ! empty( $vessel['post_id'] ) ) {
                 $vessel_link = get_permalink( $vessel['post_id'] );
             } elseif ( ! empty( $vessel['link'] ) ) {
                 $vessel_link = $vessel['link'];
+            }
+            
+            // Skip if link contains ?vessel_id= (incomplete post without proper permalink)
+            if ( strpos( $vessel_link, '?vessel_id=' ) !== false ) {
+                continue;
             }
         ?>
             <a href="<?php echo esc_url( $vessel_link ); ?>" class="yatco-vessel-card" 
@@ -239,11 +254,11 @@ function yatco_vessels_shortcode( $atts ) {
     $atts = shortcode_atts(
         array(
             'max'           => '50',
-            'price_min'     => '',
+            'price_min'     => '350000',  // Default: $350,000 USD minimum
             'price_max'     => '',
-            'year_min'      => '',
+            'year_min'      => '2000',    // Default: Year 2000 or newer
             'year_max'      => '',
-            'loa_min'       => '',
+            'loa_min'       => '35',      // Default: 35ft or longer
             'loa_max'       => '',
             'columns'       => '3',
             'show_price'    => 'yes',
@@ -253,6 +268,7 @@ function yatco_vessels_shortcode( $atts ) {
             'show_filters'  => 'yes',
             'currency'      => 'USD',
             'length_unit'   => 'FT',
+            'exclude_sailing' => 'yes',   // Default: Exclude sailing vessels
         ),
         $atts,
         'yatco_vessels'
@@ -278,18 +294,63 @@ function yatco_vessels_shortcode( $atts ) {
             'posts_per_page' => -1, // Load all posts for client-side pagination (memory optimized)
             'fields'         => 'ids', // Only get IDs to save memory - this is the key optimization
             'meta_query'     => array(),
+            'orderby'        => 'meta_value_num',
+            'meta_key'       => 'yacht_year',
+            'order'          => 'DESC', // Newest first (year descending)
             'no_found_rows'  => true, // Skip counting total rows to save memory
             'update_post_meta_cache' => false, // Don't cache all meta - we'll fetch only what we need
             'update_post_term_cache' => false, // Don't cache terms
         );
         
-        // Parse filter criteria
-        $price_min = ! empty( $atts['price_min'] ) && $atts['price_min'] !== '0' ? floatval( $atts['price_min'] ) : '';
+        // Parse filter criteria - ALWAYS apply defaults, URL params can only override if explicitly provided
+        // Default values that should always be enforced
+        $default_price_min = 350000;
+        $default_year_min = 2000;
+        $default_loa_min = 35;
+        
+        // Get values from shortcode atts (which have defaults)
+        $price_min_attr = ! empty( $atts['price_min'] ) && $atts['price_min'] !== '0' ? floatval( $atts['price_min'] ) : $default_price_min;
+        $year_min_attr = ! empty( $atts['year_min'] ) && $atts['year_min'] !== '0' ? intval( $atts['year_min'] ) : $default_year_min;
+        $loa_min_attr = ! empty( $atts['loa_min'] ) && $atts['loa_min'] !== '0' ? floatval( $atts['loa_min'] ) : $default_loa_min;
+        
+        // Check if URL parameters explicitly override (only if provided and higher than defaults)
+        // If URL param is provided but lower than default, use default (enforce minimums)
+        if ( ! empty( $_GET['price_min'] ) && $_GET['price_min'] !== '0' ) {
+            $url_price_min = floatval( $_GET['price_min'] );
+            $price_min = max( $url_price_min, $default_price_min ); // Use higher of URL param or default
+        } else {
+            $price_min = $price_min_attr; // Use default from atts
+        }
+        
+        if ( ! empty( $_GET['year_min'] ) && $_GET['year_min'] !== '0' ) {
+            $url_year_min = intval( $_GET['year_min'] );
+            $year_min = max( $url_year_min, $default_year_min ); // Use higher of URL param or default
+        } else {
+            $year_min = $year_min_attr; // Use default from atts
+        }
+        
+        if ( ! empty( $_GET['loa_min'] ) && $_GET['loa_min'] !== '0' ) {
+            $url_loa_min = floatval( $_GET['loa_min'] );
+            $loa_min = max( $url_loa_min, $default_loa_min ); // Use higher of URL param or default
+        } else {
+            $loa_min = $loa_min_attr; // Use default from atts
+        }
+        
+        // Max values and other filters can be empty (no defaults)
         $price_max = ! empty( $atts['price_max'] ) && $atts['price_max'] !== '0' ? floatval( $atts['price_max'] ) : '';
-        $year_min  = ! empty( $atts['year_min'] ) && $atts['year_min'] !== '0' ? intval( $atts['year_min'] ) : '';
+        if ( ! empty( $_GET['price_max'] ) && $_GET['price_max'] !== '0' ) {
+            $price_max = floatval( $_GET['price_max'] );
+        }
+        
         $year_max  = ! empty( $atts['year_max'] ) && $atts['year_max'] !== '0' ? intval( $atts['year_max'] ) : '';
-        $loa_min   = ! empty( $atts['loa_min'] ) && $atts['loa_min'] !== '0' ? floatval( $atts['loa_min'] ) : '';
+        if ( ! empty( $_GET['year_max'] ) && $_GET['year_max'] !== '0' ) {
+            $year_max = intval( $_GET['year_max'] );
+        }
+        
         $loa_max   = ! empty( $atts['loa_max'] ) && $atts['loa_max'] !== '0' ? floatval( $atts['loa_max'] ) : '';
+        if ( ! empty( $_GET['loa_max'] ) && $_GET['loa_max'] !== '0' ) {
+            $loa_max = floatval( $_GET['loa_max'] );
+        }
         
         // Add meta queries for filtering
         if ( $price_min !== '' ) {
@@ -370,6 +431,20 @@ function yatco_vessels_shortcode( $atts ) {
                 'value'   => sanitize_text_field( urldecode( $_GET['condition'] ) ),
                 'compare' => '=',
             );
+        }
+        
+        // ALWAYS exclude sailing vessels by default (unless explicitly overridden via URL type parameter)
+        // Only allow sailing vessels if type is explicitly set to "Sailing Yacht" in URL
+        if ( $atts['exclude_sailing'] === 'yes' ) {
+            $url_type = ! empty( $_GET['type'] ) ? sanitize_text_field( urldecode( $_GET['type'] ) ) : '';
+            // Only exclude if type is not explicitly set to "Sailing Yacht" in URL
+            if ( $url_type !== 'Sailing Yacht' ) {
+                $query_args['meta_query'][] = array(
+                    'key'     => 'yacht_type',
+                    'value'   => 'Sailing Yacht',
+                    'compare' => '!=',
+                );
+            }
         }
         
         // Check if cache is currently warming
@@ -571,6 +646,17 @@ function yatco_vessels_shortcode( $atts ) {
                 // Only call wp_get_attachment_image_url() if needed (most vessels have yacht_image_url)
                 if ( empty( $image_url ) && isset( $thumbnail_ids[ $post_id ] ) && $thumbnail_ids[ $post_id ] > 0 ) {
                     $image_url = wp_get_attachment_image_url( $thumbnail_ids[ $post_id ], 'medium' );
+                }
+                
+                // Skip incomplete listings - must have name, location, and image
+                // This filters out posts that were created but don't have complete data
+                $has_name = ! empty( $post_title ) && trim( $post_title ) !== '';
+                $has_location = ! empty( $location ) && trim( $location ) !== '';
+                $has_image = ! empty( $image_url );
+                
+                if ( ! $has_name || ! $has_location || ! $has_image ) {
+                    // Skip this incomplete listing
+                    continue;
                 }
                 
                 $vessel_data = array(
@@ -984,10 +1070,23 @@ function yatco_vessels_shortcode( $atts ) {
             $vessel_link = get_post_type_archive_link( 'yacht' ) . '?vessel_id=' . $id;
         }
         
+        // Skip incomplete listings - must have name, location, and image
+        $vessel_name = isset( $brief['Name'] ) ? $brief['Name'] : '';
+        $vessel_image = isset( $result['MainPhotoUrl'] ) ? $result['MainPhotoUrl'] : ( isset( $basic['MainPhotoURL'] ) ? $basic['MainPhotoURL'] : '' );
+        
+        $has_name = ! empty( $vessel_name ) && trim( $vessel_name ) !== '';
+        $has_location = ! empty( $location ) && trim( $location ) !== '';
+        $has_image = ! empty( $vessel_image );
+        
+        if ( ! $has_name || ! $has_location || ! $has_image ) {
+            // Skip this incomplete listing
+            continue;
+        }
+        
         $vessel_data = array(
             'id'          => $id,
             'post_id'     => $post_id,
-            'name'        => $brief['Name'],
+            'name'        => $vessel_name,
             'price'       => $brief['Price'],
             'price_usd'   => $price_usd,
             'price_eur'   => $price_eur,
@@ -1001,7 +1100,7 @@ function yatco_vessels_shortcode( $atts ) {
             'condition'   => $condition,
             'state_rooms' => $state_rooms,
             'location'    => $location,
-            'image'       => isset( $result['MainPhotoUrl'] ) ? $result['MainPhotoUrl'] : ( isset( $basic['MainPhotoURL'] ) ? $basic['MainPhotoURL'] : '' ),
+            'image'       => $vessel_image,
             'link'        => $vessel_link,
         );
 

@@ -406,6 +406,18 @@ if ( ! defined( 'ABSPATH' ) ) {
     let currentCurrency = currency;
     let currentLengthUnit = lengthUnit;
     
+    // Default values that should always be enforced
+    const defaultPriceMin = 350000;
+    const defaultYearMin = 2000;
+    const defaultLoaMin = 35;
+    const defaultSort = 'year_desc'; // Newest first
+    
+    // Set defaults on page load (before URL parameters are applied)
+    if (yearMin && !yearMin.value) yearMin.value = defaultYearMin;
+    if (loaMin && !loaMin.value) loaMin.value = defaultLoaMin;
+    if (priceMin && !priceMin.value) priceMin.value = defaultPriceMin;
+    if (sort && !sort.value) sort.value = defaultSort;
+    
     // URL parameter support - parse and apply filters from URL
     function getUrlParameter(name) {
         const urlParams = new URLSearchParams(window.location.search);
@@ -455,20 +467,56 @@ if ( ! defined( 'ABSPATH' ) ) {
         const urlLengthUnit = getUrlParameter('length_unit');
         const urlPage = getUrlParameter('page');
         
-        // Apply filter values
+        // Apply filter values with defaults (using constants defined above)
         if (urlKeywords && keywords) keywords.value = urlKeywords;
         if (urlBuilder && builder) builder.value = decodeURIComponent(urlBuilder);
         if (urlCategory && category) category.value = decodeURIComponent(urlCategory);
         if (urlType && type) type.value = decodeURIComponent(urlType);
         if (urlCondition && condition) condition.value = decodeURIComponent(urlCondition);
-        if (urlYearMin && yearMin) yearMin.value = urlYearMin;
+        
+        // Apply year min with default enforcement (use higher of URL param or default)
+        if (yearMin) {
+            if (urlYearMin) {
+                const urlYear = parseInt(urlYearMin) || 0;
+                yearMin.value = Math.max(urlYear, defaultYearMin);
+            } else {
+                yearMin.value = defaultYearMin;
+            }
+        }
         if (urlYearMax && yearMax) yearMax.value = urlYearMax;
-        if (urlLoaMin && loaMin) loaMin.value = urlLoaMin;
+        
+        // Apply loa min with default enforcement (use higher of URL param or default)
+        if (loaMin) {
+            if (urlLoaMin) {
+                const urlLoa = parseFloat(urlLoaMin) || 0;
+                loaMin.value = Math.max(urlLoa, defaultLoaMin);
+            } else {
+                loaMin.value = defaultLoaMin;
+            }
+        }
         if (urlLoaMax && loaMax) loaMax.value = urlLoaMax;
-        if (urlPriceMin && priceMin) priceMin.value = urlPriceMin;
+        
+        // Apply price min with default enforcement (use higher of URL param or default)
+        if (priceMin) {
+            if (urlPriceMin) {
+                const urlPrice = parseFloat(urlPriceMin) || 0;
+                priceMin.value = Math.max(urlPrice, defaultPriceMin);
+            } else {
+                priceMin.value = defaultPriceMin;
+            }
+        }
         if (urlPriceMax && priceMax) priceMax.value = urlPriceMax;
+        
         if (urlCabins && cabins) cabins.value = urlCabins;
-        if (urlSort && sort) sort.value = urlSort;
+        
+        // Apply sort - default to newest first if not explicitly set
+        if (sort) {
+            if (urlSort) {
+                sort.value = urlSort;
+            } else {
+                sort.value = defaultSort;
+            }
+        }
         if (urlCurrency && (urlCurrency === 'USD' || urlCurrency === 'EUR')) {
             currentCurrency = urlCurrency;
         }
@@ -478,6 +526,21 @@ if ( ! defined( 'ABSPATH' ) ) {
         if (urlPage) {
             const pageNum = parseInt(urlPage);
             if (pageNum > 0) currentPage = pageNum;
+        }
+        
+        // Always enforce default minimums even if URL params are missing
+        // This ensures defaults are always applied
+        if (yearMin && !yearMin.value) {
+            yearMin.value = defaultYearMin;
+        }
+        if (loaMin && !loaMin.value) {
+            loaMin.value = defaultLoaMin;
+        }
+        if (priceMin && !priceMin.value) {
+            priceMin.value = defaultPriceMin;
+        }
+        if (sort && !sort.value) {
+            sort.value = defaultSort;
         }
         
         // Update toggle buttons if currency or length unit changed
@@ -981,19 +1044,20 @@ if ( ! defined( 'ABSPATH' ) ) {
     
     if (resetBtn) {
         resetBtn.addEventListener('click', function() {
+            // Use default values defined above
             if (keywords) keywords.value = '';
             if (builder) builder.value = '';
-            if (yearMin) yearMin.value = '';
+            if (yearMin) yearMin.value = defaultYearMin; // Reset to default, not empty
             if (yearMax) yearMax.value = '';
-            if (loaMin) loaMin.value = '';
+            if (loaMin) loaMin.value = defaultLoaMin; // Reset to default, not empty
             if (loaMax) loaMax.value = '';
-            if (priceMin) priceMin.value = '';
+            if (priceMin) priceMin.value = defaultPriceMin; // Reset to default, not empty
             if (priceMax) priceMax.value = '';
             if (condition) condition.value = '';
             if (type) type.value = '';
             if (category) category.value = '';
             if (cabins) cabins.value = '';
-            if (sort) sort.value = '';
+            if (sort) sort.value = defaultSort; // Reset to default sort
             currentCurrency = currency;
             currentLengthUnit = lengthUnit;
             currentPage = 1;

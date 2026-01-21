@@ -837,6 +837,46 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
     $state_rooms = isset( $basic['StateRooms'] ) ? intval( $basic['StateRooms'] ) : ( isset( $result['StateRooms'] ) ? intval( $result['StateRooms'] ) : 0 );
     $image_url = isset( $result['MainPhotoUrl'] ) ? $result['MainPhotoUrl'] : ( isset( $basic['MainPhotoURL'] ) ? $basic['MainPhotoURL'] : '' );
     
+    // Validate that vessel has required data: images and location
+    // Skip incomplete listings that are missing essential information
+    $has_images = false;
+    $has_location = false;
+    
+    // Check for images - must have at least one image in PhotoGallery or main photo URL
+    if ( ! empty( $image_url ) ) {
+        $has_images = true;
+    } elseif ( isset( $full['PhotoGallery'] ) && is_array( $full['PhotoGallery'] ) && ! empty( $full['PhotoGallery'] ) ) {
+        // Check if PhotoGallery has at least one photo with a valid URL
+        foreach ( $full['PhotoGallery'] as $photo ) {
+            if ( ! empty( $photo['largeImageURL'] ) || ! empty( $photo['mediumImageURL'] ) || ! empty( $photo['smallImageURL'] ) ) {
+                $has_images = true;
+                break;
+            }
+        }
+    }
+    
+    // Check for location - must have at least LocationCustom or location city/state/country
+    if ( ! empty( $location ) ) {
+        $has_location = true;
+    } elseif ( ! empty( $location_city ) || ! empty( $location_state ) || ! empty( $location_country ) ) {
+        $has_location = true;
+    }
+    
+    // Skip incomplete listings that are missing images or location
+    if ( ! $has_images || ! $has_location ) {
+        $missing = array();
+        if ( ! $has_images ) {
+            $missing[] = 'images';
+        }
+        if ( ! $has_location ) {
+            $missing[] = 'location';
+        }
+        $missing_str = implode( ' and ', $missing );
+        $identifier_display = $primary_identifier_type === 'vessel_id' ? "Vessel ID {$primary_identifier}" : "MLS ID {$primary_identifier}";
+        yatco_log( "Import: Skipping incomplete listing ({$identifier_display}) - missing {$missing_str}", 'info' );
+        return new WP_Error( 'incomplete_listing', "Listing is incomplete - missing {$missing_str}" );
+    }
+    
     // Get price formatting and currency
     $currency = isset( $basic['Currency'] ) ? $basic['Currency'] : ( isset( $result['Currency'] ) ? $result['Currency'] : 'USD' );
     $price_formatted = isset( $result['AskingPriceFormatted'] ) ? $result['AskingPriceFormatted'] : '';
