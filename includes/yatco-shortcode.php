@@ -354,11 +354,29 @@ function yatco_vessels_shortcode( $atts ) {
         
         // Add meta queries for filtering
         if ( $price_min !== '' ) {
+            // Ensure price exists, is not empty, and meets minimum requirement
             $query_args['meta_query'][] = array(
-                'key'     => 'yacht_price_usd',
-                'value'   => $price_min,
-                'compare' => '>=',
-                'type'    => 'NUMERIC',
+                'relation' => 'AND',
+                array(
+                    'key'     => 'yacht_price_usd',
+                    'compare' => 'EXISTS',
+                ),
+                array(
+                    'key'     => 'yacht_price_usd',
+                    'value'   => '',
+                    'compare' => '!=',
+                ),
+                array(
+                    'key'     => 'yacht_price_usd',
+                    'value'   => array( '0', '0.00', '' ),
+                    'compare' => 'NOT IN',
+                ),
+                array(
+                    'key'     => 'yacht_price_usd',
+                    'value'   => $price_min,
+                    'compare' => '>=',
+                    'type'    => 'NUMERIC',
+                ),
             );
         }
         if ( $price_max !== '' ) {
@@ -657,6 +675,16 @@ function yatco_vessels_shortcode( $atts ) {
                 if ( ! $has_name || ! $has_location || ! $has_image ) {
                     // Skip this incomplete listing
                     continue;
+                }
+                
+                // Skip listings with empty/invalid prices when minimum price is set
+                // This ensures listings without prices don't appear when a minimum price filter is active
+                if ( $price_min !== '' ) {
+                    $price_usd_numeric = ! empty( $price_usd ) ? floatval( $price_usd ) : 0;
+                    if ( $price_usd_numeric <= 0 || $price_usd_numeric < $price_min ) {
+                        // Skip this listing - no valid price or price below minimum
+                        continue;
+                    }
                 }
                 
                 $vessel_data = array(
@@ -1025,6 +1053,16 @@ function yatco_vessels_shortcode( $atts ) {
         }
         
         $price_eur = isset( $basic['AskingPrice'] ) && $basic['AskingPrice'] > 0 && isset( $basic['Currency'] ) && $basic['Currency'] === 'EUR' ? floatval( $basic['AskingPrice'] ) : null;
+        
+        // Additional check: Skip listings with empty/invalid USD prices when minimum price is set
+        // This ensures listings without prices don't appear when a minimum price filter is active
+        if ( $price_min !== '' ) {
+            $price_usd_numeric = ! empty( $price_usd ) ? floatval( $price_usd ) : 0;
+            if ( $price_usd_numeric <= 0 || $price_usd_numeric < $price_min ) {
+                // Skip this listing - no valid price or price below minimum
+                continue;
+            }
+        }
         
         // Try to find existing CPT post for this vessel
         $post_id = 0;

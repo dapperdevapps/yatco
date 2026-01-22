@@ -599,8 +599,11 @@ if ( ! defined( 'ABSPATH' ) ) {
             const year = parseInt(vessel.dataset.year) || 0;
             const loaFeet = parseFloat(vessel.dataset.loaFeet) || 0;
             const loaMeters = parseFloat(vessel.dataset.loaMeters) || 0;
-            const priceUsd = parseFloat(vessel.dataset.priceUsd) || 0;
-            const priceEur = parseFloat(vessel.dataset.priceEur) || 0;
+            // Parse prices - treat empty strings as NaN (not 0) to properly filter them out
+            const priceUsdRaw = vessel.dataset.priceUsd;
+            const priceUsd = (priceUsdRaw && priceUsdRaw.trim() !== '') ? parseFloat(priceUsdRaw) : NaN;
+            const priceEurRaw = vessel.dataset.priceEur;
+            const priceEur = (priceEurRaw && priceEurRaw.trim() !== '') ? parseFloat(priceEurRaw) : NaN;
             const stateRooms = parseInt(vessel.dataset.stateRooms) || 0;
             
             // Keywords
@@ -630,12 +633,17 @@ if ( ! defined( 'ABSPATH' ) ) {
                 return false;
             }
 
-            // Price
+            // Price - exclude listings with empty/invalid prices when minimum is set
             const price = currentCurrency === 'EUR' ? priceEur : priceUsd;
-            if (priceMinVal && (price === 0 || price < priceMinVal)) {
-                return false;
+            // Check if price is valid (not NaN, not 0, not empty)
+            const hasValidPrice = !isNaN(price) && price > 0;
+            if (priceMinVal) {
+                // If minimum price is set, exclude listings without valid prices
+                if (!hasValidPrice || price < priceMinVal) {
+                    return false;
+                }
             }
-            if (priceMaxVal && (price === 0 || price > priceMaxVal)) {
+            if (priceMaxVal && hasValidPrice && price > priceMaxVal) {
                 return false;
             }
             
