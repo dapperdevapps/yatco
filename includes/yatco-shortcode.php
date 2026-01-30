@@ -142,9 +142,10 @@ function yatco_generate_vessels_html_from_data( $vessels, $builders, $categories
                 <label for="yatco-sort">Sort by:</label>
                 <select id="yatco-sort" class="yatco-sort-select">
                     <option value="">Pick a sort</option>
+                    <option value="date_desc" selected>Newest Added</option>
                     <option value="price_asc">Price: Low to High</option>
                     <option value="price_desc">Price: High to Low</option>
-                    <option value="year_desc" selected>Year: Newest First</option>
+                    <option value="year_desc">Year: Newest First</option>
                     <option value="year_asc">Year: Oldest First</option>
                     <option value="length_desc">Length: Largest First</option>
                     <option value="length_asc">Length: Smallest First</option>
@@ -190,7 +191,8 @@ function yatco_generate_vessels_html_from_data( $vessels, $builders, $categories
                  data-loa-meters="<?php echo esc_attr( $vessel['loa_meters'] ); ?>"
                  data-price-usd="<?php echo esc_attr( $vessel['price_usd'] ); ?>"
                  data-price-eur="<?php echo esc_attr( $vessel['price_eur'] ); ?>"
-                 data-state-rooms="<?php echo esc_attr( $vessel['state_rooms'] ); ?>">
+                 data-state-rooms="<?php echo esc_attr( $vessel['state_rooms'] ); ?>"
+                 data-post-date="<?php echo esc_attr( isset( $vessel['post_date'] ) ? $vessel['post_date'] : '' ); ?>">
                 <?php if ( ! empty( $vessel['image'] ) ) : ?>
                     <div class="yatco-vessel-image">
                         <img src="<?php echo esc_url( $vessel['image'] ); ?>" alt="<?php echo esc_attr( $vessel['name'] ); ?>" />
@@ -294,9 +296,8 @@ function yatco_vessels_shortcode( $atts ) {
             'posts_per_page' => -1, // Load all posts for client-side pagination (memory optimized)
             'fields'         => 'ids', // Only get IDs to save memory - this is the key optimization
             'meta_query'     => array(),
-            'orderby'        => 'meta_value_num',
-            'meta_key'       => 'yacht_year',
-            'order'          => 'DESC', // Newest first (year descending)
+            'orderby'        => 'date',
+            'order'          => 'DESC', // Newest added first (by post date)
             'no_found_rows'  => true, // Skip counting total rows to save memory
             'update_post_meta_cache' => false, // Don't cache all meta - we'll fetch only what we need
             'update_post_term_cache' => false, // Don't cache terms
@@ -603,10 +604,10 @@ function yatco_vessels_shortcode( $atts ) {
                 $meta_by_post[ $post_id ][ $meta_row['meta_key'] ] = $meta_row['meta_value'];
             }
             
-            // Get all post titles in one query
+            // Get all post titles and dates in one query
             $title_placeholder = implode( ',', array_fill( 0, count( $post_ids ), '%d' ) );
             $title_query = $wpdb->prepare(
-                "SELECT ID, post_title FROM {$wpdb->posts} WHERE ID IN ($title_placeholder)",
+                "SELECT ID, post_title, post_date FROM {$wpdb->posts} WHERE ID IN ($title_placeholder)",
                 $post_ids
             );
             $titles = $wpdb->get_results( $title_query, OBJECT_K );
@@ -657,8 +658,9 @@ function yatco_vessels_shortcode( $atts ) {
                 $state_rooms = $all_meta['yacht_state_rooms'];
                 $image_url = $all_meta['yacht_image_url'];
                 
-                // Get post title from pre-fetched array
+                // Get post title and date from pre-fetched array
                 $post_title = isset( $titles[ $post_id ] ) ? $titles[ $post_id ]->post_title : '';
+                $post_date = isset( $titles[ $post_id ] ) ? $titles[ $post_id ]->post_date : '';
                 
                 // If no image URL from meta, try featured image (thumbnail ID was bulk-fetched)
                 // Only call wp_get_attachment_image_url() if needed (most vessels have yacht_image_url)
@@ -706,6 +708,7 @@ function yatco_vessels_shortcode( $atts ) {
                     'location'    => $location,
                     'image'       => $image_url,
                     'link'        => get_permalink( $post_id ),
+                    'post_date'   => $post_date,
                 );
                 
                 $vessels[] = $vessel_data;

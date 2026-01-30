@@ -410,7 +410,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     const defaultPriceMin = 350000;
     const defaultYearMin = 2000;
     const defaultLoaMin = 35;
-    const defaultSort = 'year_desc'; // Newest first
+    const defaultSort = 'date_desc'; // Newest added first
     
     // Set defaults on page load (before URL parameters are applied)
     if (yearMin && !yearMin.value) yearMin.value = defaultYearMin;
@@ -692,6 +692,12 @@ if ( ! defined( 'ABSPATH' ) ) {
                     const priceA2 = currentCurrency === 'EUR' ? parseFloat(a.dataset.priceEur || 0) : parseFloat(a.dataset.priceUsd || 0);
                     const priceB2 = currentCurrency === 'EUR' ? parseFloat(b.dataset.priceEur || 0) : parseFloat(b.dataset.priceUsd || 0);
                     result = priceB2 - priceA2;
+                    break;
+                case 'date_desc':
+                    // Sort by post date (newest added first)
+                    const dateA = a.dataset.postDate ? new Date(a.dataset.postDate).getTime() : 0;
+                    const dateB = b.dataset.postDate ? new Date(b.dataset.postDate).getTime() : 0;
+                    result = dateB - dateA;
                     break;
                 case 'year_desc':
                     result = (parseInt(b.dataset.year) || 0) - (parseInt(a.dataset.year) || 0);

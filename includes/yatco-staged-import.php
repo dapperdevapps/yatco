@@ -2114,8 +2114,8 @@ function yatco_daily_sync_check( $token ) {
                     continue; // Skip to next vessel
                 }
                 
-                // MINIMUM PRICE FILTER: Draft vessel if price drops below $200,000 USD
-                $minimum_price_usd = 200000;
+                // MINIMUM PRICE FILTER: Draft vessel if price drops below $350,000 USD
+                $minimum_price_usd = 350000;
                 if ( $api_price_usd !== null && $api_price_usd > 0 && $api_price_usd < $minimum_price_usd ) {
                     // Price is below minimum - draft the vessel
                     $current_status = get_post_status( $post_id );
