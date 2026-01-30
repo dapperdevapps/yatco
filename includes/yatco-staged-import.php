@@ -2305,6 +2305,70 @@ function yatco_daily_sync_check( $token ) {
         }
     }
     
+    // ADDITIONAL CHECK: Find and draft all published vessels with "price on application" or no price
+    // This catches any vessels that might have been missed during API checks
+    yatco_update_import_status_message( 'Daily Sync: Checking for vessels with price on application or no price...' );
+    yatco_log( 'Daily Sync: Checking all published vessels for price on application or no price', 'info' );
+    
+    $price_check_count = 0;
+    $drafted_count = 0;
+    
+    // Get all published yacht posts - we'll check each one individually for better accuracy
+    $published_vessels = get_posts( array(
+        'post_type'      => 'yacht',
+        'post_status'    => 'publish',
+        'posts_per_page' => -1,
+        'fields'         => 'ids',
+    ) );
+    
+    foreach ( $published_vessels as $post_id ) {
+        $price_check_count++;
+        
+        // Get stored price and price on application flag
+        $stored_price_on_application = get_post_meta( $post_id, 'yacht_price_on_application', true );
+        $stored_price_usd = get_post_meta( $post_id, 'yacht_price_usd', true );
+        $stored_price = get_post_meta( $post_id, 'yacht_price', true );
+        
+        // Check if price is "Price on Application" in the stored price string or meta flag
+        $price_is_poa = false;
+        if ( $stored_price === 'Price on Application' || 
+             $stored_price_on_application === '1' || 
+             $stored_price_on_application === true ||
+             $stored_price_on_application === 'true' ) {
+            $price_is_poa = true;
+        }
+        
+        // Check if price is missing or zero
+        $price_is_missing = false;
+        if ( empty( $stored_price_usd ) || 
+             $stored_price_usd === '' || 
+             $stored_price_usd === '0' || 
+             floatval( $stored_price_usd ) <= 0 ) {
+            $price_is_missing = true;
+        }
+        
+        // Draft vessel if it has price on application or no price
+        if ( $price_is_poa || $price_is_missing ) {
+            wp_update_post( array(
+                'ID' => $post_id,
+                'post_status' => 'draft',
+            ) );
+            
+            $reason = $price_is_poa ? 'price on application' : 'no price';
+            update_post_meta( $post_id, 'yacht_no_price_reason', $reason );
+            update_post_meta( $post_id, 'yacht_no_price_date', time() );
+            
+            $vessel_id = get_post_meta( $post_id, 'yacht_vessel_id', true );
+            $vessel_display = $vessel_id ? "vessel {$vessel_id}" : "post {$post_id}";
+            yatco_log( "Daily Sync: Drafted {$vessel_display} - {$reason} (from stored meta check)", 'info' );
+            $drafted_count++;
+        }
+    }
+    
+    if ( $drafted_count > 0 ) {
+        yatco_log( "Daily Sync: Drafted {$drafted_count} published vessels with price on application or no price (checked {$price_check_count} vessels)", 'info' );
+    }
+    
     // Store sync results
     $sync_results = array(
         'removed' => $removed_count,
