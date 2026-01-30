@@ -1393,14 +1393,14 @@ if ( $price_on_application || empty( $asking_price ) ) {
   overflow: hidden;
   transition: max-height 0.4s ease-out;
   background: #f9f9f9;
-  border: 2px solid #0073aa;
-  border-top: none;
-  border-radius: 0 0 8px 8px;
 }
 
 .yacht-toggle-content[aria-hidden="false"] {
   max-height: 10000px; /* Large value to accommodate content */
   transition: max-height 0.5s ease-in;
+  border: 2px solid #0073aa;
+  border-top: none;
+  border-radius: 0 0 8px 8px;
 }
 
 .yacht-detailed-specs-content {

@@ -891,6 +891,14 @@ function yatco_import_single_vessel( $token, $vessel_id, $vessel_id_lookup = nul
         $price_on_application = (bool) $basic['PriceOnApplication'];
     }
     
+    // PRICE VALIDATION: Skip vessels with "price on application" or no price
+    if ( $price_on_application || $price_usd === null || $price_usd <= 0 ) {
+        $identifier_display = $primary_identifier_type === 'vessel_id' ? "Vessel ID {$primary_identifier}" : "MLS ID {$primary_identifier}";
+        $reason = $price_on_application ? 'price on application' : 'no price';
+        yatco_log( "Import: Skipping vessel {$identifier_display}{$name_display_log} - {$reason}", 'info' );
+        return new WP_Error( 'no_price', "Vessel has {$reason} - skipping import" );
+    }
+    
     // Get MSRP (Manufacturer's Suggested Retail Price) - might indicate price reduction
     $msrp_formatted = isset( $result['MSRPPriceFormatted'] ) ? $result['MSRPPriceFormatted'] : '';
     $msrp_formatted_no_currency = isset( $result['MSRPPriceFormattedNoCurrency'] ) ? $result['MSRPPriceFormattedNoCurrency'] : '';

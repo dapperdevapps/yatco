@@ -2072,6 +2072,48 @@ function yatco_daily_sync_check( $token ) {
                     $api_price_usd = floatval( $result['AskingPriceCompare'] );
                 }
                 
+                // Check for "Price on Application" flag
+                $api_price_on_application = isset( $result['PriceOnApplication'] ) ? (bool) $result['PriceOnApplication'] : false;
+                if ( ! $api_price_on_application && isset( $basic['PriceOnApplication'] ) ) {
+                    $api_price_on_application = (bool) $basic['PriceOnApplication'];
+                }
+                
+                // PRICE VALIDATION: Draft vessel if it has "price on application" or no price
+                if ( $api_price_on_application || $api_price_usd === null || $api_price_usd <= 0 ) {
+                    $current_status = get_post_status( $post_id );
+                    if ( $current_status === 'publish' ) {
+                        wp_update_post( array(
+                            'ID' => $post_id,
+                            'post_status' => 'draft',
+                        ) );
+                        $reason = $api_price_on_application ? 'price on application' : 'no price';
+                        update_post_meta( $post_id, 'yacht_no_price_reason', $reason );
+                        update_post_meta( $post_id, 'yacht_no_price_date', time() );
+                        yatco_log( "Daily Sync: Drafted vessel {$vessel_id} - {$reason}", 'info' );
+                    }
+                    // Update price metadata even if drafting so we have the latest data
+                    if ( $api_price_on_application ) {
+                        update_post_meta( $post_id, 'yacht_price_on_application', true );
+                        $price_formatted = 'Price on Application';
+                        update_post_meta( $post_id, 'yacht_price', $price_formatted );
+                    }
+                    if ( $api_price_usd !== null ) {
+                        update_post_meta( $post_id, 'yacht_price_usd', $api_price_usd );
+                    }
+                    update_post_meta( $post_id, 'yacht_last_updated', time() );
+                    $price_updates++;
+                    $existing_processed++;
+                    $processed++;
+                    $sync_progress['processed'] = $processed;
+                    $sync_progress['price_updates'] = $price_updates;
+                    $sync_progress['days_on_market_updates'] = $days_on_market_updates;
+                    $percent = $total_steps > 0 ? round( ( $processed / $total_steps ) * 100, 1 ) : 0;
+                    $sync_progress['updated_at'] = time();
+                    yatco_update_import_status( $sync_progress, 'daily_sync' );
+                    yatco_update_import_status_message( "Daily Sync: Checking existing vessels ({$existing_processed}/{$existing_total}) - {$percent}% complete..." );
+                    continue; // Skip to next vessel
+                }
+                
                 // MINIMUM PRICE FILTER: Draft vessel if price drops below $200,000 USD
                 $minimum_price_usd = 200000;
                 if ( $api_price_usd !== null && $api_price_usd > 0 && $api_price_usd < $minimum_price_usd ) {
@@ -2117,6 +2159,19 @@ function yatco_daily_sync_check( $token ) {
                             delete_post_meta( $post_id, 'yacht_price_below_minimum' );
                             delete_post_meta( $post_id, 'yacht_price_below_minimum_date' );
                             yatco_log( "Daily Sync: Re-published vessel {$vessel_id} - price ({$api_price_usd} USD) is now above minimum ({$minimum_price_usd} USD)", 'info' );
+                        }
+                        
+                        // If vessel was drafted for no price/price on application and now has a valid price, re-publish it
+                        $was_drafted_for_no_price = get_post_meta( $post_id, 'yacht_no_price_reason', true );
+                        if ( ! empty( $was_drafted_for_no_price ) && $current_status === 'draft' && $api_price_usd >= $minimum_price_usd ) {
+                            wp_update_post( array(
+                                'ID' => $post_id,
+                                'post_status' => 'publish',
+                            ) );
+                            delete_post_meta( $post_id, 'yacht_no_price_reason' );
+                            delete_post_meta( $post_id, 'yacht_no_price_date' );
+                            delete_post_meta( $post_id, 'yacht_price_on_application' );
+                            yatco_log( "Daily Sync: Re-published vessel {$vessel_id} - now has valid price ({$api_price_usd} USD)", 'info' );
                         }
                         
                         $price_updates++;
