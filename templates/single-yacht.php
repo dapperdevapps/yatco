@@ -723,19 +723,21 @@ if ( $price_on_application || empty( $asking_price ) ) {
 
   <!-- SIMILAR LISTINGS SECTION -->
   <?php
-  // Query for similar listings (same category or closest in price)
+  // Query for similar listings (same category AND within 20% of price)
   $current_price_usd = yacht_meta( 'yacht_price_usd', '' );
   $current_category = yacht_meta( 'yacht_category', '' );
   
-  // First try to find yachts in the same category
   $similar_args = array(
     'post_type'      => 'yacht',
     'post_status'    => 'publish',
     'posts_per_page' => 3,
     'post__not_in'   => array( $post_id ), // Exclude current yacht
-    'meta_query'     => array(),
+    'meta_query'     => array(
+      'relation' => 'AND',
+    ),
   );
   
+  // Require same category
   if ( ! empty( $current_category ) ) {
     $similar_args['meta_query'][] = array(
       'key'     => 'yacht_category',
@@ -744,64 +746,29 @@ if ( $price_on_application || empty( $asking_price ) ) {
     );
   }
   
-  // Order by price proximity if price is available
+  // Require price within 20% range
   if ( ! empty( $current_price_usd ) && $current_price_usd > 0 ) {
+    $price_range = floatval( $current_price_usd ) * 0.2; // 20% range
+    $price_min = max( 0, floatval( $current_price_usd ) - $price_range );
+    $price_max = floatval( $current_price_usd ) + $price_range;
+    
     $similar_args['meta_query'][] = array(
       'key'     => 'yacht_price_usd',
-      'value'   => 0,
-      'compare' => '>',
+      'value'   => array( $price_min, $price_max ),
+      'compare' => 'BETWEEN',
       'type'    => 'NUMERIC',
     );
+    
+    // Order by price proximity
     $similar_args['orderby'] = 'meta_value_num';
     $similar_args['meta_key'] = 'yacht_price_usd';
     $similar_args['order'] = 'ASC';
   } else {
+    // If no price, just order randomly
     $similar_args['orderby'] = 'rand';
   }
   
   $similar_query = new WP_Query( $similar_args );
-  
-  // If we don't have enough results from category, also try price-based
-  if ( $similar_query->found_posts < 3 && ! empty( $current_price_usd ) && $current_price_usd > 0 ) {
-    $price_range = floatval( $current_price_usd ) * 0.3; // 30% range
-    $price_min = max( 0, floatval( $current_price_usd ) - $price_range );
-    $price_max = floatval( $current_price_usd ) + $price_range;
-    
-    $price_args = array(
-      'post_type'      => 'yacht',
-      'post_status'    => 'publish',
-      'posts_per_page' => 3,
-      'post__not_in'   => array( $post_id ),
-      'meta_query'     => array(
-        array(
-          'key'     => 'yacht_price_usd',
-          'value'   => array( $price_min, $price_max ),
-          'compare' => 'BETWEEN',
-          'type'    => 'NUMERIC',
-        ),
-      ),
-      'orderby'        => 'meta_value_num',
-      'meta_key'       => 'yacht_price_usd',
-      'order'          => 'ASC',
-    );
-    
-    // If we had category results, exclude those IDs too
-    if ( $similar_query->found_posts > 0 ) {
-      $existing_ids = wp_list_pluck( $similar_query->posts, 'ID' );
-      $price_args['post__not_in'] = array_merge( array( $post_id ), $existing_ids );
-    }
-    
-    $price_query = new WP_Query( $price_args );
-    
-    // Merge results if we have price-based matches
-    if ( $price_query->have_posts() ) {
-      $similar_query->posts = array_merge( $similar_query->posts, $price_query->posts );
-      $similar_query->post_count = count( $similar_query->posts );
-      // Limit to 3 total
-      $similar_query->posts = array_slice( $similar_query->posts, 0, 3 );
-      $similar_query->post_count = min( 3, $similar_query->post_count );
-    }
-  }
   
   if ( $similar_query->have_posts() ) :
   ?>
