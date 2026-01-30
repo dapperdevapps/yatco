@@ -2305,13 +2305,15 @@ function yatco_daily_sync_check( $token ) {
         }
     }
     
-    // ADDITIONAL CHECK: Find and draft all published vessels with "price on application" or no price
-    // This catches any vessels that might have been missed during API checks
-    yatco_update_import_status_message( 'Daily Sync: Checking for vessels with price on application or no price...' );
-    yatco_log( 'Daily Sync: Checking all published vessels for price on application or no price', 'info' );
+    // ADDITIONAL CHECK: Find and draft all published vessels with "price on application", no price, or no YATCO vessel ID
+    // This catches any vessels that might have been missed during API checks or were manually created
+    yatco_update_import_status_message( 'Daily Sync: Checking for invalid vessels (price on application, no price, or no YATCO ID)...' );
+    yatco_log( 'Daily Sync: Checking all published vessels for price on application, no price, or missing YATCO vessel ID', 'info' );
     
     $price_check_count = 0;
     $drafted_count = 0;
+    $drafted_no_id_count = 0;
+    $drafted_price_issue_count = 0;
     
     // Get all published yacht posts - we'll check each one individually for better accuracy
     $published_vessels = get_posts( array(
@@ -2323,6 +2325,11 @@ function yatco_daily_sync_check( $token ) {
     
     foreach ( $published_vessels as $post_id ) {
         $price_check_count++;
+        
+        // Get YATCO vessel ID - if missing, this vessel should not be published
+        $vessel_id = get_post_meta( $post_id, 'yacht_vessel_id', true );
+        $mlsid = get_post_meta( $post_id, 'yacht_mlsid', true );
+        $has_yatco_id = ! empty( $vessel_id ) || ! empty( $mlsid );
         
         // Get stored price and price on application flag
         $stored_price_on_application = get_post_meta( $post_id, 'yacht_price_on_application', true );
@@ -2347,26 +2354,55 @@ function yatco_daily_sync_check( $token ) {
             $price_is_missing = true;
         }
         
-        // Draft vessel if it has price on application or no price
-        if ( $price_is_poa || $price_is_missing ) {
+        // Check if price is below minimum
+        $price_below_minimum = false;
+        if ( ! empty( $stored_price_usd ) && floatval( $stored_price_usd ) > 0 && floatval( $stored_price_usd ) < 350000 ) {
+            $price_below_minimum = true;
+        }
+        
+        // Draft vessel if:
+        // 1. It doesn't have a YATCO vessel ID (manually created or orphaned)
+        // 2. It has price on application
+        // 3. It has no price
+        // 4. It has price below minimum
+        $should_draft = false;
+        $reason = '';
+        
+        if ( ! $has_yatco_id ) {
+            $should_draft = true;
+            $reason = 'no YATCO vessel ID';
+            $drafted_no_id_count++;
+        } elseif ( $price_is_poa ) {
+            $should_draft = true;
+            $reason = 'price on application';
+            $drafted_price_issue_count++;
+        } elseif ( $price_is_missing ) {
+            $should_draft = true;
+            $reason = 'no price';
+            $drafted_price_issue_count++;
+        } elseif ( $price_below_minimum ) {
+            $should_draft = true;
+            $reason = 'price below minimum ($350,000)';
+            $drafted_price_issue_count++;
+        }
+        
+        if ( $should_draft ) {
             wp_update_post( array(
                 'ID' => $post_id,
                 'post_status' => 'draft',
             ) );
             
-            $reason = $price_is_poa ? 'price on application' : 'no price';
             update_post_meta( $post_id, 'yacht_no_price_reason', $reason );
             update_post_meta( $post_id, 'yacht_no_price_date', time() );
             
-            $vessel_id = get_post_meta( $post_id, 'yacht_vessel_id', true );
-            $vessel_display = $vessel_id ? "vessel {$vessel_id}" : "post {$post_id}";
+            $vessel_display = $vessel_id ? "vessel {$vessel_id}" : ( $mlsid ? "MLS ID {$mlsid}" : "post {$post_id}" );
             yatco_log( "Daily Sync: Drafted {$vessel_display} - {$reason} (from stored meta check)", 'info' );
             $drafted_count++;
         }
     }
     
     if ( $drafted_count > 0 ) {
-        yatco_log( "Daily Sync: Drafted {$drafted_count} published vessels with price on application or no price (checked {$price_check_count} vessels)", 'info' );
+        yatco_log( "Daily Sync: Drafted {$drafted_count} published vessels - {$drafted_no_id_count} without YATCO ID, {$drafted_price_issue_count} with price issues (checked {$price_check_count} vessels)", 'info' );
     }
     
     // Store sync results
